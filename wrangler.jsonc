@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "around-my-dorm",
+  "compatibility_date": "2026-09-04",
+  "assets": {
+    "directory": "./out"
+  }
+}
