@@ -1,5 +1,11 @@
 import { AroundMyDormApp } from "@/components/AroundMyDormApp";
+import { NewPlacesSpotlight } from "@/components/NewPlacesSpotlight";
 
 export default function HomePage() {
-  return <AroundMyDormApp initialTab="explore" />;
+  return (
+    <>
+      <NewPlacesSpotlight />
+      <AroundMyDormApp initialTab="explore" />
+    </>
+  );
 }
