@@ -15,7 +15,7 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/data/places": ["./data/places-expanded.ts"],
+      "@/data/places": ["./data/places-product.ts"],
       "@/data/categories": ["./data/categories-expanded.ts"],
       "@/*": ["./*"]
     }
