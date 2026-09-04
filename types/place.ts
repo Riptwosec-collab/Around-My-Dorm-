@@ -6,6 +6,13 @@ export type CategoryId =
   | "isan_food"
   | "mookata"
   | "japanese"
+  | "korean_food"
+  | "vietnamese_food"
+  | "hotpot"
+  | "bbq"
+  | "chinese_food"
+  | "shopping"
+  | "night_food"
   | "cafe"
   | "bar"
   | "convenience"
@@ -28,6 +35,11 @@ export type OpeningHours = {
   sunday: string | null;
 };
 
+export type PlaceDataSource = {
+  provider: string;
+  checkedAt: string;
+};
+
 export type Place = {
   id: string;
   googlePlaceId: string | null;
@@ -45,9 +57,13 @@ export type Place = {
   latitude: number | null;
   longitude: number | null;
   distanceKm: number | null;
+  straightLineDistanceKm?: number | null;
   walkingMinutes: number | null;
   drivingMinutes: number | null;
+  walkingDistanceKm?: number | null;
+  drivingDistanceKm?: number | null;
   openingHours: OpeningHours;
+  openingHoursText?: string | null;
   is24Hours: boolean;
   liveOpenNow?: boolean | null;
   priceLevel: 1 | 2 | 3 | 4 | null;
@@ -93,6 +109,11 @@ export type Place = {
   verified: boolean;
   lastVerified: string | null;
   source: string[];
+  dataSources?: PlaceDataSource[];
+  openingHoursVerifiedAt?: string | null;
+  priceVerifiedAt?: string | null;
+  phoneVerifiedAt?: string | null;
+  parkingVerifiedAt?: string | null;
   notes: string | null;
 };
 
