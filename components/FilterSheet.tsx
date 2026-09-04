@@ -15,7 +15,11 @@ export type FilterState = {
   goodForWorking: boolean;
   studentFriendly: boolean;
   verifiedOnly: boolean;
+  localOnly: boolean;
   priceLevels: number[];
+  maxPrice: number | null;
+  maxWalkingMinutes: number | null;
+  area: string;
 };
 
 export const EMPTY_FILTERS: FilterState = {
@@ -31,8 +35,26 @@ export const EMPTY_FILTERS: FilterState = {
   goodForWorking: false,
   studentFriendly: false,
   verifiedOnly: false,
+  localOnly: false,
   priceLevels: [],
+  maxPrice: null,
+  maxWalkingMinutes: null,
+  area: "",
 };
+
+const AREAS = [
+  "",
+  "ลาดพร้าว 35",
+  "ลาดพร้าว 41",
+  "ภาวนา",
+  "รัชดา 36",
+  "หลังจันทรเกษม",
+  "ลาดพร้าววังหิน",
+  "โชคชัย 4",
+  "นาคนิวาส",
+  "ลาดพร้าว 71",
+  "เสนานิคม",
+];
 
 function Toggle({
   label,
@@ -63,7 +85,7 @@ export function FilterSheet({
   onChange: (next: FilterState) => void;
   onClose: () => void;
 }) {
-  const toggle = (key: keyof Omit<FilterState, "priceLevels">) =>
+  const toggle = (key: keyof Pick<FilterState, "onlyOpen" | "only24Hours" | "openLate" | "parking" | "wifi" | "powerOutlet" | "airConditioned" | "delivery" | "takeaway" | "goodForWorking" | "studentFriendly" | "verifiedOnly" | "localOnly">) =>
     onChange({ ...value, [key]: !value[key] });
 
   const togglePrice = (level: number) =>
@@ -100,18 +122,50 @@ export function FilterSheet({
         </div>
 
         <div className="mt-5">
-          <p className="mb-2 text-[10px] font-bold text-white/40">ช่วงราคา</p>
+          <p className="mb-2 text-[10px] font-bold text-white/40">งบประมาณจริง</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[70, 100, 200].map((price) => (
+              <Toggle key={price} label={`≤ ${price} บาท`} active={value.maxPrice === price} onClick={() => onChange({ ...value, maxPrice: value.maxPrice === price ? null : price })} />
+            ))}
+          </div>
+          <p className="mt-2 text-[9px] leading-4 text-white/30">ร้านที่ไม่มีข้อมูลราคาจะไม่ผ่านตัวกรองงบ เพื่อไม่เดาราคา</p>
+        </div>
+
+        <div className="mt-5">
+          <p className="mb-2 text-[10px] font-bold text-white/40">ระยะเดิน</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[5, 10, 15].map((minutes) => (
+              <Toggle key={minutes} label={`เดิน ≤${minutes} นาที`} active={value.maxWalkingMinutes === minutes} onClick={() => onChange({ ...value, maxWalkingMinutes: value.maxWalkingMinutes === minutes ? null : minutes })} />
+            ))}
+          </div>
+          <p className="mt-2 text-[9px] leading-4 text-white/30">ใช้เฉพาะเวลาเดินที่มีข้อมูล route จริง/ข้อมูลที่ยืนยัน ไม่สร้างเวลาจากระยะเส้นตรง</p>
+        </div>
+
+        <div className="mt-5">
+          <p className="mb-2 text-[10px] font-bold text-white/40">ย่าน</p>
+          <select
+            aria-label="กรองตามย่าน"
+            value={value.area}
+            onChange={(event) => onChange({ ...value, area: event.target.value })}
+            className="h-12 w-full rounded-2xl border border-white/[0.08] bg-[#0d1724] px-3 text-[11px] font-bold text-white/75 outline-none"
+          >
+            {AREAS.map((area) => <option key={area || "all"} value={area}>{area || "ทั้งหมด"}</option>)}
+          </select>
+        </div>
+
+        <div className="mt-5">
+          <p className="mb-2 text-[10px] font-bold text-white/40">ช่วงราคาเดิม</p>
           <div className="grid grid-cols-4 gap-2">
             {[1, 2, 3, 4].map((level) => (
               <Toggle key={level} label={"฿".repeat(level)} active={value.priceLevels.includes(level)} onClick={() => togglePrice(level)} />
             ))}
           </div>
-          <p className="mt-2 text-[9px] leading-4 text-white/30">ร้านที่ยังไม่มีข้อมูลราคาจะไม่ผ่านตัวกรองราคา เพื่อไม่คาดเดาข้อมูล</p>
         </div>
 
         <div className="mt-5">
-          <p className="mb-2 text-[10px] font-bold text-white/40">สิ่งอำนวยความสะดวก</p>
+          <p className="mb-2 text-[10px] font-bold text-white/40">ประเภท / สิ่งอำนวยความสะดวก</p>
           <div className="grid grid-cols-2 gap-2">
+            <Toggle label="Local" active={value.localOnly} onClick={() => toggle("localOnly")} />
             <Toggle label="มีที่จอดรถ" active={value.parking} onClick={() => toggle("parking")} />
             <Toggle label="มี Wi-Fi" active={value.wifi} onClick={() => toggle("wifi")} />
             <Toggle label="มีปลั๊ก" active={value.powerOutlet} onClick={() => toggle("powerOutlet")} />
