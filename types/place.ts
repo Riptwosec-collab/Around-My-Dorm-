@@ -49,7 +49,7 @@ export type Place = {
   drivingMinutes: number | null;
   openingHours: OpeningHours;
   is24Hours: boolean;
-  liveOpenNow: boolean | null;
+  liveOpenNow?: boolean | null;
   priceLevel: 1 | 2 | 3 | 4 | null;
   priceText: string | null;
   averagePricePerPerson: number | null;
