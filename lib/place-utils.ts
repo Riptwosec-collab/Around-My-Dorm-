@@ -87,6 +87,12 @@ export function getOpenStatus(place: Place, now = new Date()) {
   if (place.is24Hours) {
     return { isOpen: true, text: "เปิด 24 ชั่วโมง", closesAt: null as string | null, tone: "cyan" as const };
   }
+  if (place.liveOpenNow === true) {
+    return { isOpen: true, text: "เปิดอยู่", closesAt: null as string | null, tone: "green" as const };
+  }
+  if (place.liveOpenNow === false) {
+    return { isOpen: false, text: "ปิดแล้ว", closesAt: null as string | null, tone: "red" as const };
+  }
 
   const bangkokNow = new Date(
     now.toLocaleString("en-US", { timeZone: "Asia/Bangkok" }),
