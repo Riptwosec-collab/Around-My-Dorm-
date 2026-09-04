@@ -3,10 +3,11 @@
 import { ArrowUpRight, Clock3, Heart, MapPin, Navigation, ShieldCheck, Star } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
 import {
+  calculateLocalScore,
   formatDistance,
-  getOpenStatus,
+  getPlaceOpenStatus,
   googleMapsDirectionsUrl,
-  priceLevelText,
+  formatPrice,
 } from "@/lib/place-utils";
 import type { Place } from "@/types/place";
 
@@ -24,14 +25,16 @@ export function PlaceCard({
   onMap: () => void;
 }) {
   const category = CATEGORY_MAP[place.category];
-  const status = getOpenStatus(place);
+  const status = getPlaceOpenStatus(place);
+  const localScore = place.localScore ?? calculateLocalScore(place);
+  const isLocal = place.placeType === "local" || place.placeType === "independent" || place.localFavorite;
 
   return (
     <article className="overflow-hidden rounded-[26px] border border-white/[0.08] bg-white/[0.045] shadow-[0_18px_65px_rgba(0,0,0,.28)] backdrop-blur-2xl">
       <div className="relative h-[164px] overflow-hidden bg-gradient-to-br from-[#101b2c] to-[#07101b]">
-        {place.image ? (
+        {place.coverImage || place.image ? (
           <img
-            src={place.image}
+            src={place.coverImage || place.image || ""}
             alt={place.name}
             loading="lazy"
             className="h-full w-full object-cover"
@@ -45,10 +48,20 @@ export function PlaceCard({
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#07101b]/95 via-transparent to-black/10" />
-        <div className="absolute left-3 top-3 flex gap-2">
-          {place.localFavorite && (
+        <div className="absolute left-3 top-3 flex flex-wrap gap-2 pr-14">
+          {isLocal && (
             <span className="rounded-full border border-pink-300/20 bg-pink-500/85 px-2.5 py-1.5 text-[9px] font-black">
               LOCAL
+            </span>
+          )}
+          {place.placeType === "chain" && (
+            <span className="rounded-full border border-white/10 bg-black/45 px-2.5 py-1.5 text-[9px] font-black text-white/70 backdrop-blur-xl">
+              CHAIN
+            </span>
+          )}
+          {localScore != null && localScore >= 78 && isLocal && (
+            <span className="rounded-full border border-amber-300/20 bg-amber-300/15 px-2.5 py-1.5 text-[9px] font-black text-amber-100 backdrop-blur-xl">
+              🔥 LOCAL PICK {localScore}
             </span>
           )}
           {place.verified && (
@@ -87,10 +100,12 @@ export function PlaceCard({
 
       <div className="p-4">
         <div className="grid gap-2 text-[11px] text-white/58">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Navigation className="h-3.5 w-3.5 text-cyan-300" />
             <b className="text-white/85">{formatDistance(place.distanceKm)}</b>
-            {place.walkingMinutes != null && <span>เดิน ~{place.walkingMinutes} นาที</span>}
+            {place.walkingMinutes != null && <span>🚶 {place.walkingMinutes} นาที</span>}
+            {place.distance?.motorcycleMinutes != null && <span>🏍 {place.distance.motorcycleMinutes} นาที</span>}
+            {place.drivingMinutes != null && <span>🚗 {place.drivingMinutes} นาที</span>}
           </div>
           <div className="flex items-center gap-2">
             <Clock3 className="h-3.5 w-3.5 text-white/40" />
@@ -102,13 +117,15 @@ export function PlaceCard({
                     ? "font-bold text-rose-300"
                     : status.tone === "cyan"
                       ? "font-bold text-cyan-300"
-                      : "text-white/45"
+                      : status.tone === "amber"
+                        ? "font-bold text-amber-200"
+                        : "text-white/45"
               }
             >
-              {status.text}
+              {status.label}{status.secondaryText ? ` · ${status.secondaryText}` : ""}
             </span>
-            <span className="ml-auto text-white/40">{priceLevelText(place)}</span>
           </div>
+          <div className="truncate text-[10px] font-semibold text-white/52">{formatPrice(place)}</div>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -132,7 +149,7 @@ export function PlaceCard({
             <MapPin className="h-3.5 w-3.5" /> แผนที่
           </button>
           <a
-            aria-label="นำทาง"
+            aria-label={`นำทางไป ${place.name}`}
             href={googleMapsDirectionsUrl(place)}
             target="_blank"
             rel="noreferrer"
