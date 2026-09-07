@@ -1,0 +1,93 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { ExternalLink, LoaderCircle, MapPin, Navigation, Search, ShieldCheck, Star, X } from "lucide-react";
+import { discoverGooglePlaces, type GoogleDiscoveryCandidate } from "@/lib/google-live";
+import { haversineKm } from "@/lib/place-utils";
+
+export function GoogleDiscoverySheet({
+  initialQuery,
+  center,
+  radiusMeters,
+  language,
+  onClose,
+  onReviewCandidate,
+}: {
+  initialQuery: string;
+  center: { lat: number; lng: number };
+  radiusMeters: number;
+  language: "th" | "en";
+  onClose: () => void;
+  onReviewCandidate: (candidate: GoogleDiscoveryCandidate) => void;
+}) {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+  const [query, setQuery] = useState(initialQuery);
+  const [results, setResults] = useState<GoogleDiscoveryCandidate[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const sortedResults = useMemo(() => [...results].sort((a, b) => {
+    const da = a.latitude != null && a.longitude != null ? haversineKm(center, { lat: a.latitude, lng: a.longitude }) : Number.POSITIVE_INFINITY;
+    const db = b.latitude != null && b.longitude != null ? haversineKm(center, { lat: b.latitude, lng: b.longitude }) : Number.POSITIVE_INFINITY;
+    return da - db;
+  }), [results, center]);
+
+  async function searchGoogle() {
+    if (!query.trim() || !apiKey) return;
+    setLoading(true);
+    setError(null);
+    setSearched(true);
+    try {
+      setResults(await discoverGooglePlaces(apiKey, { query: query.trim(), center, radiusMeters, language, maxResults: 12 }));
+    } catch (reason) {
+      setResults([]);
+      setError(reason instanceof Error ? reason.message : (language === "en" ? "Google discovery failed" : "ค้นหา Google ไม่สำเร็จ"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="amd-sheet-backdrop z-[105]">
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0" />
+      <section className="amd-sheet amd-glass-strong relative max-h-[92dvh] w-full max-w-[560px] overflow-y-auto rounded-t-[34px] border-b-0 px-4 pb-[calc(28px+env(safe-area-inset-bottom))] pt-3">
+        <div className="sticky top-0 z-20 -mx-4 flex items-center justify-between border-b border-white/[0.06] bg-[var(--amd-glass-strong)] px-4 pb-3 pt-2 backdrop-blur-2xl">
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00D9FF]">EXPLICIT GOOGLE DISCOVERY</p><h2 className="mt-1 text-[22px] font-bold">{language === "en" ? "Search more places" : "ค้นหาสถานที่เพิ่มเติม"}</h2></div>
+          <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[#149CFF]/15 bg-[#007AFF]/[0.045] p-3">
+          <div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#00D9FF]" /><p className="text-[9px] leading-5 text-white/50">{language === "en" ? "This is an explicit external Google Places search. Results are temporary candidates and are not silently saved into Around My Dorm." : "นี่คือการค้นหา Google Places แบบกดสั่งเอง ผลลัพธ์เป็น Candidate ชั่วคราวและจะไม่ถูกบันทึกเข้าฐาน Around My Dorm อัตโนมัติ"}</p></div>
+        </div>
+
+        {!apiKey && <p className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-300/[0.06] p-3 text-[9px] text-amber-100">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not configured.</p>}
+
+        <div className="amd-input relative mt-4">
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchGoogle(); }} placeholder={language === "en" ? "e.g. ramen, cafe, parking" : "เช่น ราเมง คาเฟ่ ที่จอดรถ"} className="h-12 w-full rounded-2xl bg-transparent pl-11 pr-24 text-[11px] outline-none" />
+          <button type="button" disabled={loading || !query.trim() || !apiKey} onClick={() => void searchGoogle()} className="amd-btn amd-btn-primary absolute right-1.5 top-1.5 h-9 min-h-0 rounded-xl px-3 text-[9px] font-bold disabled:opacity-45">{loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : (language === "en" ? "Search" : "ค้นหา")}</button>
+        </div>
+
+        {error && <p className="mt-3 rounded-xl border border-rose-300/10 bg-rose-300/[0.05] px-3 py-2 text-[9px] text-rose-100">{error}</p>}
+
+        <div className="mt-4 space-y-3">
+          {sortedResults.map((candidate) => {
+            const distance = candidate.latitude != null && candidate.longitude != null ? haversineKm(center, { lat: candidate.latitude, lng: candidate.longitude }) : null;
+            const destination = candidate.latitude != null && candidate.longitude != null ? `${candidate.latitude},${candidate.longitude}` : candidate.name;
+            const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&destination_place_id=${encodeURIComponent(candidate.googlePlaceId)}`;
+            return <article key={candidate.googlePlaceId} className="amd-glass amd-card p-4">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[14px] font-bold">{candidate.name}</p><p className="mt-1 text-[9px] leading-4 text-white/38">{candidate.address || (language === "en" ? "Address unavailable" : "ยังไม่มีที่อยู่")}</p></div>{candidate.rating != null && <span className="flex shrink-0 items-center gap-1 text-[10px] font-bold"><Star className="h-3.5 w-3.5 fill-[#FFC341] text-[#FFC341]" />{candidate.rating.toFixed(1)}</span>}</div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[8px] text-white/42">{candidate.primaryTypeLabel && <span className="amd-chip h-7 min-h-0 px-2">{candidate.primaryTypeLabel}</span>}{distance != null && <span className="amd-chip h-7 min-h-0 px-2"><MapPin className="mr-1 inline h-3 w-3" />{distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}</span>}{candidate.openNow != null && <span className={`amd-chip h-7 min-h-0 px-2 ${candidate.openNow ? "text-emerald-200" : "text-rose-200"}`}>{candidate.openNow ? (language === "en" ? "Open" : "เปิดอยู่") : (language === "en" ? "Closed" : "ปิดแล้ว")}</span>}</div>
+              <div className="mt-3 grid grid-cols-3 gap-2">{candidate.googleMapsUrl ? <a href={candidate.googleMapsUrl} target="_blank" rel="noreferrer" className="amd-chip flex min-h-10 items-center justify-center gap-1 text-[8px] font-bold">{language === "en" ? "View" : "ดู"}<ExternalLink className="h-3 w-3" /></a> : <span />}
+                <a href={directionsUrl} target="_blank" rel="noreferrer" className="amd-chip flex min-h-10 items-center justify-center gap-1 text-[8px] font-bold"><Navigation className="h-3 w-3" />{language === "en" ? "Navigate" : "นำทาง"}</a>
+                <button type="button" onClick={() => onReviewCandidate(candidate)} className="amd-chip min-h-10 text-[8px] font-bold text-[#8ecbff]">{language === "en" ? "Review candidate" : "ตรวจ Candidate"}</button>
+              </div>
+            </article>;
+          })}
+          {searched && !loading && !sortedResults.length && !error && <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-6 text-center text-[10px] text-white/40">{language === "en" ? "No Google candidates found" : "ไม่พบ Candidate จาก Google"}</div>}
+        </div>
+      </section>
+    </div>
+  );
+}
