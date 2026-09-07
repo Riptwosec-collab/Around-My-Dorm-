@@ -1,5 +1,5 @@
 name: Complete All Remaining Upgrades
-# retry: stable production-export Playwright server
+# retry: canonical saved route assertion fixed
 
 on:
   push:
