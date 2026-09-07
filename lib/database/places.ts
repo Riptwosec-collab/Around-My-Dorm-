@@ -29,6 +29,7 @@ export type LocalPlaceHistory = {
 
 const CACHE_KEY = "around-dorm-place-database-cache-v1";
 const OVERRIDES_KEY = "around-dorm-place-database-overrides-v1";
+const ADDITIONS_KEY = "around-dorm-place-database-additions-v1";
 const HISTORY_KEY = "around-dorm-place-update-history-v1";
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -53,9 +54,10 @@ function writeClientCache(places: Place[]) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), places })); } catch {}
 }
 
-function applyOverrides(places: Place[]) {
+function applyLocalDatabaseLayer(places: Place[]) {
   const overrides = parseLocal<Record<string, LocalPlaceOverride>>(OVERRIDES_KEY, {});
-  return places.map((place) => {
+  const additions = parseLocal<Place[]>(ADDITIONS_KEY, []);
+  const base = places.map((place) => {
     const override = overrides[place.id];
     if (!override) return place;
     return {
@@ -65,6 +67,8 @@ function applyOverrides(places: Place[]) {
       lastUpdated: override.appliedAt,
     };
   });
+  const known = new Set(base.map((place) => place.id));
+  return [...base, ...additions.filter((place) => !known.has(place.id))];
 }
 
 async function loadFromSupabase(): Promise<Place[] | null> {
@@ -87,13 +91,13 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
     const remote = await loadFromSupabase();
     if (remote) {
       writeClientCache(remote);
-      return { places: applyOverrides(remote), source: "supabase", loadedAt: new Date().toISOString(), warning: null };
+      return { places: applyLocalDatabaseLayer(remote), source: "supabase", loadedAt: new Date().toISOString(), warning: null };
     }
   } catch (error) {
     const cached = readClientCache();
     if (cached?.length) {
       return {
-        places: applyOverrides(cached),
+        places: applyLocalDatabaseLayer(cached),
         source: "supabase",
         loadedAt: new Date().toISOString(),
         warning: error instanceof Error ? error.message : "Database unavailable; using cache",
@@ -101,7 +105,7 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
     }
   }
 
-  return { places: applyOverrides(EMBEDDED_PLACES), source: "embedded", loadedAt: new Date().toISOString(), warning: null };
+  return { places: applyLocalDatabaseLayer(EMBEDDED_PLACES), source: "embedded", loadedAt: new Date().toISOString(), warning: null };
 }
 
 export function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source = "manual_review") {
@@ -118,17 +122,41 @@ export function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source
   localStorage.setItem(HISTORY_KEY, JSON.stringify([entry, ...history].slice(0, 200)));
 }
 
+export function addReviewedLocalPlace(place: Place, source = "manual") {
+  if (typeof window === "undefined") return;
+  const additions = parseLocal<Place[]>(ADDITIONS_KEY, []);
+  if (additions.some((item) => item.id === place.id)) return;
+  const now = new Date().toISOString();
+  const next: Place = {
+    ...place,
+    source: Array.from(new Set([...(place.source || []), source])),
+    sourceId: place.sourceId ?? null,
+    sourceUrl: place.sourceUrl ?? null,
+    lastChecked: place.lastChecked ?? now,
+    lastUpdated: now,
+  };
+  localStorage.setItem(ADDITIONS_KEY, JSON.stringify([next, ...additions].slice(0, 500)));
+  const history = parseLocal<LocalPlaceHistory[]>(HISTORY_KEY, []);
+  const entry: LocalPlaceHistory = { id: `${place.id}-${Date.now()}`, placeId: place.id, placeName: place.name, changedAt: now, source, previousData: {}, newData: next };
+  localStorage.setItem(HISTORY_KEY, JSON.stringify([entry, ...history].slice(0, 200)));
+}
+
 export function loadLocalPlaceHistory() {
   return parseLocal<LocalPlaceHistory[]>(HISTORY_KEY, []);
 }
 
 export function rollbackLocalPlaceHistory(entry: LocalPlaceHistory) {
   if (typeof window === "undefined") return;
-  const overrides = parseLocal<Record<string, LocalPlaceOverride>>(OVERRIDES_KEY, {});
-  const current = overrides[entry.placeId];
-  if (current) {
-    overrides[entry.placeId] = { ...current, patch: { ...current.patch, ...entry.previousData }, appliedAt: new Date().toISOString(), source: "rollback" };
-    localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
+  if (Object.keys(entry.previousData).length === 0) {
+    const additions = parseLocal<Place[]>(ADDITIONS_KEY, []);
+    localStorage.setItem(ADDITIONS_KEY, JSON.stringify(additions.filter((place) => place.id !== entry.placeId)));
+  } else {
+    const overrides = parseLocal<Record<string, LocalPlaceOverride>>(OVERRIDES_KEY, {});
+    const current = overrides[entry.placeId];
+    if (current) {
+      overrides[entry.placeId] = { ...current, patch: { ...current.patch, ...entry.previousData }, appliedAt: new Date().toISOString(), source: "rollback" };
+      localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
+    }
   }
   localStorage.setItem(HISTORY_KEY, JSON.stringify(loadLocalPlaceHistory().filter((item) => item.id !== entry.id)));
 }
