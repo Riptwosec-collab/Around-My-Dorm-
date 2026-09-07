@@ -1,0 +1,71 @@
+name: Live Google Map Upgrade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply-live-google-map.py
+      - .github/workflows/live-google-map-upgrade.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  live-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply live Google Map upgrade
+        run: python3 scripts/apply-live-google-map.py
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Validate production data
+        run: npm run validate:data
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Responsive and map E2E
+        run: npm run test:e2e
+
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+
+      - name: Commit live map implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/AroundMyDormApp.tsx components/MapBottomSheet.tsx lib/google-maps.ts lib/place-utils.ts .env.example e2e/map-functional.spec.ts package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No live map changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Enable real interactive Google Map with resilient fallback'
+          git push origin HEAD:main
