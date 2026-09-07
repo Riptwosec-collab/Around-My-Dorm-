@@ -33,6 +33,34 @@
   position: relative;
 }
 
+/* The liquid-glass reflection layer raises direct children above ::before.
+   Do not let that helper rule replace Tailwind positioning utilities on those children.
+   This specifically keeps the search icon and right-side action cluster absolute instead
+   of letting them enter normal flow and double the search bar height. */
+.amd-glass > .absolute,
+.amd-glass-strong > .absolute,
+.amd-input > .absolute {
+  position: absolute;
+}
+
+.amd-glass > .fixed,
+.amd-glass-strong > .fixed,
+.amd-input > .fixed {
+  position: fixed;
+}
+
+.amd-glass > .sticky,
+.amd-glass-strong > .sticky,
+.amd-input > .sticky {
+  position: sticky;
+}
+
+.amd-glass > .relative,
+.amd-glass-strong > .relative,
+.amd-input > .relative {
+  position: relative;
+}
+
 /* Preserve fixed-nav safe-area geometry at every requested mobile width. */
 @media (max-width: 767px) {
   .amd-nav {
