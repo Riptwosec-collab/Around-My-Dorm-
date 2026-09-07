@@ -1,0 +1,176 @@
+/* Priority group 3: map controls + physical bottom sheets.
+   Never blur/filter the Google map canvas itself. Glass belongs only above the map. */
+
+.amd-map-frame {
+  isolation: isolate;
+  border-color: rgba(98, 184, 255, .24) !important;
+  box-shadow: 0 16px 42px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+.amd-google-map-canvas {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transform: translateZ(0);
+}
+
+.amd-map-control {
+  backdrop-filter: blur(var(--amd-blur-floating)) saturate(145%);
+  -webkit-backdrop-filter: blur(var(--amd-blur-floating)) saturate(145%);
+  box-shadow: var(--amd-shadow-floating);
+}
+
+.amd-map-radius-control {
+  border-color: rgba(129, 194, 255, .17);
+  background-color: rgba(6, 17, 32, .80) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 12px 30px rgba(0,0,0,.28);
+}
+
+.amd-map-search-area {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 10px 28px rgba(0,105,230,.25);
+}
+
+.amd-map-discovery-control {
+  border-color: rgba(93, 178, 255, .20);
+  background: rgba(7, 18, 34, .78);
+}
+
+.amd-location-control {
+  overflow: visible;
+  border-radius: 999px;
+  background: rgba(7, 18, 34, .80);
+  color: #47b9ff;
+}
+
+.amd-location-control::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(55, 209, 255, 0);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.amd-location-control:active svg {
+  transform: scale(.90);
+}
+
+.amd-location-control:focus-visible::after {
+  border-color: rgba(55, 209, 255, .30);
+}
+
+/* Advanced-marker content: selected marker moves locally, map remains stable. */
+.amd-google-marker,
+.amd-google-cluster,
+.amd-google-home-marker {
+  transform-origin: center center;
+  transition:
+    transform var(--motion-normal) var(--ease-emphasized),
+    filter var(--motion-normal) var(--ease-standard),
+    box-shadow var(--motion-normal) var(--ease-standard);
+}
+
+.amd-google-marker-selected {
+  transform: scale(1.06);
+  filter: drop-shadow(0 7px 12px rgba(0, 143, 255, .17));
+}
+
+.amd-google-marker:active,
+.amd-google-cluster:active {
+  transform: scale(.94);
+  transition-duration: var(--motion-instant);
+}
+
+/* Selected-place sheet uses the strongest material in the map hierarchy. */
+.amd-map-sheet {
+  border-color: rgba(139, 204, 255, .16);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.018), transparent 24%),
+    var(--amd-glass-l5);
+  backdrop-filter: blur(var(--amd-blur-strong)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--amd-blur-strong)) saturate(150%);
+  box-shadow: var(--amd-shadow-sheet);
+  will-change: transform;
+  transition:
+    max-height var(--motion-slow) var(--ease-emphasized),
+    transform 240ms var(--ease-emphasized),
+    opacity var(--motion-normal) var(--ease-standard),
+    border-color var(--motion-normal) var(--ease-standard),
+    box-shadow var(--motion-normal) var(--ease-standard);
+  animation: amd-map-sheet-enter 260ms var(--ease-emphasized) both;
+  overscroll-behavior: contain;
+}
+
+.amd-map-sheet[data-dragging="true"] {
+  cursor: grabbing;
+  user-select: none;
+  box-shadow: 0 -8px 36px rgba(0,0,0,.24), 0 22px 58px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+.amd-map-sheet[data-snap="expanded"] {
+  border-color: rgba(139, 204, 255, .20);
+}
+
+.amd-map-sheet-handle {
+  cursor: grab;
+  background: transparent;
+  transition: background-color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+
+.amd-map-sheet-handle:active {
+  cursor: grabbing;
+  background: rgba(255,255,255,.035);
+  transform: scale(.98);
+}
+
+@keyframes amd-map-sheet-enter {
+  from { opacity: .86; transform: translate3d(0, 30px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+/* Google native controls that remain enabled should not be covered or hidden.
+   Attribution/logo remain untouched. */
+.amd-map-frame .gm-style .gmnoprint button {
+  touch-action: manipulation;
+}
+
+:root[data-theme="light"] .amd-map-radius-control,
+:root[data-theme="light"] .amd-map-discovery-control,
+:root[data-theme="light"] .amd-location-control {
+  background: rgba(246,250,255,.82) !important;
+  color: #0879d9;
+  border-color: rgba(70,120,180,.14);
+}
+
+:root[data-theme="light"] .amd-map-sheet {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.55), transparent 28%),
+    var(--amd-glass-l5);
+}
+
+@media (max-width: 767px) {
+  .amd-map-control {
+    backdrop-filter: blur(17px) saturate(140%);
+    -webkit-backdrop-filter: blur(17px) saturate(140%);
+  }
+
+  .amd-map-sheet {
+    backdrop-filter: blur(20px) saturate(145%);
+    -webkit-backdrop-filter: blur(20px) saturate(145%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amd-map-sheet {
+    animation: none !important;
+    transition-duration: var(--motion-instant) !important;
+  }
+
+  .amd-google-marker,
+  .amd-google-cluster,
+  .amd-google-home-marker,
+  .amd-location-control svg {
+    transform: none !important;
+    transition-duration: var(--motion-instant) !important;
+  }
+}
