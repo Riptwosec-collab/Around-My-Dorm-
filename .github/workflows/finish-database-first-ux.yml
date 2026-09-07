@@ -1,0 +1,71 @@
+name: Finish Database First UX
+
+on:
+  push:
+    paths:
+      - '.github/workflows/finish-database-first-ux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply finishing patches
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # Make maintenance cancellation immediate and reliable while an async audit is running.
+          p = Path('components/DataManagement.tsx')
+          s = p.read_text()
+          s = s.replace('import { useMemo, useState } from "react";', 'import { useMemo, useRef, useState } from "react";')
+          s = s.replace('  const [cancelRequested, setCancelRequested] = useState(false);\n', '  const [cancelRequested, setCancelRequested] = useState(false);\n  const cancelRef = useRef(false);\n')
+          s = s.replace('    setCancelRequested(false);\n    setAuditDone(false);', '    setCancelRequested(false);\n    cancelRef.current = false;\n    setAuditDone(false);')
+          s = s.replace('      if (cancelRequested) break;', '      if (cancelRef.current) break;')
+          s = s.replace('onClick={() => setCancelRequested(true)}', 'onClick={() => { cancelRef.current = true; setCancelRequested(true); }}')
+          p.write_text(s)
+
+          # Local search remains primary; external discovery is an explicit maintenance action.
+          p = Path('components/AroundMyDormApp.tsx')
+          s = p.read_text()
+          old = '<button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setQuickFilter(null); }} className="mt-4 text-[11px] font-semibold text-[#149CFF]">{copy.clearFilters}</button></div>'
+          new = '<button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setQuickFilter(null); }} className="mt-4 text-[11px] font-semibold text-[#149CFF]">{copy.clearFilters}</button><button type="button" onClick={() => setDataManagementOpen(true)} className="ml-3 mt-4 text-[11px] font-semibold text-[#00D9FF]">{settings.language === "en" ? "Search more places" : "ค้นหาเพิ่มเติม"}</button></div>'
+          if old not in s:
+              raise SystemExit('Could not find no-results clear-filter action')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Validate data
+        run: npm run validate:data
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/DataManagement.tsx components/AroundMyDormApp.tsx
+          if ! git diff --cached --quiet; then
+            git commit -m "Finish database-first search and maintenance UX"
+            git push
+          fi
