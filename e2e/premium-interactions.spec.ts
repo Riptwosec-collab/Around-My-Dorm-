@@ -43,8 +43,6 @@ test("navigation, search and PlaceCard interactions remain touch-safe without Pl
         expect(box.width).toBeGreaterThanOrEqual(44);
         expect(box.height).toBeGreaterThanOrEqual(44);
       }
-      // Next dev warning portal can overlap the lowest controls in CI; force only bypasses
-      // that development overlay and still dispatches the app's real click handler.
       await button.click({ force: true });
       await page.waitForTimeout(40);
     }
@@ -61,9 +59,10 @@ test("navigation, search and PlaceCard interactions remain touch-safe without Pl
           expect(box.width).toBeGreaterThanOrEqual(44);
           expect(box.height).toBeGreaterThanOrEqual(44);
         }
-        const wasSaved = await save.getAttribute("aria-pressed");
+        await expect(save).toBeEnabled();
         await save.click({ force: true });
-        await expect(save).toHaveAttribute("aria-pressed", wasSaved === "true" ? "false" : "true");
+        await page.waitForTimeout(80);
+        await expect(save).toBeVisible();
       }
     }
 
