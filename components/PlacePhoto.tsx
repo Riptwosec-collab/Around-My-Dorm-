@@ -31,6 +31,7 @@ export function PlacePhoto({
 }) {
   const candidates = useMemo(() => getPlaceImageCandidates(place), [place]);
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const active = candidates.find((image) => !failed.has(image.url)) ?? null;
 
   if (!active) {
@@ -46,9 +47,11 @@ export function PlacePhoto({
     );
   }
 
+  const loaded = loadedUrl === active.url;
+
   return (
     <>
-      <div className="amd-skeleton absolute inset-0" aria-hidden="true" />
+      <div className={`amd-skeleton absolute inset-0 transition-opacity duration-[var(--motion-normal)] ${loaded ? "opacity-0" : "opacity-100"}`} aria-hidden="true" />
       <img
         key={active.url}
         src={active.url}
@@ -56,9 +59,12 @@ export function PlacePhoto({
         loading={eager ? "eager" : "lazy"}
         fetchPriority={eager ? "high" : "auto"}
         decoding="async"
-        className={`relative ${className}`}
-        onLoad={(event) => { event.currentTarget.previousElementSibling?.classList.add("hidden"); }}
-        onError={() => setFailed((current) => new Set(current).add(active.url))}
+        className={`amd-place-photo relative transition-[opacity,transform] duration-[var(--motion-slow)] ease-[var(--ease-standard)] ${loaded ? "opacity-100" : "opacity-0"} ${className}`}
+        onLoad={() => setLoadedUrl(active.url)}
+        onError={() => {
+          setLoadedUrl(null);
+          setFailed((current) => new Set(current).add(active.url));
+        }}
       />
     </>
   );
