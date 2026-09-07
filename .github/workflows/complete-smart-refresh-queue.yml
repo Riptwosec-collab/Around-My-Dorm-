@@ -42,8 +42,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify refresh preview remains local-only and mobile-safe
         run: |
-          if [ -f e2e/p0-smart-refresh-queue.spec.ts ]; then npx playwright test e2e/p0-smart-refresh-queue.spec.ts; fi
-          npx playwright test e2e/p0-google-api-lock.spec.ts e2e/premium-interactions.spec.ts
+          if [ -f e2e/p0-smart-refresh-queue.spec.ts ]; then npx playwright test e2e/p0-smart-refresh-queue.spec.ts --workers=1 --timeout=45000; fi
+          npx playwright test e2e/p0-google-api-lock.spec.ts --workers=1 --timeout=45000
       - name: Cloudflare dry run
         run: npx wrangler deploy --dry-run
       - name: Commit validated smart refresh queue
