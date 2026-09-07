@@ -85,16 +85,16 @@ export type GoogleTextSearchResult = {
   candidates: GoogleDiscoveryCandidate[];
 };
 
-function browserNow() {
-  return new Date();
-}
-
 function dateKey(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
 function monthKey(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function nowMs() {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
 function safeReadLogs(): GoogleRequestLog[] {
@@ -109,9 +109,7 @@ function safeReadLogs(): GoogleRequestLog[] {
 
 function writeLogs(logs: GoogleRequestLog[]) {
   if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(LOG_KEY, JSON.stringify(logs.slice(-800)));
-  } catch {}
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(logs.slice(-800))); } catch {}
 }
 
 function incrementSessionAttempts(amount: number) {
@@ -141,7 +139,7 @@ export function getGoogleRequestLogs() {
 
 export function getGoogleRequestUsage(): GoogleRequestUsage {
   const logs = safeReadLogs();
-  const now = browserNow();
+  const now = new Date();
   const today = dateKey(now);
   const month = monthKey(now);
   const attempts = (items: GoogleRequestLog[]) => items.reduce((sum, item) => sum + (item.attempted || 0), 0);
@@ -171,8 +169,12 @@ function readCacheEntry<T>(key: string): T | null {
   }
 }
 
+export function getCachedGooglePlaceDetails(googlePlaceId: string) {
+  return readCacheEntry<GoogleLiveDetails>(`detail:${googlePlaceId}`);
+}
+
 export function hasGooglePlaceDetailsCache(googlePlaceId: string) {
-  return Boolean(readCacheEntry<GoogleLiveDetails>(`detail:${googlePlaceId}`));
+  return Boolean(getCachedGooglePlaceDetails(googlePlaceId));
 }
 
 export function googleTextSearchCacheKey(input: { query: string; center: { lat: number; lng: number }; radiusMeters: number; language?: "th" | "en" }) {
@@ -218,10 +220,7 @@ export function previewGoogleRequestBatch(places: Place[], safetyLimit = DEFAULT
   const ineligible: Place[] = [];
   for (const place of places) {
     const id = place.googlePlaceId;
-    if (!id) {
-      ineligible.push(place);
-      continue;
-    }
+    if (!id) { ineligible.push(place); continue; }
     if (seen.has(id)) continue;
     seen.add(id);
     if (hasGooglePlaceDetailsCache(id)) cached.push(place);
@@ -276,13 +275,7 @@ export async function runGoogleRequestBatch(input: {
   let networkAttempts = 0;
   let cancelled = false;
 
-  const publish = (currentName?: string) => input.onProgress?.({
-    completed,
-    remaining: Math.max(0, logicalRequests - completed),
-    failed: failures.length,
-    networkAttempts,
-    currentName,
-  });
+  const publish = (currentName?: string) => input.onProgress?.({ completed, remaining: Math.max(0, logicalRequests - completed), failed: failures.length, networkAttempts, currentName });
   publish();
 
   for (let offset = 0; offset < queue.length; offset += 3) {
@@ -290,35 +283,17 @@ export async function runGoogleRequestBatch(input: {
     const batch = queue.slice(offset, offset + 3);
     await Promise.all(batch.map(async (place) => {
       if (input.isCancelled?.()) return;
-      const started = performance.now();
+      const started = nowMs();
       networkAttempts += 1;
       publish(place.name);
       try {
         const live = await fetchGoogleLiveDetails(input.apiKey, place.googlePlaceId as string);
         details.push({ place, live });
-        logGoogleRequest({
-          requestType: "place_details",
-          placeId: place.id,
-          placeName: place.name,
-          googlePlaceId: place.googlePlaceId || undefined,
-          status: "success",
-          attempted: 1,
-          retryCount: 0,
-          durationMs: Math.round(performance.now() - started),
-        });
+        logGoogleRequest({ requestType: "place_details", placeId: place.id, placeName: place.name, googlePlaceId: place.googlePlaceId || undefined, status: "success", attempted: 1, retryCount: 0, durationMs: Math.round(nowMs() - started) });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Google request failed";
         failures.push({ place, error: message });
-        logGoogleRequest({
-          requestType: "place_details",
-          placeId: place.id,
-          placeName: place.name,
-          googlePlaceId: place.googlePlaceId || undefined,
-          status: "failed",
-          attempted: 1,
-          retryCount: 0,
-          durationMs: Math.round(performance.now() - started),
-        });
+        logGoogleRequest({ requestType: "place_details", placeId: place.id, placeName: place.name, googlePlaceId: place.googlePlaceId || undefined, status: "failed", attempted: 1, retryCount: 0, durationMs: Math.round(nowMs() - started) });
       } finally {
         completed += 1;
         publish(place.name);
@@ -327,16 +302,17 @@ export async function runGoogleRequestBatch(input: {
   }
 
   if (input.isCancelled?.() && completed < logicalRequests) cancelled = true;
-  return {
-    logicalRequests,
-    networkAttempts,
-    succeeded: details.length,
-    failed: failures.length,
-    retries: 0,
-    cancelled,
-    details,
-    failures,
-  };
+  return { logicalRequests, networkAttempts, succeeded: details.length, failed: failures.length, retries: 0, cancelled, details, failures };
+}
+
+export async function runGoogleSinglePlaceDetails(input: { apiKey: string; place: Place; dailyLimit?: number }) {
+  if (!input.place.googlePlaceId) throw new Error("Google Place ID is required");
+  const cached = getCachedGooglePlaceDetails(input.place.googlePlaceId);
+  if (cached) return { live: cached, networkAttempts: 0, fromCache: true };
+  const result = await runGoogleRequestBatch({ apiKey: input.apiKey, places: [input.place], safetyLimit: 1, dailyLimit: input.dailyLimit });
+  const live = result.details[0]?.live;
+  if (!live) throw new Error(result.failures[0]?.error || "Google Place Details request failed");
+  return { live, networkAttempts: result.networkAttempts, fromCache: false };
 }
 
 export async function retryFailedGoogleRequests(input: {
@@ -346,15 +322,44 @@ export async function retryFailedGoogleRequests(input: {
   dailyLimit?: number;
   isCancelled?: () => boolean;
   onProgress?: (progress: GoogleRequestProgress) => void;
-}) {
-  return runGoogleRequestBatch({
-    apiKey: input.apiKey,
-    places: input.failures.map((item) => item.place),
-    safetyLimit: input.safetyLimit,
-    dailyLimit: input.dailyLimit,
-    isCancelled: input.isCancelled,
-    onProgress: input.onProgress,
-  });
+}): Promise<GoogleRequestBatchResult> {
+  if (GOOGLE_REQUEST_MODE !== "manual") throw new Error("Google request policy is not manual");
+  const safetyLimit = input.safetyLimit ?? DEFAULT_GOOGLE_BATCH_LIMIT;
+  const dailyLimit = input.dailyLimit ?? DEFAULT_GOOGLE_DAILY_LIMIT;
+  const remainingDaily = Math.max(0, dailyLimit - getGoogleRequestUsage().today);
+  const queue = input.failures.slice(0, Math.min(safetyLimit, remainingDaily));
+  const details: Array<{ place: Place; live: GoogleLiveDetails }> = [];
+  const failures: GoogleRequestFailure[] = [];
+  let completed = 0;
+  let networkAttempts = 0;
+  let cancelled = false;
+  const publish = (currentName?: string) => input.onProgress?.({ completed, remaining: Math.max(0, queue.length - completed), failed: failures.length, networkAttempts, currentName });
+  publish();
+
+  for (let offset = 0; offset < queue.length; offset += 3) {
+    if (input.isCancelled?.()) { cancelled = true; break; }
+    const batch = queue.slice(offset, offset + 3);
+    await Promise.all(batch.map(async ({ place }) => {
+      if (input.isCancelled?.()) return;
+      const started = nowMs();
+      networkAttempts += 1;
+      publish(place.name);
+      try {
+        const live = await fetchGoogleLiveDetails(input.apiKey, place.googlePlaceId as string, 0);
+        details.push({ place, live });
+        logGoogleRequest({ requestType: "place_details", placeId: place.id, placeName: place.name, googlePlaceId: place.googlePlaceId || undefined, status: "success", attempted: 1, retryCount: 1, durationMs: Math.round(nowMs() - started) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Google retry failed";
+        failures.push({ place, error: message });
+        logGoogleRequest({ requestType: "place_details", placeId: place.id, placeName: place.name, googlePlaceId: place.googlePlaceId || undefined, status: "failed", attempted: 1, retryCount: 1, durationMs: Math.round(nowMs() - started) });
+      } finally {
+        completed += 1;
+        publish(place.name);
+      }
+    }));
+  }
+  if (input.isCancelled?.() && completed < queue.length) cancelled = true;
+  return { logicalRequests: queue.length, networkAttempts, succeeded: details.length, failed: failures.length, retries: networkAttempts, cancelled, details, failures };
 }
 
 export async function runGoogleTextSearchRequest(input: {
@@ -372,38 +377,13 @@ export async function runGoogleTextSearchRequest(input: {
   const usage = getGoogleRequestUsage();
   const dailyLimit = input.dailyLimit ?? DEFAULT_GOOGLE_DAILY_LIMIT;
   if (!fromCache && usage.today >= dailyLimit) throw new Error("Daily manual Google request limit reached");
-  const started = performance.now();
+  const started = nowMs();
   try {
-    const candidates = await discoverGooglePlaces(input.apiKey, {
-      query: input.query,
-      center: input.center,
-      radiusMeters: input.radiusMeters,
-      language: input.language,
-      maxResults: input.maxResults,
-    });
-    if (!fromCache) {
-      logGoogleRequest({
-        requestType: "text_search",
-        query: input.query,
-        status: "success",
-        attempted: 1,
-        retryCount: 0,
-        durationMs: Math.round(performance.now() - started),
-        candidateCount: candidates.length,
-      });
-    }
+    const candidates = await discoverGooglePlaces(input.apiKey, { query: input.query, center: input.center, radiusMeters: input.radiusMeters, language: input.language, maxResults: input.maxResults });
+    if (!fromCache) logGoogleRequest({ requestType: "text_search", query: input.query, status: "success", attempted: 1, retryCount: 0, durationMs: Math.round(nowMs() - started), candidateCount: candidates.length });
     return { logicalRequests: 1, networkAttempts: fromCache ? 0 : 1, succeeded: 1, failed: 0, fromCache, candidates };
   } catch (error) {
-    if (!fromCache) {
-      logGoogleRequest({
-        requestType: "text_search",
-        query: input.query,
-        status: "failed",
-        attempted: 1,
-        retryCount: 0,
-        durationMs: Math.round(performance.now() - started),
-      });
-    }
+    if (!fromCache) logGoogleRequest({ requestType: "text_search", query: input.query, status: "failed", attempted: 1, retryCount: 0, durationMs: Math.round(nowMs() - started) });
     throw error;
   }
 }
