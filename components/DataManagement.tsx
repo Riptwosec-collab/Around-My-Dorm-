@@ -105,10 +105,13 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manual, setManual] = useState({ name: "", category: "food" as CategoryId, latitude: "", longitude: "", address: "", area: "" });
+  const [scopeCategory, setScopeCategory] = useState<CategoryId>("cafe");
+  const [scopeArea, setScopeArea] = useState("");
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState<string[]>([]);
 
   const summary = useMemo(() => auditPlaces(places), [places]);
   const duplicates = useMemo(() => findDuplicatePairs(places).slice(0, 20), [places]);
-  const selected = useMemo(() => selectPlacesForUpdate(places, mode), [places, mode]);
+  const selected = useMemo(() => selectPlacesForUpdate(places, mode, { selectedIds: selectedPlaceIds, category: scopeCategory, area: scopeArea }), [places, mode, selectedPlaceIds, scopeCategory, scopeArea]);
   const lastUpdated = useMemo(() => {
     const dates = places.map((place) => place.lastUpdated || place.lastChecked || place.lastVerified).filter(Boolean).map((value) => new Date(value as string).getTime()).filter(Number.isFinite);
     if (!dates.length) return null;
@@ -153,6 +156,30 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
     setPending(next);
     setHistory(loadLocalPlaceHistory());
     onReload();
+  }
+
+  function applySingleField(changeId: string, fieldName: string) {
+    const change = pending.find((item) => item.id === changeId);
+    if (!change) return;
+    const place = places.find((item) => item.id === change.placeId);
+    const field = change.fields.find((item) => String(item.field) === fieldName);
+    if (!place || !field) return;
+    applyLocalPlacePatch(place, { [field.field]: field.incomingValue } as Partial<Place>, `${change.source}:field_review`);
+    resolveFieldDecision(changeId, fieldName);
+    setHistory(loadLocalPlaceHistory());
+    onReload();
+  }
+
+  function resolveFieldDecision(changeId: string, fieldName: string) {
+    const next = pending.flatMap((change) => {
+      if (change.id !== changeId) return [change];
+      const fields = change.fields.filter((field) => String(field.field) !== fieldName);
+      if (!fields.length) return [];
+      const risk = (fields.some((field) => field.risk === "high") ? "high" : fields.some((field) => field.risk === "review") ? "review" : "safe") as "safe" | "review" | "high";
+      return [{ ...change, fields, risk }];
+    });
+    savePendingPlaceChanges(next);
+    setPending(next);
   }
 
   function ignoreChange(changeId: string) {
@@ -237,8 +264,11 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
         <section className="amd-glass amd-card mt-4 p-4">
           <p className="text-[11px] font-bold">{language === "en" ? "Update mode" : "โหมดตรวจอัปเดต"}</p>
           <select value={mode} onChange={(event) => setMode(event.target.value as UpdateMode)} className="amd-input mt-3 h-12 w-full rounded-2xl bg-[#07111f] px-3 text-[11px] outline-none">
-            <option value="all">{language === "en" ? "All places" : "ทุกสถานที่"}</option><option value="older14">{language === "en" ? "Older than 14 days" : "เก่ากว่า 14 วัน"}</option><option value="older30">{language === "en" ? "Older than 30 days" : "เก่ากว่า 30 วัน"}</option><option value="older90">{language === "en" ? "Older than 90 days" : "เก่ากว่า 90 วัน"}</option><option value="restaurants_cafes">{language === "en" ? "Restaurants & cafes" : "ร้านอาหารและคาเฟ่"}</option><option value="parking">{language === "en" ? "Parking only" : "ที่จอดรถเท่านั้น"}</option>
+            <option value="all">{language === "en" ? "All places" : "ทุกสถานที่"}</option><option value="older14">{language === "en" ? "Older than 14 days" : "เก่ากว่า 14 วัน"}</option><option value="older30">{language === "en" ? "Older than 30 days" : "เก่ากว่า 30 วัน"}</option><option value="older90">{language === "en" ? "Older than 90 days" : "เก่ากว่า 90 วัน"}</option><option value="restaurants_cafes">{language === "en" ? "Restaurants & cafes" : "ร้านอาหารและคาเฟ่"}</option><option value="parking">{language === "en" ? "Parking only" : "ที่จอดรถเท่านั้น"}</option><option value="category">{language === "en" ? "Selected category" : "เลือกหมวด"}</option><option value="area">{language === "en" ? "Selected area" : "เลือกพื้นที่"}</option><option value="selected">{language === "en" ? "Selected places only" : "เลือกเฉพาะร้าน"}</option>
           </select>
+          {mode === "category" && <select value={scopeCategory} onChange={(event) => setScopeCategory(event.target.value as CategoryId)} className="amd-input mt-2 h-11 w-full rounded-xl bg-[#07111f] px-3 text-[10px]">{CATEGORIES.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+          {mode === "area" && <input value={scopeArea} onChange={(event) => setScopeArea(event.target.value)} placeholder={language === "en" ? "Area / soi / address" : "พื้นที่ / ซอย / ที่อยู่"} className="amd-input mt-2 h-11 w-full rounded-xl px-3 text-[10px]" />}
+          {mode === "selected" && <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-white/[0.07] bg-black/10 p-2">{places.map((place) => { const checked = selectedPlaceIds.includes(place.id); return <label key={place.id} className="flex min-h-10 cursor-pointer items-center gap-2 border-b border-white/[0.04] px-2 text-[9px] last:border-0"><input type="checkbox" checked={checked} onChange={() => setSelectedPlaceIds((current) => checked ? current.filter((id) => id !== place.id) : [...current, place.id])} /><span className="min-w-0 flex-1 truncate">{place.name}</span><span className="text-[var(--amd-text-3)]">{place.area}</span></label>; })}</div>}
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={runLocalAudit} disabled={Boolean(progress)} className="amd-btn amd-btn-primary flex min-h-11 items-center gap-2 rounded-xl px-4 text-[10px] font-bold"><RefreshCw className={`h-4 w-4 ${progress ? "animate-spin" : ""}`} />{language === "en" ? "Check Existing Places" : "ตรวจร้านเดิม"}</button>
             <label className="amd-btn flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><FileUp className="h-4 w-4" />{language === "en" ? "Review Import File" : "ตรวจไฟล์ Import"}<input type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importProviderFile(file); event.currentTarget.value = ""; }} /></label>
@@ -258,7 +288,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
 
         <section className="amd-glass amd-card mt-4 p-4">
           <div className="flex items-center justify-between"><div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-[#00D9FF]" /><p className="text-[12px] font-semibold">{language === "en" ? "Review Changes" : "ตรวจการเปลี่ยนแปลง"}</p></div><span className="rounded-full bg-white/[0.06] px-2 py-1 text-[9px]">{pending.length}</span></div>
-          {!pending.length ? <p className="mt-3 text-[10px] leading-5 text-[var(--amd-text-3)]">{language === "en" ? "No approved provider diffs are waiting for review." : "ยังไม่มี Diff จาก Approved Importer รอตรวจ ระบบจะไม่เขียนทับ Production โดยตรง"}</p> : <div className="mt-3 space-y-2">{pending.slice(0, 30).map((change) => <div key={change.id} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold">{change.placeName}</p><p className="mt-1 text-[8px] uppercase text-[var(--amd-text-3)]">{change.risk} • {change.source}</p></div>{change.risk === "high" && <AlertTriangle className="h-4 w-4 text-amber-300" />}</div><div className="mt-2 space-y-1">{change.fields.slice(0, 4).map((field) => <p key={String(field.field)} className="text-[9px] text-[var(--amd-text-2)]">{String(field.field)}: <span className="text-white/45">{String(field.previousValue ?? "—")}</span> → <span className="text-white/80">{String(field.incomingValue ?? "—")}</span></p>)}</div><div className="mt-3 flex gap-2"><button type="button" onClick={() => applySafeChange(change.id)} className="amd-chip h-9 min-h-0 px-3 text-[9px] text-emerald-200">{language === "en" ? "Apply Safe Fields" : "ใช้เฉพาะ Safe Fields"}</button><button type="button" onClick={() => ignoreChange(change.id)} className="amd-chip h-9 min-h-0 px-3 text-[9px]">{language === "en" ? "Ignore" : "ข้าม"}</button></div></div>)}</div>}
+          {!pending.length ? <p className="mt-3 text-[10px] leading-5 text-[var(--amd-text-3)]">{language === "en" ? "No approved provider diffs are waiting for review." : "ยังไม่มี Diff จาก Approved Importer รอตรวจ ระบบจะไม่เขียนทับ Production โดยตรง"}</p> : <div className="mt-3 space-y-2">{pending.slice(0, 30).map((change) => <div key={change.id} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold">{change.placeName}</p><p className="mt-1 text-[8px] uppercase text-[var(--amd-text-3)]">{change.risk} • {change.source}</p></div>{change.risk === "high" && <AlertTriangle className="h-4 w-4 text-amber-300" />}</div><div className="mt-2 space-y-1">{change.fields.slice(0, 6).map((field) => <div key={String(field.field)} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-2"><p className="text-[9px] font-semibold text-[var(--amd-text-2)]">{String(field.field)} <span className={`ml-1 uppercase ${field.risk === "high" ? "text-amber-200" : field.risk === "review" ? "text-[#8ecbff]" : "text-emerald-200"}`}>{field.risk}</span></p><p className="mt-1 break-all text-[8px] text-white/40">{String(field.previousValue ?? "—")} → <span className="text-white/75">{String(field.incomingValue ?? "—")}</span></p><div className="mt-2 flex gap-1.5"><button type="button" onClick={() => applySingleField(change.id, String(field.field))} className="amd-chip h-8 min-h-0 px-2 text-[8px] text-emerald-200">{language === "en" ? "Use New" : "ใช้ข้อมูลใหม่"}</button><button type="button" onClick={() => resolveFieldDecision(change.id, String(field.field))} className="amd-chip h-8 min-h-0 px-2 text-[8px]">{language === "en" ? "Keep Existing" : "ใช้ข้อมูลเดิม"}</button></div></div>)}</div><div className="mt-3 flex gap-2"><button type="button" onClick={() => applySafeChange(change.id)} className="amd-chip h-9 min-h-0 px-3 text-[9px] text-emerald-200">{language === "en" ? "Apply Safe Fields" : "ใช้เฉพาะ Safe Fields"}</button><button type="button" onClick={() => ignoreChange(change.id)} className="amd-chip h-9 min-h-0 px-3 text-[9px]">{language === "en" ? "Ignore" : "ข้าม"}</button></div></div>)}</div>}
         </section>
 
         <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-300" /><p className="text-[12px] font-semibold">{language === "en" ? "Possible duplicates" : "รายการที่อาจซ้ำ"}</p></div><p className="mt-1 text-[9px] text-[var(--amd-text-3)]">{duplicates.length} {language === "en" ? "pairs flagged by similar name + coordinate proximity" : "คู่ที่พบจากชื่อใกล้เคียง + พิกัดใกล้กัน"}</p>{duplicates.slice(0, 5).map(({ a, b }) => <div key={`${a.id}-${b.id}`} className="mt-2 rounded-xl bg-white/[0.035] p-3 text-[9px]"><p className="font-semibold">{a.name}</p><p className="mt-1 text-[var(--amd-text-3)]">↔ {b.name}</p></div>)}</section>
