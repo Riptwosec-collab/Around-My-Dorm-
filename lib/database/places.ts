@@ -1,5 +1,6 @@
 import { PLACES as EMBEDDED_PLACES } from "@/data/places";
 import type { Place } from "@/types/place";
+import { prepareProvenancePatch } from "@/lib/field-provenance";
 
 export type PlaceDatabaseSource = "supabase" | "embedded";
 
@@ -119,18 +120,25 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
   return { places: applyLocalDatabaseLayer(EMBEDDED_PLACES), source: "embedded", loadedAt: new Date().toISOString(), warning: null };
 }
 
-export function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source = "manual_review") {
-  if (typeof window === "undefined") return;
+export type ApplyLocalPlacePatchResult = { appliedFields: string[]; blockedFields: string[] };
+
+export function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source = "manual_review"): ApplyLocalPlacePatchResult {
+  if (typeof window === "undefined") return { appliedFields: [], blockedFields: [] };
   const overrides = parseLocal<Record<string, LocalPlaceOverride>>(OVERRIDES_KEY, {});
   const appliedAt = new Date().toISOString();
+  const prepared = prepareProvenancePatch(place, patch, source, appliedAt);
+  if (!prepared.appliedFields.length) return { appliedFields: [], blockedFields: prepared.blockedFields };
+
+  const guardedPatch = prepared.patch;
   const previousData: Partial<Place> = {};
-  for (const key of Object.keys(patch) as Array<keyof Place>) previousData[key] = place[key] as never;
-  overrides[place.id] = { placeId: place.id, patch: { ...(overrides[place.id]?.patch || {}), ...patch }, appliedAt, source };
+  for (const key of Object.keys(guardedPatch) as Array<keyof Place>) previousData[key] = place[key] as never;
+  overrides[place.id] = { placeId: place.id, patch: { ...(overrides[place.id]?.patch || {}), ...guardedPatch }, appliedAt, source };
   localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
 
   const history = parseLocal<LocalPlaceHistory[]>(HISTORY_KEY, []);
-  const entry: LocalPlaceHistory = { id: `${place.id}-${Date.now()}`, placeId: place.id, placeName: place.name, changedAt: appliedAt, source, previousData, newData: patch };
+  const entry: LocalPlaceHistory = { id: `${place.id}-${Date.now()}`, placeId: place.id, placeName: place.name, changedAt: appliedAt, source, previousData, newData: guardedPatch };
   localStorage.setItem(HISTORY_KEY, JSON.stringify([entry, ...history].slice(0, 200)));
+  return { appliedFields: prepared.appliedFields, blockedFields: prepared.blockedFields };
 }
 
 export function addReviewedLocalPlace(place: Place, source = "manual") {

@@ -156,10 +156,22 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
       return;
     }
     const patch = Object.fromEntries(safeFields.map((field) => [field.field, field.incomingValue])) as Partial<Place>;
-    applyLocalPlacePatch(place, patch, change.source);
-    const next = pending.filter((item) => item.id !== changeId);
+    const result = applyLocalPlacePatch(place, patch, change.source);
+    if (!result.appliedFields.length) {
+      setMessage(language === "en" ? "Protected higher-confidence fields were not overwritten." : "ไม่ได้เขียนทับฟิลด์ที่มีแหล่งข้อมูลความมั่นใจสูงกว่า");
+      return;
+    }
+    const applied = new Set(result.appliedFields);
+    const next = pending.flatMap((item) => {
+      if (item.id !== changeId) return [item];
+      const fields = item.fields.filter((field) => !applied.has(String(field.field)));
+      if (!fields.length) return [];
+      const risk = (fields.some((field) => field.risk === "high") ? "high" : fields.some((field) => field.risk === "review") ? "review" : "safe") as "safe" | "review" | "high";
+      return [{ ...item, fields, risk }];
+    });
     savePendingPlaceChanges(next);
     setPending(next);
+    if (result.blockedFields.length) setMessage(language === "en" ? `${result.blockedFields.length} protected field(s) kept for review.` : `เก็บ ${result.blockedFields.length} ฟิลด์ที่มีแหล่งข้อมูลความมั่นใจสูงกว่าไว้ตรวจสอบ`);
     setHistory(loadLocalPlaceHistory());
     onReload();
   }
@@ -170,7 +182,11 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
     const place = places.find((item) => item.id === change.placeId);
     const field = change.fields.find((item) => String(item.field) === fieldName);
     if (!place || !field) return;
-    applyLocalPlacePatch(place, { [field.field]: field.incomingValue } as Partial<Place>, `${change.source}:field_review`);
+    const result = applyLocalPlacePatch(place, { [field.field]: field.incomingValue } as Partial<Place>, `${change.source}:field_review`);
+    if (!result.appliedFields.includes(fieldName)) {
+      setMessage(language === "en" ? "Field was protected and not changed." : "ฟิลด์นี้ถูกป้องกันและไม่ได้เปลี่ยนแปลง");
+      return;
+    }
     resolveFieldDecision(changeId, fieldName);
     setHistory(loadLocalPlaceHistory());
     onReload();

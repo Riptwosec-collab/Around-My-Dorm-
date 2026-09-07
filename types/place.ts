@@ -79,6 +79,26 @@ export type PlaceDataSource = {
   checkedAt: string;
 };
 
+export type FieldProvenanceSource =
+  | "manual_verified"
+  | "official"
+  | "seed"
+  | "approved_import"
+  | "google_places_admin"
+  | "google_places_live"
+  | "fallback";
+
+export type FieldProvenanceConfidence = "verified" | "high" | "medium" | "low";
+
+export type FieldProvenanceEntry = {
+  source: FieldProvenanceSource;
+  checkedAt: string;
+  verifiedAt?: string | null;
+  confidence: FieldProvenanceConfidence;
+  sourceId?: string | null;
+  sourceUrl?: string | null;
+};
+
 export type Pricing = {
   type: "range" | "fixed" | "per_person" | "per_hour" | "per_day" | "per_month" | "free" | "unknown";
   min: number | null;
@@ -271,6 +291,7 @@ export type Place = {
   imageVerifiedAt?: string | null;
   deliveryVerifiedAt?: string | null;
   parkingVerifiedAt?: string | null;
+  fieldProvenance?: Record<string, FieldProvenanceEntry>;
   notes: string | null;
 };
 
