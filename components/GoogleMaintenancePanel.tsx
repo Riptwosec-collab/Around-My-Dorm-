@@ -22,10 +22,11 @@ import { normalizeText } from "@/lib/place-utils";
 import type { CategoryId, Place } from "@/types/place";
 import { CATEGORIES } from "@/data/categories";
 import { getGoogleApiControlSettings, requestUsageWarning, saveGoogleApiControlSettings } from "@/lib/google-api-control";
+import { buildRefreshQueue, recommendedRefreshPlaces } from "@/lib/refresh-priority";
 
 type ReviewField = { label: string; existing: unknown; live: unknown; risk: "review" | "high" };
 type ReviewItem = { place: Place; live: GoogleLiveDetails; fields: ReviewField[]; possiblyClosed: boolean };
-type RequestScope = "all" | "older30" | "older60" | "older90" | "category" | "area" | "selected" | "missing_id" | "with_id";
+type RequestScope = "recommended" | "all" | "older30" | "older60" | "older90" | "category" | "area" | "selected" | "missing_id" | "with_id";
 
 function same(a: unknown, b: unknown) {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -97,7 +98,11 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
   const cancelRef = useRef(false);
   const runningRef = useRef(false);
 
+  const refreshQueue = useMemo(() => buildRefreshQueue(places), [places]);
+  const recommendedPlaces = useMemo(() => recommendedRefreshPlaces(places, safetyLimit), [places, safetyLimit]);
+
   const requestPlaces = useMemo(() => {
+    if (scope === "recommended") return recommendedPlaces;
     if (scope === "all") return places;
     if (scope === "older30") return places.filter((place) => ageDays(place) > 30);
     if (scope === "older60") return places.filter((place) => ageDays(place) > 60);
@@ -113,14 +118,16 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
     }
     if (scope === "missing_id") return places.filter((place) => !place.googlePlaceId);
     return places.filter((place) => Boolean(place.googlePlaceId));
-  }, [places, scope, scopeCategory, scopeArea, selectedIds]);
+  }, [places, scope, scopeCategory, scopeArea, selectedIds, recommendedPlaces]);
 
   const estimate = useMemo(() => estimatePlaceDetailRequests(requestPlaces, safetyLimit), [requestPlaces, safetyLimit, usageVersion]);
+  const recommendedEstimate = useMemo(() => estimatePlaceDetailRequests(recommendedPlaces, safetyLimit), [recommendedPlaces, safetyLimit, usageVersion]);
   const preview = useMemo(() => previewGoogleRequestBatch(requestPlaces, safetyLimit), [requestPlaces, safetyLimit, usageVersion]);
   const usage = useMemo(() => getGoogleRequestUsage(), [usageVersion]);
   const history = useMemo(() => groupedHistory(), [usageVersion]);
   const remainingDaily = Math.max(0, DEFAULT_GOOGLE_DAILY_LIMIT - usage.today);
   const executableCount = Math.min(estimate.batchRequests, remainingDaily);
+  const recommendedExecutableCount = Math.min(recommendedEstimate.batchRequests, remainingDaily);
   const largeBatch = executableCount > 25;
   const strongWarning = estimate.newRequests >= 100;
   const dailyWarning = useMemo(() => requestUsageWarning(usage.today, apiControl.dailyWarningLimit), [usage.today, apiControl.dailyWarningLimit]);
@@ -186,6 +193,17 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
     }
   }
 
+  function requestRecommendedRun() {
+    if (apiControl.locked || recommendedExecutableCount <= 0) return;
+    setScope("recommended");
+    setConfirmOpen(true);
+  }
+
+  function previewRecommended() {
+    setScope("recommended");
+    setPreviewOpen(true);
+  }
+
   function requestRun() {
     if (executableCount <= 0) return;
     if (largeBatch || strongWarning) setConfirmOpen(true);
@@ -213,9 +231,22 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
       </div>
       {!apiKey && <p className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[0.06] px-3 py-2 text-[9px] text-amber-100">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not configured.</p>}
 
+      <div data-testid="data-refresh-queue" className="mt-4 rounded-2xl border border-white/[0.07] bg-black/10 p-4">
+        <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold">DATA REFRESH QUEUE</p><p className="mt-1 text-[8px] leading-4 text-white/34">{language === "en" ? "Priority is calculated locally from closure risk, age, missing fields, local relevance, category volatility and verification state." : "จัดลำดับในเครื่องจากความเสี่ยงปิดร้าน อายุข้อมูล ฟิลด์ที่ขาด ความสำคัญในระบบ ความผันผวนของหมวด และสถานะการยืนยัน"}</p></div><span className="rounded-full border border-cyan-300/15 bg-cyan-300/[0.05] px-2 py-1 text-[7px] font-bold text-cyan-200">0 API CALLS</span></div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{[
+          ["CRITICAL", refreshQueue.critical.length, "text-rose-200"],
+          ["HIGH", refreshQueue.high.length, "text-amber-100"],
+          ["MEDIUM", refreshQueue.medium.length, "text-[#8ecbff]"],
+          ["LOW", refreshQueue.low.length, "text-white/58"],
+        ].map(([label, value, tone]) => <div key={String(label)} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-3"><p className={`text-[8px] font-bold ${tone}`}>{label}</p><p className="mt-1 text-[18px] font-bold">{value}</p></div>)}</div>
+        <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3"><div className="flex items-center justify-between gap-3"><div><p className="text-[9px] font-bold">RECOMMENDED UPDATE BATCH</p><p className="mt-1 text-[8px] text-white/32">Highest-priority Google-linked records first. Missing Place IDs stay in Place ID Manager.</p></div><div className="text-right"><p className="text-[18px] font-bold text-[#19E6FF]">{recommendedPlaces.length}</p><p className="text-[7px] text-white/28">places</p></div></div><div className="mt-2 flex items-center justify-between text-[8px] text-white/38"><span>Estimated new requests</span><strong className="text-white/78">{recommendedEstimate.newRequests}</strong></div><div className="mt-3 flex gap-2"><button data-testid="refresh-queue-preview" type="button" disabled={!recommendedPlaces.length || Boolean(progress)} onClick={previewRecommended} className="amd-chip min-h-11 flex-1 px-3 text-[8px] font-bold disabled:opacity-35">Preview {recommendedEstimate.newRequests}</button><button data-testid="refresh-queue-run" type="button" disabled={!apiKey || apiControl.locked || recommendedExecutableCount <= 0 || Boolean(progress)} onClick={requestRecommendedRun} className="amd-btn amd-btn-primary min-h-11 flex-1 rounded-xl px-3 text-[8px] font-bold disabled:opacity-35">Run {recommendedExecutableCount} Requests</button></div><p className="mt-2 text-[7px] leading-4 text-white/26">Recommendation never auto-runs. Required flow: recommend → preview/confirm → explicit manual execute.</p></div>
+        <details className="mt-3 rounded-xl border border-white/[0.05] bg-white/[0.02] p-3"><summary className="cursor-pointer text-[8px] font-semibold text-white/58">Top priority details</summary><div className="mt-2 space-y-2">{refreshQueue.items.filter((item) => item.priority !== "current").slice(0, 12).map((item) => <div key={item.place.id} className="flex items-start justify-between gap-3 border-b border-white/[0.04] pb-2 last:border-0"><div className="min-w-0"><p className="truncate text-[8px] font-semibold">{item.place.name}</p><p className="mt-1 truncate text-[7px] text-white/30">{item.reasons.join(" • ")}</p></div><div className="shrink-0 text-right"><p className="text-[8px] font-bold">{item.priority.toUpperCase()} · {item.score}</p><p className="mt-1 text-[7px] text-white/25">{item.googleEligible ? "Google ID ✓" : "No Place ID"}</p></div></div>)}</div></details>
+      </div>
+
       <div className="mt-4">
         <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/38">DATA UPDATE SCOPE</p>
         <select value={scope} disabled={Boolean(progress)} onChange={(event) => setScope(event.target.value as RequestScope)} className="amd-input mt-2 h-11 w-full rounded-xl bg-[#07111f] px-3 text-[10px]">
+          <option value="recommended">Recommended Update Batch</option>
           <option value="all">All Places</option>
           <option value="older30">Older than 30 Days</option>
           <option value="older60">Older than 60 Days</option>
