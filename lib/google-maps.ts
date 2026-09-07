@@ -1,4 +1,4 @@
-import type { CategoryId, OpeningHours, Place } from "@/types/place";
+import type { CategoryId, DayKey, OpeningHours, OpeningPeriod, Place, StructuredOpeningHours } from "@/types/place";
 import { DORM_CENTER, googleMapsSearchUrl, withDistance } from "@/lib/place-utils";
 
 const EMPTY_HOURS: OpeningHours = {
@@ -30,8 +30,8 @@ export function loadGoogleMaps(apiKey: string) {
     script.src =
       `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}` +
       "&v=weekly&libraries=places,marker&language=th&region=TH";
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Google Maps load failed"));
+    script.onload = () => { if (window.google?.maps) resolve(); else { delete window.__aroundDormMapsPromise; reject(new Error("Google Maps initialized without maps library")); } };
+    script.onerror = () => { delete window.__aroundDormMapsPromise; reject(new Error("Google Maps load failed")); };
     document.head.appendChild(script);
   });
 
@@ -71,10 +71,43 @@ function locationLiteral(location: any) {
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }
 
+const GOOGLE_DAY_KEYS: DayKey[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+function googleTime(value: any) {
+  if (!value || !Number.isFinite(value.hour)) return null;
+  const hour = String(value.hour).padStart(2, "0");
+  const minute = String(Number.isFinite(value.minute) ? value.minute : 0).padStart(2, "0");
+  return `${hour}:${minute}`;
+}
+
+function structuredHoursFromGoogle(hours: any): StructuredOpeningHours | undefined {
+  const periods = Array.isArray(hours?.periods) ? hours.periods : [];
+  if (!periods.length) return undefined;
+  const result: StructuredOpeningHours = {};
+  for (const period of periods) {
+    const openDay = Number(period?.open?.day);
+    const open = googleTime(period?.open);
+    const close = googleTime(period?.close);
+    if (!Number.isInteger(openDay) || openDay < 0 || openDay > 6 || !open || !close) continue;
+    const key = GOOGLE_DAY_KEYS[openDay];
+    const current = result[key] || [];
+    (current as OpeningPeriod[]).push({ open, close });
+    result[key] = current;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+function isGoogle24Hours(hours: any) {
+  const descriptions = Array.isArray(hours?.weekdayDescriptions) ? hours.weekdayDescriptions.map(String) : [];
+  return descriptions.length >= 7 && descriptions.every((line: string) => /24\s*(hours?|hrs?|ชม\.?)/i.test(line));
+}
+
 export function mapGooglePlace(raw: any): Place {
   const location = locationLiteral(raw.location);
   const primaryType = raw.primaryType || "";
   const category = categoryFromGoogleType(primaryType);
+  const structuredOpeningHours = structuredHoursFromGoogle(raw.currentOpeningHours);
+  const openingHoursText = Array.isArray(raw.currentOpeningHours?.weekdayDescriptions) ? raw.currentOpeningHours.weekdayDescriptions.join(" | ") : null;
   let image: string | null = null;
   try {
     image = raw.photos?.[0]?.getURI?.({ maxWidth: 1000, maxHeight: 720 }) || null;
@@ -100,7 +133,9 @@ export function mapGooglePlace(raw: any): Place {
     walkingMinutes: null,
     drivingMinutes: null,
     openingHours: { ...EMPTY_HOURS },
-    is24Hours: false,
+    is24Hours: isGoogle24Hours(raw.currentOpeningHours),
+    structuredOpeningHours,
+    openingHoursText,
     liveOpenNow:
       typeof raw.currentOpeningHours?.openNow === "boolean"
         ? raw.currentOpeningHours.openNow

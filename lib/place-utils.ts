@@ -91,7 +91,9 @@ export function googleMapsDirectionsUrl(place: Place) {
     place.latitude != null && place.longitude != null
       ? `${place.latitude},${place.longitude}`
       : [place.name, place.address || place.area].filter(Boolean).join(" ");
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+  const placeId = place.googlePlaceId || place.googleMaps?.placeId || null;
+  const placeIdPart = placeId ? `&destination_place_id=${encodeURIComponent(placeId)}` : "";
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}${placeIdPart}`;
 }
 
 export function haversineKm(

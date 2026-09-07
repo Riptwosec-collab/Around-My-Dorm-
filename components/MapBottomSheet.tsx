@@ -24,6 +24,8 @@ export function MapBottomSheet({ place, language, onDetails }: { place: Place; l
   const startY = useRef<number | null>(null);
   const status = getPlaceOpenStatus(place);
   const category = CATEGORY_MAP[place.category];
+  const typeBadge = place.placeType === "chain" || place.placeType === "franchise" ? "CHAIN" : place.placeType === "local" || place.placeType === "independent" ? "LOCAL" : null;
+  const hiddenGem = place.tags.some((tag) => /hidden[ _-]?gem/i.test(tag));
 
   useEffect(() => setSize("half"), [place.id]);
 
@@ -63,9 +65,9 @@ export function MapBottomSheet({ place, language, onDetails }: { place: Place; l
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
-            <h3 className="min-w-0 flex-1 truncate text-[17px] font-bold tracking-[-0.015em]">{place.name}</h3>
-            {place.verified && size !== "collapsed" && <span className="flex items-center gap-1 rounded-md border border-[rgba(0,229,195,.22)] px-2 py-1 text-[8px] font-bold text-[#00E5C3]"><ShieldCheck className="h-3 w-3" /> VERIFIED</span>}
+            <h3 className="min-w-0 flex-1 line-clamp-2 text-[17px] font-bold leading-5 tracking-[-0.015em]">{place.name}</h3>
           </div>
+          {size !== "collapsed" && (typeBadge || place.verified || hiddenGem) && <div className="mt-1.5 flex flex-wrap gap-1">{typeBadge && <span className="rounded-md border border-[rgba(20,156,255,.24)] px-1.5 py-0.5 text-[7px] font-bold text-[#62baff]">{typeBadge}</span>}{place.verified && <span className="flex items-center gap-1 rounded-md border border-[rgba(0,229,195,.22)] px-1.5 py-0.5 text-[7px] font-bold text-[#00E5C3]"><ShieldCheck className="h-2.5 w-2.5" /> VERIFIED</span>}{hiddenGem && <span className="rounded-md border border-[rgba(155,108,255,.28)] px-1.5 py-0.5 text-[7px] font-bold text-[#b995ff]">HIDDEN GEM</span>}</div>}
           <p className="mt-1 truncate text-[10px] text-[var(--amd-text-2)]">{category?.name} • {place.area}</p>
           <p className="mt-2 text-[11px]"><span className={`amd-status ${status.isOpen ? "text-[#00E5C3]" : status.tone === "amber" ? "text-[#FFC341]" : "text-[var(--amd-text-3)]"}`}>{status.label}</span>{status.secondaryText ? ` • ${status.secondaryText}` : ""}</p>
           <p className="mt-1 text-[10px] text-[var(--amd-text-2)]">{formatDistance(place.distanceKm)}{size !== "collapsed" ? ` • ${formatPrice(place)}${place.rating != null ? ` • ★ ${place.rating.toFixed(1)}${place.reviewCount != null ? ` (${place.reviewCount})` : ""}` : ""}` : ""}</p>

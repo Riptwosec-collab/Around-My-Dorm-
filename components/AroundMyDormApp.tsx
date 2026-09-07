@@ -67,6 +67,7 @@ import {
   DORM_CENTER,
   DORM_NAME,
   dedupePlaces,
+  haversineKm,
   formatDistance,
   getPlaceOpenStatus,
   googleMapsDirectionsUrl,
@@ -81,6 +82,7 @@ type OriginMode = "dorm" | "me" | "custom";
 type Language = "th" | "en";
 type ThemeMode = "light" | "dark" | "system";
 type QuickFilter = "open" | "near" | "cafe" | "late" | "parking" | null;
+type MapLoadState = "idle" | "loading" | "ready" | "missing" | "error";
 
 type AppSettings = {
   theme: ThemeMode;
@@ -212,22 +214,33 @@ const SORT_OPTIONS: { id: SortMode; label: string }[] = [
 function mergeSeedAndLive(seedPlaces: Place[], livePlaces: Place[]) {
   const used = new Set<string>();
   const merged = seedPlaces.map((seed) => {
-    const live = livePlaces.find((candidate) => normalizeText(candidate.name) === normalizeText(seed.name));
+    const live = livePlaces.find((candidate) => {
+      if (seed.googlePlaceId && candidate.googlePlaceId && seed.googlePlaceId === candidate.googlePlaceId) return true;
+      const seedName = normalizeText(seed.name);
+      const candidateName = normalizeText(candidate.name);
+      if (seedName === candidateName) return true;
+      if (!seedName || !candidateName || (!seedName.includes(candidateName) && !candidateName.includes(seedName))) return false;
+      if (seed.latitude == null || seed.longitude == null || candidate.latitude == null || candidate.longitude == null) return false;
+      return haversineKm({ lat: seed.latitude, lng: seed.longitude }, { lat: candidate.latitude, lng: candidate.longitude }) <= 0.12;
+    });
     if (!live) return seed;
     used.add(live.id);
     return {
       ...seed,
       googlePlaceId: live.googlePlaceId,
       address: live.address || seed.address,
-      latitude: live.latitude,
-      longitude: live.longitude,
-      distanceKm: live.distanceKm,
-      walkingMinutes: live.walkingMinutes,
-      drivingMinutes: live.drivingMinutes,
-      liveOpenNow: live.liveOpenNow,
+      latitude: live.latitude ?? seed.latitude,
+      longitude: live.longitude ?? seed.longitude,
+      distanceKm: live.distanceKm ?? seed.distanceKm,
+      walkingMinutes: live.walkingMinutes ?? seed.walkingMinutes,
+      drivingMinutes: live.drivingMinutes ?? seed.drivingMinutes,
+      liveOpenNow: live.liveOpenNow ?? seed.liveOpenNow ?? null,
+      structuredOpeningHours: live.structuredOpeningHours ?? seed.structuredOpeningHours,
+      openingHoursText: live.openingHoursText ?? seed.openingHoursText ?? null,
+      is24Hours: seed.is24Hours || live.is24Hours,
       priceLevel: live.priceLevel ?? seed.priceLevel,
-      rating: live.rating,
-      reviewCount: live.reviewCount,
+      rating: live.rating ?? seed.rating,
+      reviewCount: live.reviewCount ?? seed.reviewCount,
       phone: live.phone || seed.phone,
       website: live.website || seed.website,
       googleMapsUrl: live.googleMapsUrl || seed.googleMapsUrl,
@@ -237,11 +250,11 @@ function mergeSeedAndLive(seedPlaces: Place[], livePlaces: Place[]) {
       dineIn: live.dineIn ?? seed.dineIn,
       takeaway: live.takeaway ?? seed.takeaway,
       wheelchairAccessible: live.wheelchairAccessible ?? seed.wheelchairAccessible,
-      verified: true,
+      verified: seed.verified || live.verified,
       lastVerified: live.lastVerified,
       source: Array.from(new Set([...seed.source, ...live.source])),
       tags: Array.from(new Set([...seed.tags, ...live.tags])),
-      notes: live.notes || seed.notes,
+      notes: seed.notes || live.notes,
     } satisfies Place;
   });
   return dedupePlaces([...merged, ...livePlaces.filter((place) => !used.has(place.id))]);
@@ -419,6 +432,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [originMode, setOriginMode] = useState<OriginMode>("dorm");
   const [locationError, setLocationError] = useState<string | null>(null);
   const [apiReady, setApiReady] = useState(false);
+  const [mapLoadState, setMapLoadState] = useState<MapLoadState>(apiKey ? "idle" : "missing");
   const [loadingPlaces, setLoadingPlaces] = useState(false);
   const [livePlaces, setLivePlaces] = useState<Place[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -444,7 +458,9 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const markersRef = useRef<any[]>([]);
   const clustererRef = useRef<MarkerClusterer | null>(null);
   const radiusCircleRef = useRef<any>(null);
+  const routeLineRef = useRef<any>(null);
   const mapIdleListenerRef = useRef<any>(null);
+  const programmaticMapMoveRef = useRef(false);
   const requestIdRef = useRef(0);
   const copy = getCopy(settings.language);
 
@@ -497,10 +513,27 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }, [collections]);
 
   useEffect(() => {
-    if (!apiKey || !navigator.onLine) return;
     const shouldLoad = tab === "map" || Boolean(debouncedQuery) || category !== "all" || quickFilter != null;
     if (!shouldLoad) return;
-    loadGoogleMaps(apiKey).then(() => setApiReady(true)).catch(() => setApiReady(false));
+    if (!apiKey) {
+      setApiReady(false);
+      setMapLoadState("missing");
+      return;
+    }
+    if (!navigator.onLine) {
+      setApiReady(false);
+      setMapLoadState("error");
+      return;
+    }
+    if (window.google?.maps) {
+      setApiReady(true);
+      setMapLoadState("ready");
+      return;
+    }
+    setMapLoadState("loading");
+    loadGoogleMaps(apiKey)
+      .then(() => { setApiReady(true); setMapLoadState("ready"); })
+      .catch(() => { setApiReady(false); setMapLoadState("error"); });
   }, [apiKey, tab, debouncedQuery, category, quickFilter]);
 
   useEffect(() => {
@@ -555,6 +588,18 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     });
     return sortPlaces(data, sortMode, new Set(settings.preferredCategories || []));
   }, [allPlaces, category, debouncedQuery, filters, radiusMeters, originMode, sortMode, settings.verifiedOnly, settings.preferredCategories]);
+
+  const mapVisiblePlaces = useMemo(() => {
+    const data = allPlaces.filter((place) => {
+      if (category !== "all" && !place.categories.includes(category)) return false;
+      if (!matchesSearch(place, debouncedQuery)) return false;
+      if (!passesFilters(place, filters, settings.verifiedOnly)) return false;
+      if (place.latitude == null || place.longitude == null) return false;
+      const fromMapCenter = haversineKm(mapSearchCenter, { lat: place.latitude, lng: place.longitude });
+      return fromMapCenter * 1000 <= radiusMeters;
+    });
+    return sortPlaces(data, sortMode, new Set(settings.preferredCategories || []));
+  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, mapSearchCenter, sortMode, settings.verifiedOnly, settings.preferredCategories]);
 
   const favoritePlaces = useMemo(() => {
     return favorites.map((saved) => allPlaces.find((place) => place.id === saved.id || (saved.googlePlaceId && place.googlePlaceId === saved.googlePlaceId)) || saved);
@@ -658,6 +703,20 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     setLocationError(null);
   }
 
+  function handleMapLocate() {
+    setPendingMapCenter(null);
+    setShowSearchArea(false);
+    if (originMode !== "me") {
+      useMyLocation();
+      return;
+    }
+    programmaticMapMoveRef.current = true;
+    mapRef.current?.panTo(origin);
+    mapRef.current?.setZoom(radiusMeters <= 500 ? 16 : radiusMeters <= 1000 ? 15 : radiusMeters <= 3000 ? 14 : 13);
+    setMapSearchCenter(origin);
+    setSelectedPlace(null);
+  }
+
 
   function useCustomHomeLocation(value: { name: string; latitude: number; longitude: number }) {
     const center = { lat: value.latitude, lng: value.longitude }; setOrigin(center); setMapSearchCenter(center); setOriginMode("custom"); setSettings((current) => ({ ...current, homeMode: "custom", customHomeLocation: value })); setHomeLocationOpen(false);
@@ -720,13 +779,25 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         const options: any = { center: mapSearchCenter, zoom: 15, backgroundColor: "#02060D", disableDefaultUI: true, zoomControl: true, gestureHandling: "greedy" };
         if (mapId) options.mapId = mapId; else options.styles = LEGACY_DARK_MAP_STYLES;
         mapRef.current = new window.google.maps.Map(mapEl.current, options);
-        mapIdleListenerRef.current = mapRef.current.addListener("idle", () => { const center = mapRef.current?.getCenter?.(); if (!center) return; const next = { lat: center.lat(), lng: center.lng() }; const moved = Math.abs(next.lat - mapSearchCenter.lat) > 0.0008 || Math.abs(next.lng - mapSearchCenter.lng) > 0.0008; if (moved) { setPendingMapCenter(next); setShowSearchArea(true); } });
+        mapIdleListenerRef.current = mapRef.current.addListener("idle", () => { if (programmaticMapMoveRef.current) { programmaticMapMoveRef.current = false; return; } const center = mapRef.current?.getCenter?.(); if (!center) return; const next = { lat: center.lat(), lng: center.lng() }; const moved = Math.abs(next.lat - mapSearchCenter.lat) > 0.0008 || Math.abs(next.lng - mapSearchCenter.lng) > 0.0008; if (moved) { setPendingMapCenter(next); setShowSearchArea(true); } });
       }
       const target = selectedPlace?.latitude != null && selectedPlace.longitude != null ? { lat: selectedPlace.latitude, lng: selectedPlace.longitude } : mapSearchCenter;
+      programmaticMapMoveRef.current = true;
       mapRef.current.setCenter(target);
       mapRef.current.setZoom(selectedPlace?.latitude != null ? 17 : radiusMeters <= 500 ? 16 : radiusMeters <= 1000 ? 15 : radiusMeters <= 3000 ? 14 : 13);
       if (!radiusCircleRef.current) radiusCircleRef.current = new window.google.maps.Circle({ map: mapRef.current, center: origin, radius: radiusMeters, strokeColor: "#00D9FF", strokeOpacity: .38, strokeWeight: 1, fillColor: "#007AFF", fillOpacity: .07, clickable: false });
       else { radiusCircleRef.current.setCenter(origin); radiusCircleRef.current.setRadius(radiusMeters); }
+      routeLineRef.current?.setMap?.(null);
+      routeLineRef.current = null;
+      if (selectedPlace?.latitude != null && selectedPlace.longitude != null) {
+        routeLineRef.current = new window.google.maps.Polyline({
+          map: mapRef.current,
+          path: [origin, { lat: selectedPlace.latitude, lng: selectedPlace.longitude }],
+          strokeOpacity: 0,
+          clickable: false,
+          icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: .75, strokeColor: "#00D9FF", scale: 2.2 }, offset: "0", repeat: "12px" }],
+        });
+      }
       clustererRef.current?.clearMarkers(); clustererRef.current = null;
       markersRef.current.forEach((marker) => { if ("map" in marker) marker.map = null; else marker.setMap?.(null); }); markersRef.current = [];
       const placeMarkers: any[] = [];
@@ -735,14 +806,25 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         return new window.google.maps.Marker({ map: mapRef.current, position, title, icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: selected ? 10 : 7, fillColor: selected ? "#ffffff" : color, fillOpacity: 1, strokeColor: selected ? "#00D9FF" : "#d8e4f5", strokeWeight: 2 } });
       };
       const originMarker = makeMarker(origin, originMode === "dorm" ? DORM_NAME : copy.yourLocation, "#007AFF", true); markersRef.current.push(originMarker);
-      visiblePlaces.forEach((place) => { if (place.latitude == null || place.longitude == null) return; const marker = makeMarker({lat:place.latitude,lng:place.longitude}, place.name, MARKER_COLORS[place.category] || "#8ca0bb", selectedPlace?.id === place.id); marker.addListener("click", () => { addRecent(place); setSelectedPlace(place); }); placeMarkers.push(marker); markersRef.current.push(marker); });
+      mapVisiblePlaces.forEach((place) => { if (place.latitude == null || place.longitude == null) return; const position = {lat:place.latitude,lng:place.longitude}; const marker = makeMarker(position, place.name, MARKER_COLORS[place.category] || "#8ca0bb", selectedPlace?.id === place.id); marker.addListener("click", () => { addRecent(place); setSelectedPlace(place); programmaticMapMoveRef.current = true; mapRef.current?.panTo(position); const zoom = mapRef.current?.getZoom?.() ?? 16; if (zoom < 16) mapRef.current?.setZoom(16); }); placeMarkers.push(marker); markersRef.current.push(marker); });
       if (placeMarkers.length) {
         const renderer: any = { render: ({ count, position }: any) => new window.google.maps.Marker({ position, icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 17, fillColor: "#061424", fillOpacity: .96, strokeColor: "#008CFF", strokeOpacity: .92, strokeWeight: 2 }, label: { text: String(count), color: "#F7F9FC", fontSize: "11px", fontWeight: "700" }, zIndex: 1000 + count }) };
         clustererRef.current = new MarkerClusterer({ map: mapRef.current, markers: placeMarkers, renderer });
       }
-    })();
+      if (!selectedPlace) {
+        const coordinates = mapVisiblePlaces.filter((place) => place.latitude != null && place.longitude != null).slice(0, 40);
+        if (coordinates.length >= 2) {
+          const bounds = new window.google.maps.LatLngBounds();
+          coordinates.forEach((place) => bounds.extend({ lat: place.latitude, lng: place.longitude }));
+          bounds.extend(origin);
+          programmaticMapMoveRef.current = true;
+          mapRef.current.fitBounds(bounds, 44);
+          window.google.maps.event.addListenerOnce(mapRef.current, "idle", () => { if ((mapRef.current?.getZoom?.() ?? 0) > 16) mapRef.current?.setZoom(16); });
+        }
+      }
+    })().catch(() => { if (!cancelled) { setApiReady(false); setMapLoadState("error"); } });
     return () => { cancelled = true; };
-  }, [tab, apiReady, mapId, origin, originMode, radiusMeters, visiblePlaces, selectedPlace, mapSearchCenter, copy.yourLocation]);
+  }, [tab, apiReady, mapId, origin, originMode, radiusMeters, mapVisiblePlaces, selectedPlace, mapSearchCenter, copy.yourLocation]);
 
   const navItems = [
     { id: "explore" as Tab, label: copy.explore, icon: Compass },
@@ -861,16 +943,23 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
               </div></div>
 
               <div className="relative mt-4 h-[58dvh] min-h-[450px] max-h-[720px] overflow-hidden rounded-[28px] border border-[rgba(0,140,255,.28)] bg-[#030812] shadow-[0_0_28px_rgba(0,122,255,.12)]">
-                {apiReady ? <div ref={mapEl} className="absolute inset-0 bg-[#02060D]" /> : (
+                {mapLoadState === "ready" ? <div ref={mapEl} className="absolute inset-0 bg-[#02060D]" /> : mapLoadState === "loading" ? (
+                  <div className="absolute inset-0 overflow-hidden bg-[#02060D]">
+                    <div className="amd-skeleton absolute inset-0 opacity-70" />
+                    <div className="absolute inset-0 bg-[linear-gradient(rgba(0,95,220,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(0,95,220,.06)_1px,transparent_1px)] bg-[size:32px_32px]" />
+                    <div className="absolute inset-0 grid place-items-center"><div className="amd-glass flex items-center gap-2 rounded-full px-4 py-2 text-[10px] text-[var(--amd-text-2)]"><LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Loading live map" : "กำลังโหลดแผนที่สด"}</div></div>
+                  </div>
+                ) : (
                   <div className="amd-hero-map amd-map-fallback rounded-none border-0">
                     <MiniMapArtwork />
-                    <div className="absolute inset-0 grid place-items-center p-8 text-center"><div className="amd-glass amd-card max-w-[280px] p-5"><MapIcon className="mx-auto h-9 w-9 text-[#00D9FF]" /><p className="mt-3 text-[14px] font-semibold">Google Maps Preview</p><p className="mt-2 text-[10px] leading-5 text-[var(--amd-text-2)]">ตั้งค่า NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ใน Cloudflare เพื่อเปิดแผนที่สดและหมุดจริง</p><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(DORM_NAME)}`} target="_blank" rel="noreferrer" className="amd-btn amd-btn-primary mt-4 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[10px] font-bold"><Navigation className="h-4 w-4" /> เปิด Google Maps</a></div></div>
+                    <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[310px] p-4 text-left"><div className="flex items-start gap-3"><MapIcon className="mt-0.5 h-6 w-6 shrink-0 text-[#00D9FF]" /><div><p className="text-[12px] font-semibold">{mapLoadState === "missing" ? (settings.language === "en" ? "Google Maps is not configured" : "ยังไม่ได้ตั้งค่า Google Maps") : (settings.language === "en" ? "Live map could not load" : "โหลดแผนที่สดไม่ได้")}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">{mapLoadState === "missing" ? "Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to enable live maps." : (settings.language === "en" ? "Using fallback data mode." : "กำลังใช้โหมดข้อมูลสำรอง")}</p></div></div><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(DORM_NAME)}`} target="_blank" rel="noreferrer" className="amd-btn mt-3 inline-flex items-center gap-2 rounded-xl border border-[rgba(20,156,255,.35)] px-3 py-2 text-[9px] font-semibold text-[#8ecbff]"><Navigation className="h-3.5 w-3.5" /> เปิด Google Maps</a></div></div>
                   </div>
                 )}
 
-                <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2"><select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none"><option value={250}>250 ม.</option><option value={500}>500 ม.</option><option value={1000}>1 กม.</option><option value={2000}>2 กม.</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" /></div>{showSearchArea && pendingMapCenter && <button type="button" onClick={() => { setMapSearchCenter(pendingMapCenter); setShowSearchArea(false); }} className="amd-btn amd-btn-primary absolute left-1/2 top-[64px] z-20 -translate-x-1/2 rounded-full px-4 py-2 text-[10px] font-bold shadow-xl">{copy.searchThisArea}</button>}
-                <button type="button" onClick={() => { mapRef.current?.setCenter(origin); setSelectedPlace(null); }} className="amd-glass absolute bottom-5 right-4 z-20 grid h-12 w-12 place-items-center rounded-full text-[#149CFF]"><LocateFixed className="h-5 w-5" /></button>
+                <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2"><select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none"><option value={250}>250 ม.</option><option value={500}>500 ม.</option><option value={1000}>1 กม.</option><option value={2000}>2 กม.</option><option value={3000}>3 กม.</option><option value={5000}>5 กม.</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" /></div>{showSearchArea && pendingMapCenter && <button type="button" onClick={() => { programmaticMapMoveRef.current = true; setMapSearchCenter(pendingMapCenter); setPendingMapCenter(null); setSelectedPlace(null); setShowSearchArea(false); }} className="amd-btn amd-btn-primary absolute left-1/2 top-[64px] z-20 -translate-x-1/2 rounded-full px-4 py-2 text-[10px] font-bold shadow-xl">{copy.searchThisArea}</button>}
+                <button type="button" aria-label={settings.language === "en" ? "Use current location" : "ใช้ตำแหน่งปัจจุบัน"} onClick={handleMapLocate} className={`amd-glass absolute right-4 z-20 grid h-12 w-12 place-items-center rounded-full text-[#149CFF] transition-[bottom] duration-[var(--motion-normal)] ${selectedPlace ? "bottom-[340px]" : "bottom-5"}`}><LocateFixed className="h-5 w-5" /></button>
 
+                {locationError && <div className="amd-glass absolute left-4 top-[72px] z-20 max-w-[280px] rounded-xl border border-amber-300/15 px-3 py-2 text-[9px] leading-4 text-amber-100">{locationError}</div>}
                 {selectedPlace && <MapBottomSheet place={selectedPlace} language={settings.language} onDetails={() => openDetail(selectedPlace)} />}
               </div>
             </div>
@@ -970,7 +1059,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         </nav>
       </div>
 
-      {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} resultCount={visiblePlaces.length} />}
+      {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} resultCount={tab === "map" ? mapVisiblePlaces.length : visiblePlaces.length} />}
       {detailPlace && <PlaceDetail place={detailPlace} saved={isFavorite(detailPlace)} language={settings.language} onClose={() => setDetailPlace(null)} onSave={() => toggleFavorite(detailPlace)} onMap={() => { setDetailPlace(null); openMap(detailPlace); }} />}
       {collectionEditor && <CollectionEditorSheet mode={collectionEditor.mode} collection={collectionEditor.collection} language={settings.language} onClose={() => setCollectionEditor(null)} onSubmit={submitCollectionEditor} />}
       {collectionSelectorPlace && <CollectionSelectorSheet place={collectionSelectorPlace} collections={collections} language={settings.language} onToggle={(collectionId) => toggleFavoriteCollection(collectionSelectorPlace, collectionId)} onClose={() => setCollectionSelectorPlace(null)} />}
