@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'app/premium-liquid-glass.css'
+      - 'app/premium-liquid-glass-geometry.css'
       - 'app/premium-interactions.css'
       - 'app/layout.tsx'
       - 'components/PlaceCard.tsx'
