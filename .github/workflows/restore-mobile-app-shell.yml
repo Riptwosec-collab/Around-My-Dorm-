@@ -1,0 +1,96 @@
+name: Restore Previous Mobile App Shell
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/restore-mobile-app-shell.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  restore-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore previous app-style shell without reverting data
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('components/AroundMyDormApp.tsx')
+          s = path.read_text(encoding='utf-8')
+
+          replacements = [
+              ('max-w-[1180px]', 'max-w-[430px]'),
+              ('PREMIUM LOCAL DISCOVERY', 'NEARBY LIFE'),
+              ('>ORIGIN<', '>HOME BASE<'),
+              ('grid gap-4 md:grid-cols-2 xl:grid-cols-3', 'space-y-4'),
+              ('sm:text-4xl', ''),
+              (' sm:px-6 lg:px-8', ''),
+              (' sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8', ''),
+              (' sm:-mx-6 sm:px-6', ''),
+          ]
+
+          changed = False
+          for old, new in replacements:
+              if old in s:
+                  s = s.replace(old, new)
+                  changed = True
+
+          if not changed:
+              raise SystemExit('Expected current app-shell patterns were not found; refusing silent no-op')
+
+          path.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Add app-shell compatibility styles
+        run: |
+          cat >> app/globals.css <<'EOF'
+
+          /* Previous Around My Dorm app shell: keep the experience phone-like on wide screens. */
+          .around-dorm-app-shell-note { display: none; }
+
+          @media (min-width: 640px) {
+            main .sm\:px-6,
+            main .lg\:px-8 {
+              padding-left: 1rem !important;
+              padding-right: 1rem !important;
+            }
+
+            main .sm\:-mx-6,
+            main .lg\:-mx-8 {
+              margin-left: -1rem !important;
+              margin-right: -1rem !important;
+            }
+          }
+
+          @media (min-width: 768px) {
+            main .md\:grid-cols-2 {
+              grid-template-columns: minmax(0, 1fr) !important;
+            }
+          }
+
+          @media (min-width: 1280px) {
+            main .xl\:grid-cols-3 {
+              grid-template-columns: minmax(0, 1fr) !important;
+            }
+          }
+          EOF
+
+      - name: Commit restored UI shell
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/AroundMyDormApp.tsx app/globals.css
+          if git diff --cached --quiet; then
+            echo 'No UI changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Restore previous mobile app UI while preserving current data'
+          git push origin HEAD:main
