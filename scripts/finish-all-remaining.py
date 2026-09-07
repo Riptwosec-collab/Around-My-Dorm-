@@ -28,6 +28,7 @@ import {
   type QuickFilter,
   type SavedCollection,
   type Tab,
+  type ThemeMode,
 } from "@/lib/app-shell-config";
 import {
   activeFilterCount,
