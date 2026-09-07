@@ -1,0 +1,59 @@
+name: Complete Smart Refresh Queue
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/complete-smart-refresh-queue.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  smart-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Inspect and apply staged smart refresh architecture
+        run: python scripts/apply-p0-smart-refresh-queue.py
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit and architecture tests
+        run: npm test
+      - name: Validate place data
+        run: npm run validate:data
+      - name: Production build
+        run: npm run build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify refresh preview remains local-only and mobile-safe
+        run: |
+          if [ -f e2e/p0-smart-refresh-queue.spec.ts ]; then npx playwright test e2e/p0-smart-refresh-queue.spec.ts; fi
+          npx playwright test e2e/p0-google-api-lock.spec.ts e2e/premium-interactions.spec.ts
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated smart refresh queue
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/refresh-priority.ts components/GoogleMaintenancePanel.tsx tests e2e .github/workflows 2>/dev/null || true
+          git commit -m 'Complete smart refresh queue with manual-only API execution'
+          git push
