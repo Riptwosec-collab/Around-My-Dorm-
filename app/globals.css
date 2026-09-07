@@ -8,6 +8,7 @@
   --amd-surface: #08111f;
   --amd-surface-2: #0a1424;
   --amd-glass: rgba(8, 18, 33, 0.72);
+  --amd-glass-strong: rgba(6, 15, 29, 0.9);
   --amd-glass-2: rgba(12, 23, 40, 0.62);
   --amd-blue: #008cff;
   --amd-blue-2: #007aff;
@@ -20,7 +21,8 @@
   --amd-text: #f7f9fc;
   --amd-text-2: #a8b2c4;
   --amd-text-3: #69768b;
-  --amd-border: rgba(120, 160, 210, 0.18);
+  --amd-border: rgba(120, 160, 210, 0.14);
+  --amd-border-strong: rgba(120, 160, 210, 0.18);
   --amd-border-active: rgba(0, 153, 255, 0.9);
   --amd-nav-h: 78px;
   --amd-radius-sm: 10px;
@@ -29,8 +31,21 @@
   --amd-radius-xl: 24px;
   --amd-radius-2xl: 28px;
   --amd-shadow: 0 14px 35px rgba(0, 0, 0, 0.35);
-  --amd-shadow-strong: 0 20px 54px rgba(0, 0, 0, 0.48);
+  --amd-shadow-strong: 0 20px 55px rgba(0, 0, 0, 0.42);
   --amd-glow: 0 0 18px rgba(0, 140, 255, 0.25);
+  --motion-fast: 120ms;
+  --motion-normal: 180ms;
+  --motion-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0.9, 0.2, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --z-sticky: 20;
+  --z-map-controls: 30;
+  --z-nav: 70;
+  --z-backdrop: 90;
+  --z-sheet: 100;
+  --z-modal: 120;
+  --z-toast: 140;
   background: var(--amd-bg);
   font-family: "SF Pro Display", "SF Pro Text", Inter, "Noto Sans Thai", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -44,12 +59,14 @@
   --amd-bg-3: #e8f1ff;
   --amd-surface: #ffffff;
   --amd-surface-2: #f5f8ff;
-  --amd-glass: rgba(255, 255, 255, 0.82);
+  --amd-glass: rgba(255, 255, 255, 0.78);
+  --amd-glass-strong: rgba(250, 253, 255, 0.92);
   --amd-glass-2: rgba(250, 253, 255, 0.76);
   --amd-text: #07101f;
   --amd-text-2: #536176;
   --amd-text-3: #7a8799;
-  --amd-border: rgba(53, 86, 126, 0.16);
+  --amd-border: rgba(53, 86, 126, 0.14);
+  --amd-border-strong: rgba(53, 86, 126, 0.18);
   --amd-shadow: 0 14px 35px rgba(46, 78, 119, 0.12);
   --amd-shadow-strong: 0 20px 54px rgba(46, 78, 119, 0.16);
 }
@@ -67,6 +84,10 @@ body {
   overscroll-behavior-y: none;
 }
 
+html {
+  transition: background-color var(--motion-normal) var(--ease-standard), color var(--motion-normal) var(--ease-standard);
+}
+
 body {
   min-width: 320px;
   color: var(--amd-text);
@@ -74,6 +95,7 @@ body {
     radial-gradient(circle at 72% 12%, rgba(0, 110, 255, 0.075), transparent 30%),
     radial-gradient(circle at 18% 52%, rgba(0, 217, 255, 0.035), transparent 34%),
     linear-gradient(180deg, var(--amd-bg) 0%, var(--amd-bg-2) 55%, var(--amd-bg) 100%);
+  line-height: 1.5;
 }
 
 button,
@@ -111,6 +133,7 @@ img {
     radial-gradient(circle at 70% 18%, rgba(0, 110, 255, 0.06), transparent 34%),
     var(--amd-bg);
   color: var(--amd-text);
+  transition: background-color var(--motion-normal) var(--ease-standard), color var(--motion-normal) var(--ease-standard);
 }
 
 .amd-shell {
@@ -121,6 +144,7 @@ img {
   border-left: 1px solid rgba(120, 160, 210, 0.06);
   border-right: 1px solid rgba(120, 160, 210, 0.06);
   background: linear-gradient(180deg, rgba(3, 8, 18, 0.9), rgba(2, 6, 13, 0.96));
+  transition: background-color var(--motion-normal) var(--ease-standard), border-color var(--motion-normal) var(--ease-standard);
 }
 
 .amd-content {
@@ -135,6 +159,10 @@ img {
   padding-right: max(16px, env(safe-area-inset-right));
 }
 
+.amd-page-enter {
+  animation: amd-page-in var(--motion-normal) var(--ease-standard) both;
+}
+
 .amd-safe-top {
   padding-top: max(22px, env(safe-area-inset-top));
 }
@@ -142,14 +170,18 @@ img {
 .amd-glass,
 .amd-glass-strong {
   border: 1px solid var(--amd-border);
-  background: linear-gradient(145deg, rgba(12, 25, 45, 0.84), rgba(5, 12, 24, 0.78));
+  background: var(--amd-glass);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: var(--amd-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  transition: background-color var(--motion-normal) var(--ease-standard), border-color var(--motion-normal) var(--ease-standard), color var(--motion-normal) var(--ease-standard);
 }
 
 .amd-glass-strong {
-  background: linear-gradient(145deg, rgba(12, 24, 43, 0.92), rgba(4, 10, 21, 0.88));
+  border-color: var(--amd-border-strong);
+  background: var(--amd-glass-strong);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
   box-shadow: var(--amd-shadow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.055);
 }
 
@@ -166,10 +198,16 @@ img {
   min-height: 56px;
   border: 1px solid rgba(120, 160, 210, 0.2);
   border-radius: 20px;
-  background: linear-gradient(145deg, rgba(11, 23, 42, 0.84), rgba(6, 13, 25, 0.82));
+  background: var(--amd-glass);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 10px 28px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  transition: border-color var(--motion-normal) var(--ease-standard), box-shadow var(--motion-normal) var(--ease-standard), background-color var(--motion-normal) var(--ease-standard);
+}
+
+.amd-input:focus-within {
+  border-color: rgba(20, 156, 255, 0.7);
+  box-shadow: 0 0 0 1px rgba(20, 156, 255, 0.13), 0 0 20px rgba(0, 217, 255, 0.11), 0 10px 28px rgba(0, 0, 0, 0.2);
 }
 
 .amd-chip {
@@ -181,24 +219,25 @@ img {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  transition: transform 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  transition: transform var(--motion-normal) var(--ease-standard), border-color var(--motion-normal) var(--ease-standard), color var(--motion-normal) var(--ease-standard), box-shadow var(--motion-normal) var(--ease-standard), background-color var(--motion-normal) var(--ease-standard);
 }
 
 .amd-chip:active,
 .amd-btn:active {
   transform: scale(0.97);
+  filter: brightness(0.96);
 }
 
 .amd-chip-active {
   border-color: rgba(0, 153, 255, 0.95);
   background: linear-gradient(145deg, rgba(0, 122, 255, 0.2), rgba(0, 217, 255, 0.08));
   color: #f8fbff;
-  box-shadow: 0 0 18px rgba(0, 140, 255, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 18px rgba(0, 140, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .amd-btn {
   min-height: 44px;
-  transition: transform 170ms ease, filter 170ms ease, box-shadow 170ms ease;
+  transition: transform var(--motion-fast) var(--ease-emphasized), filter var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), background-color var(--motion-normal) var(--ease-standard), border-color var(--motion-normal) var(--ease-standard);
 }
 
 .amd-btn-primary {
@@ -209,7 +248,7 @@ img {
 }
 
 .amd-btn-primary:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.04);
 }
 
 .amd-divider {
@@ -218,7 +257,7 @@ img {
 
 .amd-nav {
   position: fixed;
-  z-index: 70;
+  z-index: var(--z-nav);
   left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
   bottom: max(8px, env(safe-area-inset-bottom));
@@ -235,24 +274,46 @@ img {
   -webkit-backdrop-filter: blur(26px);
 }
 
+.amd-nav-item {
+  opacity: 0.72;
+  transition: color var(--motion-normal) var(--ease-standard), opacity var(--motion-normal) var(--ease-standard);
+}
+
+.amd-nav-item svg {
+  transform: scale(0.94);
+  transition: transform var(--motion-normal) var(--ease-spring), filter var(--motion-normal) var(--ease-standard);
+}
+
+.amd-nav-item-active {
+  opacity: 1;
+}
+
+.amd-nav-item-active svg {
+  transform: scale(1);
+}
+
+.amd-nav-indicator {
+  animation: amd-indicator-in var(--motion-normal) var(--ease-emphasized) both;
+}
+
 .amd-nav-active {
   color: var(--amd-cyan);
-  text-shadow: 0 0 16px rgba(0, 217, 255, 0.55);
+  text-shadow: 0 0 16px rgba(0, 217, 255, 0.5);
 }
 
 .amd-hero-map {
   position: relative;
   min-height: 178px;
   overflow: hidden;
-  border: 1px solid rgba(0, 140, 255, 0.7);
+  border: 1px solid rgba(0, 140, 255, 0.55);
   border-radius: 25px;
   background:
     linear-gradient(rgba(0, 95, 220, 0.09) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 95, 220, 0.09) 1px, transparent 1px),
-    radial-gradient(circle at 72% 45%, rgba(0, 132, 255, 0.24), transparent 18%),
+    radial-gradient(circle at 72% 45%, rgba(0, 132, 255, 0.2), transparent 18%),
     linear-gradient(145deg, #071426, #030812 72%);
   background-size: 28px 28px, 28px 28px, auto, auto;
-  box-shadow: 0 0 24px rgba(0, 132, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: 0 0 24px rgba(0, 132, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .amd-map-dot {
@@ -261,13 +322,18 @@ img {
   height: 10px;
   border-radius: 999px;
   background: var(--amd-cyan);
-  box-shadow: 0 0 14px rgba(0, 217, 255, 0.8);
+  box-shadow: 0 0 14px rgba(0, 217, 255, 0.7);
+}
+
+.amd-marker-selected {
+  animation: amd-marker-pulse var(--motion-slow) var(--ease-emphasized) 1;
+  transform-origin: center;
 }
 
 .amd-skeleton {
   position: relative;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .amd-skeleton::after {
@@ -275,12 +341,101 @@ img {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
-  animation: amd-shimmer 1.35s infinite;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.065), transparent);
+  animation: amd-shimmer 1.45s infinite;
+}
+
+.amd-heart {
+  transform-origin: center;
+  transition: fill var(--motion-normal) var(--ease-standard), color var(--motion-normal) var(--ease-standard), opacity var(--motion-normal) var(--ease-standard);
+}
+
+.amd-heart-saved {
+  animation: amd-heart-save var(--motion-slow) var(--ease-spring) both;
+}
+
+.amd-status {
+  transition: color var(--motion-normal) var(--ease-standard), opacity var(--motion-normal) var(--ease-standard);
+}
+
+.amd-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-backdrop);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: amd-fade-in var(--motion-normal) var(--ease-standard) both;
+}
+
+.amd-sheet {
+  z-index: var(--z-sheet);
+  animation: amd-sheet-in var(--motion-slow) var(--ease-spring) both;
+  will-change: transform, opacity;
+}
+
+.amd-toast {
+  position: fixed;
+  z-index: var(--z-toast);
+  left: 50%;
+  bottom: calc(var(--amd-nav-h) + 24px + env(safe-area-inset-bottom));
+  width: min(calc(100% - 32px), 420px);
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: amd-toast-in var(--motion-slow) var(--ease-spring) both;
+}
+
+.amd-scroll-x {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.amd-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes amd-page-in {
+  from { opacity: 0; transform: translateX(6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes amd-indicator-in {
+  from { opacity: 0; transform: translateY(-2px) scaleX(0.78); }
+  to { opacity: 1; transform: translateY(0) scaleX(1); }
+}
+
+@keyframes amd-heart-save {
+  0% { transform: scale(0.8); filter: drop-shadow(0 0 0 rgba(0, 140, 255, 0)); }
+  55% { transform: scale(1.15); filter: drop-shadow(0 0 9px rgba(0, 140, 255, 0.75)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 6px rgba(0, 140, 255, 0.35)); }
+}
+
+@keyframes amd-marker-pulse {
+  0% { transform: scale(0.95); filter: drop-shadow(0 0 0 rgba(0, 217, 255, 0)); }
+  60% { transform: scale(1.08); filter: drop-shadow(0 0 12px rgba(0, 217, 255, 0.62)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 5px rgba(0, 217, 255, 0.3)); }
 }
 
 @keyframes amd-shimmer {
   100% { transform: translateX(100%); }
+}
+
+@keyframes amd-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes amd-sheet-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes amd-toast-in {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.98); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
 :root[data-theme="light"] .amd-shell {
@@ -290,8 +445,12 @@ img {
 
 :root[data-theme="light"] .amd-glass,
 :root[data-theme="light"] .amd-glass-strong {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(241, 247, 255, 0.82));
+  background: var(--amd-glass);
   box-shadow: var(--amd-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+:root[data-theme="light"] .amd-glass-strong {
+  background: var(--amd-glass-strong);
 }
 
 :root[data-theme="light"] .amd-input,
@@ -314,7 +473,7 @@ img {
   background:
     linear-gradient(rgba(0, 95, 220, 0.07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 95, 220, 0.07) 1px, transparent 1px),
-    radial-gradient(circle at 72% 45%, rgba(0, 132, 255, 0.15), transparent 18%),
+    radial-gradient(circle at 72% 45%, rgba(0, 132, 255, 0.13), transparent 18%),
     linear-gradient(145deg, #e7f2ff, #f6f9ff 72%);
   background-size: 28px 28px, 28px 28px, auto, auto;
 }
@@ -332,10 +491,28 @@ img {
 }
 
 @media (min-width: 1024px) {
+  .amd-shell {
+    width: min(100%, 1120px);
+  }
+
   .amd-page {
-    max-width: 760px;
-    padding-left: 30px;
-    padding-right: 30px;
+    max-width: 980px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  .amd-nav {
+    max-width: 820px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .amd-shell {
+    width: min(100%, 1240px);
+  }
+
+  .amd-page {
+    max-width: 1100px;
   }
 }
 
@@ -343,5 +520,20 @@ img {
   .amd-shell {
     border-left: 0;
     border-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .amd-skeleton::after {
+    display: none;
   }
 }
