@@ -485,15 +485,15 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         <div className="absolute right-[-120px] top-52 h-80 w-80 rounded-full bg-indigo-500/[0.08] blur-[120px]" />
       </div>
 
-      <div className="relative mx-auto min-h-[100dvh] w-full max-w-[1180px] border-x border-white/[0.025] bg-[#07101b]/35">
+      <div className="relative mx-auto min-h-[100dvh] w-full max-w-[430px] border-x border-white/[0.025] bg-[#07101b]/35">
         <div className="pb-[calc(92px+env(safe-area-inset-bottom))]">
           {tab === "explore" && (
             <>
-              <header className="px-4 pt-[max(22px,env(safe-area-inset-top))] sm:px-6 lg:px-8">
+              <header className="px-4 pt-[max(22px,env(safe-area-inset-top))]">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300/85"><span>PREMIUM LOCAL DISCOVERY</span><span className="h-1 w-1 rounded-full bg-cyan-300" /></div>
-                    <h1 className="text-[29px] font-black tracking-[-0.045em] sm:text-4xl">Around My Dorm</h1>
+                    <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300/85"><span>NEARBY LIFE</span><span className="h-1 w-1 rounded-full bg-cyan-300" /></div>
+                    <h1 className="text-[29px] font-black tracking-[-0.045em] ">Around My Dorm</h1>
                     <p className="mt-1 text-[11px] text-white/42 sm:text-xs">กิน • ช้อป • คาเฟ่ • บริการ รอบบ้านสุภา</p>
                   </div>
                   <button type="button" onClick={() => changeTab("map")} className="grid h-12 w-12 shrink-0 place-items-center rounded-[18px] border border-white/10 bg-white/[0.055] backdrop-blur-2xl"><MapIcon className="h-5 w-5 text-cyan-200" /></button>
@@ -501,13 +501,13 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
                 <div className="mt-5 flex items-center gap-3 rounded-[22px] border border-white/[0.08] bg-white/[0.045] p-3.5 backdrop-blur-2xl">
                   <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-pink-300/15 bg-pink-400/[0.08]"><MapPin className="h-[18px] w-[18px] text-pink-300" /></div>
-                  <div className="min-w-0 flex-1"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-white/30">ORIGIN</p><p className="truncate text-[12px] font-black">{originMode === "dorm" ? DORM_NAME : "ตำแหน่งปัจจุบันของฉัน"}</p></div>
+                  <div className="min-w-0 flex-1"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-white/30">HOME BASE</p><p className="truncate text-[12px] font-black">{originMode === "dorm" ? DORM_NAME : "ตำแหน่งปัจจุบันของฉัน"}</p></div>
                   {originMode === "dorm" ? <button type="button" onClick={useMyLocation} className="min-h-11 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.07] px-3 text-[9px] font-black text-cyan-200">ใกล้ฉัน</button> : <button type="button" onClick={useDormLocation} className="min-h-11 rounded-2xl border border-white/10 bg-white/[0.05] px-3 text-[9px] font-black">กลับบ้านสุภา</button>}
                 </div>
                 {locationError && <p className="mt-2 text-[10px] text-rose-300">{locationError}</p>}
               </header>
 
-              <div className="sticky top-0 z-30 mt-4 border-y border-white/[0.04] bg-[#07101b]/86 px-4 py-3 backdrop-blur-2xl sm:px-6 lg:px-8">
+              <div className="sticky top-0 z-30 mt-4 border-y border-white/[0.04] bg-[#07101b]/86 px-4 py-3 backdrop-blur-2xl">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/30" />
                   <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อร้าน หมวด เมนู Tag ซอย พื้นที่..." className="h-14 w-full rounded-[19px] border border-white/[0.08] bg-white/[0.05] pl-12 pr-14 text-[12px] font-medium outline-none placeholder:text-white/25 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/[0.04]" />
@@ -515,14 +515,14 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 </div>
               </div>
 
-              <section className="px-4 sm:px-6 lg:px-8">
-                <div className="-mx-4 overflow-x-auto px-4 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"><div className="flex w-max gap-2">{CATEGORIES.map((item) => <button key={item.id} type="button" onClick={() => setCategory(item.id)} className={`min-h-11 shrink-0 rounded-full border px-3.5 text-[10px] font-black ${category === item.id ? "border-cyan-300/30 bg-cyan-300 text-[#041018]" : "border-white/[0.08] bg-white/[0.04] text-white/58"}`}><span className="mr-1.5">{item.icon}</span>{item.name}</button>)}</div></div>
+              <section className="px-4">
+                <div className="-mx-4 overflow-x-auto px-4 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><div className="flex w-max gap-2">{CATEGORIES.map((item) => <button key={item.id} type="button" onClick={() => setCategory(item.id)} className={`min-h-11 shrink-0 rounded-full border px-3.5 text-[10px] font-black ${category === item.id ? "border-cyan-300/30 bg-cyan-300 text-[#041018]" : "border-white/[0.08] bg-white/[0.04] text-white/58"}`}><span className="mr-1.5">{item.icon}</span>{item.name}</button>)}</div></div>
 
-                <div className="-mx-4 overflow-x-auto px-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"><div className="flex w-max gap-2">{RADII.map((radius) => <button key={radius.value} type="button" onClick={() => setRadiusMeters(radius.value)} className={`min-h-11 rounded-full border px-4 text-[10px] font-black ${radiusMeters === radius.value ? "border-white/15 bg-white/12 text-white" : "border-white/[0.07] bg-white/[0.03] text-white/42"}`}>{radius.label}</button>)}</div></div>
+                <div className="-mx-4 overflow-x-auto px-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><div className="flex w-max gap-2">{RADII.map((radius) => <button key={radius.value} type="button" onClick={() => setRadiusMeters(radius.value)} className={`min-h-11 rounded-full border px-4 text-[10px] font-black ${radiusMeters === radius.value ? "border-white/15 bg-white/12 text-white" : "border-white/[0.07] bg-white/[0.03] text-white/42"}`}>{radius.label}</button>)}</div></div>
 
                 <div className="mt-6">
                   <div className="flex items-end justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[0.18em] text-pink-300">SMART COLLECTIONS</p><h2 className="mt-1 text-lg font-black">เลือกตามชีวิตรอบหอ</h2></div></div>
-                  <div className="-mx-4 mt-3 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-6 sm:px-6"><div className="flex w-max gap-2">{SMART_COLLECTIONS.map(([icon, label, key]) => <button key={key} type="button" onClick={() => applyCollection(key)} className="min-h-11 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 text-[10px] font-bold text-white/62"><span className="mr-1.5">{icon}</span>{label}</button>)}</div></div>
+                  <div className="-mx-4 mt-3 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><div className="flex w-max gap-2">{SMART_COLLECTIONS.map(([icon, label, key]) => <button key={key} type="button" onClick={() => applyCollection(key)} className="min-h-11 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 text-[10px] font-bold text-white/62"><span className="mr-1.5">{icon}</span>{label}</button>)}</div></div>
                 </div>
 
                 <div className="mt-6 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
@@ -536,7 +536,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 </div>
 
                 {loadingPlaces && <div className="mb-4 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.05] p-3 text-center text-[10px] text-cyan-100">กำลังค้นหาข้อมูลสดจาก Google Places...</div>}
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{visiblePlaces.map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} />)}</div>
+                <div className="space-y-4">{visiblePlaces.map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} />)}</div>
                 {!visiblePlaces.length && <div className="mt-8 rounded-[26px] border border-dashed border-white/10 p-8 text-center"><Search className="mx-auto h-7 w-7 text-white/22" /><p className="mt-3 text-sm font-bold">ไม่พบร้านตามเงื่อนไข</p><p className="mt-1 text-[10px] text-white/38">ลองเพิ่มรัศมี เปลี่ยนหมวด หรือล้าง Filter</p></div>}
               </section>
             </>
@@ -554,7 +554,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           {tab === "recent" && <ListPage title="ดูล่าสุด" eyebrow="RECENTLY VIEWED" description="เก็บ 10 ร้านล่าสุดโดยไม่ต้อง Login" places={recentPlaces} empty="ยังไม่มีประวัติการเปิดร้าน" icon={<History className="h-8 w-8 text-white/22" />} isFavorite={isFavorite} onSave={toggleFavorite} onDetail={openDetail} onMap={openMap} />}
 
           {tab === "settings" && (
-            <section className="px-4 pt-[max(22px,env(safe-area-inset-top))] sm:px-6 lg:px-8">
+            <section className="px-4 pt-[max(22px,env(safe-area-inset-top))]">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">APP & DATA</p><h2 className="mt-1 text-[29px] font-black tracking-[-0.04em]">ตั้งค่าและข้อมูล</h2><p className="mt-1 text-[11px] text-white/42">เน้นข้อมูลจริง ไม่เดาราคา เวลา Rating เบอร์ หรือพิกัด</p>
               <div className="mt-6 grid gap-3 md:grid-cols-2">{[["ศูนย์กลาง", originMode === "dorm" ? DORM_NAME : "ตำแหน่งของฉัน"], ["รัศมี", RADII.find((item) => item.value === radiusMeters)?.label || "2 กม."], ["Initial dataset", `${PLACES.length} สถานที่`], ["Google Places", apiReady ? "Connected" : "Preview mode"], ["Favorite", `${favorites.length} ร้าน`], ["Recently viewed", `${recent.length}/10 ร้าน`]].map(([title, value]) => <div key={title} className="flex min-h-16 items-center justify-between rounded-[21px] border border-white/[0.07] bg-white/[0.04] p-4"><span className="text-[11px] text-white/45">{title}</span><span className="text-[11px] font-black text-white/85">{value}</span></div>)}</div>
               <div className="mt-5 rounded-[24px] border border-amber-300/12 bg-amber-300/[0.045] p-4"><div className="flex items-center gap-2"><Database className="h-4 w-4 text-amber-200" /><p className="text-[11px] font-black">Data Quality Policy</p></div><p className="mt-2 text-[10px] leading-5 text-white/45">Seed Data ที่ยังไม่มีแหล่งภายนอกยืนยันจะมี verified=false และแสดง “ยังไม่มีข้อมูลยืนยัน” แทนการคาดเดา เมื่อ Google Places พบรายการเดียวกัน ระบบจะเติมพิกัด Rating รีวิว ที่อยู่ และสถานะเปิด/ปิดจากข้อมูลสด</p></div>
@@ -563,7 +563,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           )}
         </div>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/[0.07] bg-[#07101b]/88 pb-[env(safe-area-inset-bottom)] backdrop-blur-[28px]"><div className="mx-auto grid h-[78px] max-w-[1180px] grid-cols-5 px-2 sm:px-6">{navItems.map((item) => { const active = tab === item.id; return <button key={item.id} type="button" onClick={() => changeTab(item.id)} className="relative flex min-w-0 flex-col items-center justify-center gap-1">{active && <span className="absolute top-1 h-[2px] w-7 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(34,211,238,.7)]" />}<item.icon className={`h-[21px] w-[21px] ${active ? "text-cyan-200" : "text-white/28"}`} /><span className={`truncate text-[8px] font-black sm:text-[9px] ${active ? "text-cyan-200" : "text-white/28"}`}>{item.label}</span></button>; })}</div></nav>
+        <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/[0.07] bg-[#07101b]/88 pb-[env(safe-area-inset-bottom)] backdrop-blur-[28px]"><div className="mx-auto grid h-[78px] max-w-[430px] grid-cols-5 px-2 sm:px-6">{navItems.map((item) => { const active = tab === item.id; return <button key={item.id} type="button" onClick={() => changeTab(item.id)} className="relative flex min-w-0 flex-col items-center justify-center gap-1">{active && <span className="absolute top-1 h-[2px] w-7 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(34,211,238,.7)]" />}<item.icon className={`h-[21px] w-[21px] ${active ? "text-cyan-200" : "text-white/28"}`} /><span className={`truncate text-[8px] font-black sm:text-[9px] ${active ? "text-cyan-200" : "text-white/28"}`}>{item.label}</span></button>; })}</div></nav>
       </div>
 
       {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} />}
@@ -596,9 +596,9 @@ function ListPage({
   onMap: (place: Place) => void;
 }) {
   return (
-    <section className="px-4 pt-[max(22px,env(safe-area-inset-top))] sm:px-6 lg:px-8">
+    <section className="px-4 pt-[max(22px,env(safe-area-inset-top))]">
       <p className="text-[10px] font-black uppercase tracking-[0.18em] text-pink-300">{eyebrow}</p><h2 className="mt-1 text-[29px] font-black tracking-[-0.04em]">{title}</h2><p className="mt-1 text-[11px] text-white/42">{description}</p>
-      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{places.map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => onSave(place)} onDetail={() => onDetail(place)} onMap={() => onMap(place)} />)}</div>
+      <div className="mt-6 space-y-4">{places.map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => onSave(place)} onDetail={() => onDetail(place)} onMap={() => onMap(place)} />)}</div>
       {!places.length && <div className="mt-14 rounded-[28px] border border-dashed border-white/10 bg-white/[0.03] p-8 text-center">{icon}<p className="mt-3 text-sm font-bold">{empty}</p></div>}
     </section>
   );
