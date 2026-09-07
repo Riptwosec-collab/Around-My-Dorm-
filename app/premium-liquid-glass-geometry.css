@@ -61,6 +61,13 @@
   position: relative;
 }
 
+/* Tailwind v4 uses the independent `translate` property for -translate-y-1/2.
+   The visual focus rule must not add a second translateY(-50%) via `transform`,
+   otherwise the search icon moves upward by another half of its own height. */
+.amd-input:focus-within > svg:first-of-type {
+  transform: translateX(2px);
+}
+
 /* Preserve fixed-nav safe-area geometry at every requested mobile width. */
 @media (max-width: 767px) {
   .amd-nav {
