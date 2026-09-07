@@ -2,102 +2,121 @@
 
 Premium local-discovery web app centered on **บ้านสุภาอพาร์ทเม้นต์ / Baan Supar Apartment** around Lat Phrao 35, Lat Phrao 41 / Phawana, Ratchada 36, Chandrakasem and nearby areas.
 
+## Runtime architecture
+
+```text
+AUTHORIZED / OWN PLACE DATA
+        ↓
+PERIODIC IMPORT / REVIEW
+        ↓
+AROUND MY DORM DATABASE
+        ↓
+NORMAL APP USAGE
+        ↓
+GOOGLE MAPS
+```
+
+Google Maps is the **map renderer**. Around My Dorm remains the source of normal place discovery. Opening Explore, Map, Saved, Recent or Settings does not perform bulk Google Places discovery.
+
+Stored places are searched, filtered, sorted and rendered locally. Google Places is used only after an explicit user/admin action for temporary discovery or optional live enrichment.
+
 ## Core features
 
 - iPhone 16 Pro-first Premium iOS / glass UI
 - Safe Area, Dynamic Island, `100dvh`, touch targets >= 44px
 - Responsive Mobile / Tablet / Desktop layouts
 - Central place schema in `types/place.ts`
-- Single seed dataset in `data/places.ts`
-- 18 main place categories
+- Database-first place loader with Supabase support and embedded fallback
+- Existing business records, Local / Chain, Hidden Gem, parking, pricing, notes and verification metadata preserved
 - Search by name, English name, category, type, tags, soi, area, description and menu fields
-- 250 ms debounced search
-- Radius: 500 m / 1 km / 2 km / 3 km / 5 km
-- Use Baan Supar as default origin or switch to the user's real mobile location
-- Filters: open now, 24 hours, late night, price, parking, Wi-Fi, power outlet, air-con, delivery, takeaway, work-friendly, student-friendly and verified data
-- Sort: recommended, nearest, farthest, rating, reviews, price, open now, local, late night
-- Smart Collections
-- Place detail bottom sheet
-- Google Maps markers colored by category
-- `/map/` route
-- `/favorites/` route
-- Favorites stored in Local Storage
-- Recently Viewed: last 10 places without login
-- Open-status helper with Bangkok timezone
-- Haversine distance + estimated walk/drive time when coordinates are available
-- Google Maps search/directions links
-- Google Places API (New): Nearby Search + Text Search
-- Seed/live data merge and duplicate protection
+- Radius: 250 m / 500 m / 1 km / 2 km / 3 km / 5 km
+- Baan Supar default origin, current location and custom saved location
+- Filters and sorting operate on stored Around My Dorm data
+- Saved, Collections and Recently Viewed
+- Place Detail and Parking flows preserved
+- Google Maps JavaScript API map renderer
+- dark map via Google Map ID, with legacy dark styling fallback when no Map ID is supplied
+- stored-coordinate business markers with category colors
+- distinct Baan Supar / Home marker
+- marker clustering
+- Google Maps radius circle
+- selected-place focus
+- Search This Area searches stored data first
+- optional explicit “Search Google for more places” flow
+- optional live Google Place Detail enrichment when a stored `googlePlaceId` exists
+- Data Management with 30 / 60 / 90-day scopes, category/place scopes, progress, diff review, history and rollback
+- manual Google Place ID update checks with batching/retry and no automatic persistence of Google live content
 
-## Data quality policy
+## Data and provider policy
 
-This project does **not** invent prices, ratings, opening hours, phone numbers, coordinates, menus, social links, or parking details.
+Permanent Around My Dorm records should primarily contain user-owned, manually collected, licensed, authorized imported and internal metadata.
 
-Seed records that have not been externally confirmed use:
+`googlePlaceId` may be stored as the stable external identity link where permitted. Google live data is kept conceptually separate from persistent Around My Dorm data.
 
-- `verified: false`
-- `lastVerified: null`
-- unknown fields as `null`
-- UI text such as `ยังไม่มีข้อมูลยืนยัน`
+Normal browsing does **not** copy Google Places into the local database. Temporary Google discovery candidates are reviewed before any internal record is created, and Google live detail enrichment is short-lived and opt-in.
 
-When the same place is returned by Google Places, verified live fields such as coordinates, rating, review count, address and open/closed state can be merged into the seed record.
+The app does not replace reliable stored information with missing incoming information. High-risk identity changes require review.
 
-Every place supports `verified`, `lastVerified`, and `source`.
+## Freshness cycle
 
-## Main project structure
+Around My Dorm is designed for manual database refresh cycles of roughly **1–3 months**.
 
-```text
-app/
-  page.tsx
-  map/page.tsx
-  favorites/page.tsx
-components/
-  AroundMyDormApp.tsx
-  FilterSheet.tsx
-  PlaceCard.tsx
-  PlaceDetail.tsx
-data/
-  categories.ts
-  places.ts
-lib/
-  google-maps.ts
-  place-utils.ts
-types/
-  place.ts
+Internal freshness states:
+
+- 0–30 days: `FRESH`
+- 31–60 days: `AGING`
+- 61–90 days: `STALE_SOON`
+- 90+ days: `STALE`
+- unverified records: `UNVERIFIED`
+
+Default refresh recommendations can vary by category; normal users do not trigger bulk refreshes.
+
+## Environment
+
+Copy `.env.example` to `.env.local` for local development.
+
+```env
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
+NEXT_PUBLIC_GOOGLE_MAP_ID=
+
+# Optional persistent database
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+
+# Optional server/admin maintenance credential only
+GOOGLE_PLACES_API_KEY=
 ```
+
+Do not hardcode API keys or Map IDs. Restrict the browser key to authorized localhost/production domains in Google Cloud.
+
+Google Cloud configuration normally needs Maps JavaScript API. Places API (New) is needed only for the explicit discovery/live-enrichment features that use it.
 
 ## Run locally
 
 ```bash
 npm install
-cp .env.example .env.local
 npm run dev
 ```
 
-Add the browser Google Maps key:
+Validation:
 
-```env
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+```bash
+npm run lint
+npm run typecheck
+npm run validate:data
+npm test
+npm run build
+npx wrangler deploy --dry-run
 ```
-
-Enable in Google Cloud:
-
-- Maps JavaScript API
-- Places API (New)
-- Billing
-
-Restrict the browser key to your localhost and production domains.
 
 ## Cloudflare Workers deployment
 
-This repo uses **Next.js Static Export -> Cloudflare Workers Static Assets**.
+This repo uses **Next.js Static Export → Cloudflare Workers Static Assets**.
 
 ```bash
 npm run build
 npm run deploy
 ```
-
-`next.config.ts` exports to `out/` and `wrangler.jsonc` deploys `./out`.
 
 Recommended Cloudflare Build settings:
 
@@ -107,4 +126,6 @@ Deploy command: npx wrangler deploy
 Node.js: 20 or 22
 ```
 
-Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` in Cloudflare **Build Variables and Secrets** because `NEXT_PUBLIC_*` values are embedded during the Next.js build.
+Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and `NEXT_PUBLIC_GOOGLE_MAP_ID` in Cloudflare **Build Variables and Secrets** because `NEXT_PUBLIC_*` values are embedded during the Next.js build.
+
+If Google Maps cannot load, stored Around My Dorm place lists remain available; Google Places failures do not prevent stored place browsing.
