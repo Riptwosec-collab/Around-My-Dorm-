@@ -29,17 +29,25 @@ jobs:
       - name: Apply production architecture upgrade
         run: python3 scripts/apply-production-architecture-upgrade.py
 
-      - name: Scope Vitest to unit tests
+      - name: Scope test runners
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('vitest.config.ts')
-          text = path.read_text(encoding='utf-8')
+          vitest = Path('vitest.config.ts')
+          text = vitest.read_text(encoding='utf-8')
           text = text.replace(
               'test: { environment: "jsdom", setupFiles: ["./tests/setup.ts"] }',
               'test: { include: ["tests/**/*.test.ts"], exclude: ["e2e/**", "node_modules/**"], environment: "jsdom", setupFiles: ["./tests/setup.ts"] }',
           )
-          path.write_text(text, encoding='utf-8')
+          vitest.write_text(text, encoding='utf-8')
+
+          playwright = Path('playwright.config.ts')
+          text = playwright.read_text(encoding='utf-8')
+          text = text.replace(
+              'use: { ...devices["iPhone 13"] }',
+              'use: { ...devices["iPhone 13"], browserName: "chromium" }',
+          )
+          playwright.write_text(text, encoding='utf-8')
           PY
 
       - name: Install and lock dependencies
