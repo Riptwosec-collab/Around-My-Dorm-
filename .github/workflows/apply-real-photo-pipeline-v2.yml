@@ -1,0 +1,107 @@
+name: Apply Real Photo Pipeline V2
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-real-photo-pipeline-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply photo integration
+        shell: python
+        run: |
+          from pathlib import Path
+          import json, re
+
+          # types
+          p=Path('types/place.ts'); s=p.read_text()
+          if 'export type PlaceImage =' not in s:
+            marker='export type DeliveryPlatform = {'
+            t='''export type PlaceImage = {\n  url: string;\n  source: "google_places" | "official_website" | "seed" | "official_social" | "fallback";\n  photoReference?: string | null;\n  attribution?: string | null;\n  width?: number | null;\n  height?: number | null;\n  verified?: boolean;\n};\n\n'''
+            s=s.replace(marker,t+marker)
+          if '  imageAttribution?: string | null;' not in s:
+            s=s.replace('  imageSource?: string | null;\n','  imageSource?: string | null;\n  imageAttribution?: string | null;\n  imageMetadata?: PlaceImage[];\n')
+          p.write_text(s)
+
+          # persistent overlay
+          Path('data/places-product.ts').write_text('''import { PLACES as EXPANDED_PLACES } from "./places-expanded";\nimport { enrichPlace } from "./enrichments";\nimport imageEnrichment from "./place-image-enrichment.json";\nimport type { Place } from "@/types/place";\n\ntype ImagePatch = Partial<Pick<Place, "googlePlaceId" | "coverImage" | "image" | "images" | "galleryImages" | "imageSource" | "imageAttribution" | "imageVerifiedAt" | "imageMetadata">>;\nconst PHOTO_ENRICHMENTS = imageEnrichment as Record<string, ImagePatch>;\nfunction applyPhotoEnrichment(place: Place): Place {\n  const patch = PHOTO_ENRICHMENTS[place.id];\n  if (!patch) return place;\n  return { ...place, ...patch, images: patch.images?.length ? patch.images : place.images, galleryImages: patch.galleryImages?.length ? patch.galleryImages : place.galleryImages, source: Array.from(new Set([...(place.source || []), patch.imageSource || "Photo enrichment layer"])) };\n}\nexport const PLACES: Place[] = EXPANDED_PLACES.map(enrichPlace).map(applyPhotoEnrichment);\n''')
+
+          # google maps live photo metadata
+          p=Path('lib/google-maps.ts'); s=p.read_text()
+          s=re.sub(r'import type \{([^}]+)\} from "@/types/place";', lambda m: 'import type {' + (m.group(1).rstrip() + ', PlaceImage' if 'PlaceImage' not in m.group(1) else m.group(1)) + '} from "@/types/place";', s, count=1)
+          if 'selectBestPlaceImage' not in s:
+            s=s.replace('import { DORM_CENTER, googleMapsSearchUrl, withDistance } from "@/lib/place-utils";','import { DORM_CENTER, googleMapsSearchUrl, withDistance } from "@/lib/place-utils";\nimport { selectBestPlaceImage } from "@/lib/place-images";')
+          old='''  let image: string | null = null;\n  try {\n    image = raw.photos?.[0]?.getURI?.({ maxWidth: 1000, maxHeight: 720 }) || null;\n  } catch {}\n'''
+          new='''  const imageMetadata: PlaceImage[] = (raw.photos || []).slice(0, 8).map((photo: any) => {\n    let url = "";\n    try { url = photo.getURI?.({ maxWidth: 1200, maxHeight: 900 }) || ""; } catch {}\n    const attribution = Array.isArray(photo.authorAttributions) ? photo.authorAttributions.map((item: any) => item.displayName).filter(Boolean).join(", ") : null;\n    return { url, source: "google_places" as const, photoReference: photo.name || null, attribution: attribution || null, width: typeof photo.widthPx === "number" ? photo.widthPx : null, height: typeof photo.heightPx === "number" ? photo.heightPx : null, verified: true };\n  }).filter((photo: PlaceImage) => Boolean(photo.url));\n  const bestPhoto = imageMetadata.length ? selectBestPlaceImage({ ...({} as Place), imageMetadata }) : null;\n  const image = bestPhoto?.url || null;\n'''
+          if old in s: s=s.replace(old,new)
+          s=s.replace('    image,\n    images: image ? [image] : [],\n','    image,\n    coverImage: image,\n    images: imageMetadata.map((photo) => photo.url),\n    galleryImages: imageMetadata.map((photo) => photo.url),\n    imageSource: image ? "Google Places" : null,\n    imageAttribution: bestPhoto?.attribution ?? null,\n    imageVerifiedAt: image ? new Date().toISOString().slice(0, 10) : null,\n    imageMetadata,\n')
+          p.write_text(s)
+
+          # central merge in app
+          p=Path('components/AroundMyDormApp.tsx'); s=p.read_text()
+          if 'mergePlaceImageData' not in s:
+            s=s.replace('import { LEGACY_DARK_MAP_STYLES } from "@/lib/map-style";','import { LEGACY_DARK_MAP_STYLES } from "@/lib/map-style";\nimport { mergePlaceImageData } from "@/lib/place-images";')
+          s=s.replace('      image: live.image || seed.image,\n      images: live.images.length ? live.images : seed.images,\n','      image: live.image || seed.image,\n      coverImage: live.coverImage || seed.coverImage || seed.image,\n      images: live.images.length ? live.images : seed.images,\n      galleryImages: live.galleryImages?.length ? live.galleryImages : seed.galleryImages ?? seed.images,\n      imageSource: live.imageSource || seed.imageSource,\n      imageAttribution: live.imageAttribution || seed.imageAttribution,\n      imageVerifiedAt: live.imageVerifiedAt || seed.imageVerifiedAt,\n      imageMetadata: live.imageMetadata?.length ? live.imageMetadata : seed.imageMetadata,\n')
+          start=s.find('    return {', s.find('function mergeSeedAndLive'))
+          end=s.find('    } satisfies Place;', start)
+          if start!=-1 and end!=-1 and 'mergePlaceImageData(seed' not in s[start:end]:
+            s=s[:start]+'    return mergePlaceImageData(seed, {'+s[start+12:end]+'    } satisfies Place);'+s[end+22:]
+          p.write_text(s)
+
+          # PlaceCard
+          p=Path('components/PlaceCard.tsx'); s=p.read_text()
+          if 'PlacePhoto' not in s:
+            s=s.replace('import { CATEGORY_MAP } from "@/data/categories";','import { CATEGORY_MAP } from "@/data/categories";\nimport { PlacePhoto } from "@/components/PlacePhoto";')
+          start=s.find('          {place.coverImage || place.image ? ('); end=s.find('          <button\n            type="button"',start)
+          if start!=-1 and end!=-1:
+            s=s[:start]+'          <PlacePhoto place={place} fallbackLabel={copy.unknownData} className="h-full min-h-[154px] w-full object-cover contrast-[.98] saturate-[.94]" />\n          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/[0.04]" />\n'+s[end:]
+          p.write_text(s)
+
+          # MapBottomSheet
+          p=Path('components/MapBottomSheet.tsx'); s=p.read_text()
+          if 'PlacePhoto' not in s:
+            s=s.replace('import { CATEGORY_MAP } from "@/data/categories";','import { CATEGORY_MAP } from "@/data/categories";\nimport { PlacePhoto } from "@/components/PlacePhoto";')
+          pat=re.compile(r'        \{place\.coverImage \|\| place\.image \? \(.*?        \) : \(.*?        \)\}\n',re.S)
+          s,_=pat.subn('        <div className={`${imageSize} relative shrink-0 overflow-hidden rounded-[16px] transition-[width,height] duration-[var(--motion-normal)]`}><PlacePhoto place={place} className="h-full w-full object-cover" /></div>\n',s,count=1)
+          p.write_text(s)
+
+          # PlaceDetail
+          p=Path('components/PlaceDetail.tsx'); s=p.read_text()
+          if 'PlacePhoto' not in s:
+            s=s.replace('import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";','import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";\nimport { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";')
+          pat=re.compile(r'            \{place\.coverImage \|\| place\.image \? \(.*?            \) : \(.*?            \)\}\n',re.S)
+          s,_=pat.subn('            <PlacePhoto place={place} eager className="h-full w-full object-cover" fallbackLabel={copy.unknownData} />\n',s,count=1)
+          anchor='            <div className="mt-5 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">\n              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.aboutPlace}</p>'
+          if 'รูปภาพสถานที่' not in s and anchor in s:
+            block='''            {gallery.length > 1 && (\n              <div className="mt-4">\n                <div className="mb-2 flex items-center justify-between"><p className="text-[11px] font-bold">{language === "en" ? "Place photos" : "รูปภาพสถานที่"}</p><span className="text-[9px] text-[var(--amd-text-3)]">{gallery.slice(0, 8).length} {language === "en" ? "photos" : "รูป"}</span></div>\n                <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{gallery.slice(0, 8).map((url, index) => <img key={`${url}-${index}`} src={url} alt={`${place.name} ${index + 1}`} loading="lazy" decoding="async" className="h-28 w-40 shrink-0 rounded-[16px] object-cover" />)}</div>\n                <div className="mt-2"><PlacePhotoAttribution place={place} /></div>\n              </div>\n            )}\n\n'''
+            s=s.replace(anchor,block+anchor)
+          p.write_text(s)
+
+          p=Path('package.json'); pkg=json.loads(p.read_text()); pkg['scripts']['enrich:images']='tsx scripts/enrich-existing-place-images.ts'; p.write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+'\n')
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run validate:data
+      - run: npm test
+      - run: npm run build
+      - run: npx wrangler deploy --dry-run
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add types/place.ts data/places-product.ts lib/google-maps.ts components/AroundMyDormApp.tsx components/PlaceCard.tsx components/MapBottomSheet.tsx components/PlaceDetail.tsx package.json package-lock.json
+          if ! git diff --cached --quiet; then git commit -m "Integrate real business photo enrichment pipeline" && git push; fi
