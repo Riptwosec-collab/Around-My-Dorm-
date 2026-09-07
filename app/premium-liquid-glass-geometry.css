@@ -1,0 +1,54 @@
+/* Geometry compatibility guard for the additive liquid-glass layer.
+   Visual materials must never override layout-positioning utilities or the floating nav. */
+
+.amd-nav {
+  position: fixed;
+}
+
+.absolute.amd-glass,
+.absolute.amd-glass-strong,
+.absolute.amd-card,
+.absolute.amd-input {
+  position: absolute;
+}
+
+.fixed.amd-glass,
+.fixed.amd-glass-strong,
+.fixed.amd-card,
+.fixed.amd-input {
+  position: fixed;
+}
+
+.sticky.amd-glass,
+.sticky.amd-glass-strong,
+.sticky.amd-card,
+.sticky.amd-input {
+  position: sticky;
+}
+
+.relative.amd-glass,
+.relative.amd-glass-strong,
+.relative.amd-card,
+.relative.amd-input {
+  position: relative;
+}
+
+/* Preserve fixed-nav safe-area geometry at every requested mobile width. */
+@media (max-width: 767px) {
+  .amd-nav {
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    width: auto;
+    max-width: none;
+    margin-inline: 0;
+  }
+}
+
+@media (min-width: 768px) {
+  .amd-nav {
+    left: 50%;
+    right: auto;
+    width: min(430px, calc(100vw - 32px));
+    transform: translateX(-50%);
+  }
+}
