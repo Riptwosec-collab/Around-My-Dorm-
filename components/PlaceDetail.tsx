@@ -18,6 +18,7 @@ import { CATEGORY_MAP } from "@/data/categories";
 import { getCopy } from "@/locales";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
+import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
 import {
   calculateLocalScore,
   formatDistance,
@@ -153,6 +154,8 @@ export function PlaceDetail({
               )}
               <button type="button" onClick={share} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Share2 className="h-4 w-4" />{copy.share}</button>
             </div>
+
+            <GoogleLiveEnrichment place={place} language={language} />
 
             {gallery.length > 1 && (
               <div className="mt-4">

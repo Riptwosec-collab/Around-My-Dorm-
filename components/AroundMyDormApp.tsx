@@ -56,7 +56,8 @@ import { FoodNowSheet, type FoodNowOptions } from "@/components/FoodNowSheet";
 import { HomeLocationSheet } from "@/components/HomeLocationSheet";
 import { InfoSheet } from "@/components/InfoSheet";
 import { MapBottomSheet } from "@/components/MapBottomSheet";
-import { MapboxMap } from "@/components/MapboxMap";
+import { GoogleMapsMap } from "@/components/GoogleMapsMap";
+import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
 import { DataManagement } from "@/components/DataManagement";
 import { loadPlacesFromDatabase } from "@/lib/database/places";
 import { Toast, type ToastTone } from "@/components/Toast";
@@ -322,7 +323,8 @@ function LoadingCards() {
 }
 
 export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }) {
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? "";
+  const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+  const googleMapId = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID ?? "";
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
@@ -336,11 +338,12 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [origin, setOrigin] = useState(DORM_CENTER);
   const [originMode, setOriginMode] = useState<OriginMode>("dorm");
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [mapLoadState, setMapLoadState] = useState<MapLoadState>(mapboxToken ? "idle" : "missing");
+  const [mapLoadState, setMapLoadState] = useState<MapLoadState>(googleMapsApiKey ? "idle" : "missing");
   const [loadingPlaces, setLoadingPlaces] = useState(true);
   const [databasePlaces, setDatabasePlaces] = useState<Place[]>(PLACES);
   const [databaseSource, setDatabaseSource] = useState("embedded");
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
+  const [googleDiscoveryOpen, setGoogleDiscoveryOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
   const [favorites, setFavorites] = useState<Place[]>([]);
@@ -704,7 +707,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <div className="mt-3 space-y-3">
                 {nearbyPicks.map((place) => <PlaceCard key={`near-${place.id}`} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} />)}
-                {!visiblePlaces.length && !loadingPlaces && <div className="amd-glass amd-card p-7 text-center"><Search className="mx-auto h-7 w-7 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.noMatches}</p><p className="mt-1 text-[10px] leading-5 text-[var(--amd-text-3)]">{settings.language === "en" ? "Try cafe, mookata or parking" : "ลองค้นหา: ร้านกาแฟ • หมูกระทะ • ที่จอดรถ"}</p><div className="mt-4 flex flex-wrap justify-center gap-2"><button type="button" onClick={() => { setQuery(""); setCategory("cafe"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ร้านกาแฟ</button><button type="button" onClick={() => { setQuery("หมูกระทะ"); setCategory("all"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">หมูกระทะ</button><button type="button" onClick={() => { setQuery(""); setCategory("parking"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ที่จอดรถ</button></div><button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setQuickFilter(null); }} className="mt-4 text-[11px] font-semibold text-[#149CFF]">{copy.clearFilters}</button><button type="button" onClick={() => setDataManagementOpen(true)} className="ml-3 mt-4 text-[11px] font-semibold text-[#00D9FF]">{settings.language === "en" ? "Search more places" : "ค้นหาเพิ่มเติม"}</button></div>}
+                {!visiblePlaces.length && !loadingPlaces && <div className="amd-glass amd-card p-7 text-center"><Search className="mx-auto h-7 w-7 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.noMatches}</p><p className="mt-1 text-[10px] leading-5 text-[var(--amd-text-3)]">{settings.language === "en" ? "Try cafe, mookata or parking" : "ลองค้นหา: ร้านกาแฟ • หมูกระทะ • ที่จอดรถ"}</p><div className="mt-4 flex flex-wrap justify-center gap-2"><button type="button" onClick={() => { setQuery(""); setCategory("cafe"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ร้านกาแฟ</button><button type="button" onClick={() => { setQuery("หมูกระทะ"); setCategory("all"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">หมูกระทะ</button><button type="button" onClick={() => { setQuery(""); setCategory("parking"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ที่จอดรถ</button></div><button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setQuickFilter(null); }} className="mt-4 text-[11px] font-semibold text-[#149CFF]">{copy.clearFilters}</button><button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="ml-3 mt-4 text-[11px] font-semibold text-[#00D9FF]">{settings.language === "en" ? "Search more places" : "ค้นหาเพิ่มเติม"}</button></div>}
               </div>
 
               <button type="button" onClick={pickFoodNow} className="amd-btn amd-btn-primary mb-2 mt-6 flex w-full items-center justify-center gap-2 rounded-[16px] px-4 py-3 text-[12px] font-bold"><Utensils className="h-4 w-4" /> {copy.foodNow}</button>
@@ -731,10 +734,11 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
               </div></div>
 
               <div className="relative mt-4 h-[58dvh] min-h-[450px] max-h-[720px] overflow-hidden rounded-[28px] border border-[rgba(0,140,255,.28)] bg-[#030812] shadow-[0_0_28px_rgba(0,122,255,.12)]">
-                {mapboxToken ? (
+                {googleMapsApiKey ? (
                   <>
-                    <MapboxMap
-                      token={mapboxToken}
+                    <GoogleMapsMap
+                      apiKey={googleMapsApiKey}
+                      mapId={googleMapId}
                       places={mapVisiblePlaces}
                       origin={origin}
                       radiusMeters={radiusMeters}
@@ -747,17 +751,17 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                       }}
                       onStateChange={(state) => setMapLoadState(state)}
                     />
-                    {(mapLoadState === "idle" || mapLoadState === "loading") && <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#02060D]/55 backdrop-blur-[2px]"><div className="amd-glass flex items-center gap-2 rounded-full px-4 py-2 text-[10px] text-[var(--amd-text-2)]"><LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Loading Mapbox" : "กำลังโหลด Mapbox"}</div></div>}
-                    {mapLoadState === "error" && <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><p className="text-[12px] font-semibold">{settings.language === "en" ? "Mapbox could not load" : "โหลด Mapbox ไม่สำเร็จ"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">{settings.language === "en" ? "Place data remains available from the Around My Dorm database." : "ข้อมูลร้านยังใช้งานได้จากฐานข้อมูล Around My Dorm"}</p></div></div>}
+                    {(mapLoadState === "idle" || mapLoadState === "loading") && <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#02060D]/55 backdrop-blur-[2px]"><div className="amd-glass flex items-center gap-2 rounded-full px-4 py-2 text-[10px] text-[var(--amd-text-2)]"><LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Loading Google Maps" : "กำลังโหลด Google Maps"}</div></div>}
+                    {mapLoadState === "error" && <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><p className="text-[12px] font-semibold">{settings.language === "en" ? "Google Maps could not load" : "โหลด Google Maps ไม่สำเร็จ"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">{settings.language === "en" ? "Stored place data remains available from the Around My Dorm database." : "ข้อมูลร้านที่บันทึกไว้ยังใช้งานได้จากฐานข้อมูล Around My Dorm"}</p></div></div>}
                   </>
                 ) : (
                   <div className="amd-hero-map amd-map-fallback rounded-none border-0">
                     <MiniMapArtwork />
-                    <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><div className="flex items-start gap-3"><MapIcon className="mt-0.5 h-6 w-6 shrink-0 text-[#00D9FF]" /><div><p className="text-[12px] font-semibold">{settings.language === "en" ? "Mapbox is not configured" : "ยังไม่ได้ตั้งค่า Mapbox"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">Add NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to Cloudflare build variables.</p></div></div></div></div>
+                    <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><div className="flex items-start gap-3"><MapIcon className="mt-0.5 h-6 w-6 shrink-0 text-[#00D9FF]" /><div><p className="text-[12px] font-semibold">{settings.language === "en" ? "Google Maps is not configured" : "ยังไม่ได้ตั้งค่า Google Maps"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY and NEXT_PUBLIC_GOOGLE_MAP_ID to Cloudflare build variables.</p></div></div></div></div>
                   </div>
                 )}
 
-                <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2"><select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none"><option value={250}>250 ม.</option><option value={500}>500 ม.</option><option value={1000}>1 กม.</option><option value={2000}>2 กม.</option><option value={3000}>3 กม.</option><option value={5000}>5 กม.</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" /></div>{showSearchArea && pendingMapCenter && <button type="button" onClick={() => { setMapSearchCenter(pendingMapCenter); setPendingMapCenter(null); setSelectedPlace(null); setShowSearchArea(false); }} className="amd-btn amd-btn-primary absolute left-1/2 top-[64px] z-20 -translate-x-1/2 rounded-full px-4 py-2 text-[10px] font-bold shadow-xl">{copy.searchThisArea}</button>}
+                <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2"><select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none"><option value={250}>250 ม.</option><option value={500}>500 ม.</option><option value={1000}>1 กม.</option><option value={2000}>2 กม.</option><option value={3000}>3 กม.</option><option value={5000}>5 กม.</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" /></div>{showSearchArea && pendingMapCenter && <button type="button" onClick={() => { setMapSearchCenter(pendingMapCenter); setPendingMapCenter(null); setSelectedPlace(null); setShowSearchArea(false); }} className="amd-btn amd-btn-primary absolute left-1/2 top-[64px] z-20 -translate-x-1/2 rounded-full px-4 py-2 text-[10px] font-bold shadow-xl">{copy.searchThisArea}</button>}{showSearchArea && <button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="amd-glass absolute left-1/2 top-[108px] z-20 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-[9px] font-semibold text-[#8ecbff]">{settings.language === "en" ? "Search Google for more places" : "ค้นหา Google เพิ่มเติม"}</button>}
                 <button type="button" aria-label={settings.language === "en" ? "Use current location" : "ใช้ตำแหน่งปัจจุบัน"} onClick={handleMapLocate} className={`amd-glass absolute right-4 z-20 grid h-12 w-12 place-items-center rounded-full text-[#149CFF] transition-[bottom] duration-[var(--motion-normal)] ${selectedPlace ? "bottom-[340px]" : "bottom-5"}`}><LocateFixed className="h-5 w-5" /></button>
 
                 {locationError && <div className="amd-glass absolute left-4 top-[72px] z-20 max-w-[280px] rounded-xl border border-amber-300/15 px-3 py-2 text-[9px] leading-4 text-amber-100">{locationError}</div>}
@@ -864,6 +868,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         </nav>
       </div>
 
+      {googleDiscoveryOpen && <GoogleDiscoverySheet initialQuery={query || (category !== "all" ? CATEGORY_MAP[category]?.name || "" : "")} center={mapSearchCenter} radiusMeters={radiusMeters} language={settings.language} onClose={() => setGoogleDiscoveryOpen(false)} onReviewCandidate={(candidate) => { try { sessionStorage.setItem("around-dorm-google-candidate-review-v1", JSON.stringify(candidate)); } catch {} setGoogleDiscoveryOpen(false); setDataManagementOpen(true); showToast(settings.language === "en" ? "Candidate opened for admin review" : "ส่ง Candidate ไปหน้า Data Management แล้ว"); }} />}
       {dataManagementOpen && <DataManagement places={allPlaces} databaseSource={databaseSource} language={settings.language} onClose={() => setDataManagementOpen(false)} onReload={() => { void reloadDatabase(); }} />}
       {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} resultCount={tab === "map" ? mapVisiblePlaces.length : visiblePlaces.length} />}
       {detailPlace && <PlaceDetail place={detailPlace} saved={isFavorite(detailPlace)} language={settings.language} onClose={() => setDetailPlace(null)} onSave={() => toggleFavorite(detailPlace)} onMap={() => { setDetailPlace(null); openMap(detailPlace); }} />}

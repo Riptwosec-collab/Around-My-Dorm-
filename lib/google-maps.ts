@@ -30,7 +30,7 @@ export function loadGoogleMaps(apiKey: string) {
     script.defer = true;
     script.src =
       `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}` +
-      "&v=weekly&libraries=places,marker&language=th&region=TH";
+      "&v=weekly&libraries=marker&language=th&region=TH";
     script.onload = () => { if (window.google?.maps) resolve(); else { delete window.__aroundDormMapsPromise; reject(new Error("Google Maps initialized without maps library")); } };
     script.onerror = () => { delete window.__aroundDormMapsPromise; reject(new Error("Google Maps load failed")); };
     document.head.appendChild(script);
