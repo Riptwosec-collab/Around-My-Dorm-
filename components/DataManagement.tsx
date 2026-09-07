@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, FileUp, History, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react";
 import { CATEGORIES } from "@/data/categories";
 import { GoogleMaintenancePanel } from "@/components/GoogleMaintenancePanel";
+import { GooglePlaceIdManager } from "@/components/GooglePlaceIdManager";
 import { auditPlaces, findDuplicatePairs, selectPlacesForUpdate, type UpdateMode } from "@/lib/place-update-engine";
 import { freshnessState } from "@/lib/data-governance";
 import { addReviewedLocalPlace, applyLocalPlacePatch, loadLocalPlaceHistory, rollbackLocalPlaceHistory, type LocalPlaceHistory } from "@/lib/database/places";
@@ -288,6 +289,8 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
         </section>
 
         {googleCandidate && <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#00D9FF]">NEW PLACE CANDIDATE</p><p className="mt-1 text-[13px] font-semibold">{googleCandidate.name || "Google candidate"}</p><p className="mt-1 text-[8px] leading-4 text-[var(--amd-text-3)]">{googleCandidate.address || "—"}</p><p className="mt-1 text-[8px] text-[var(--amd-text-3)]">Google Place ID: {googleCandidate.googlePlaceId || "—"}</p></div><button type="button" onClick={() => { try { sessionStorage.removeItem("around-dorm-google-candidate-review-v1"); } catch {} setGoogleCandidate(null); }} className="amd-chip h-9 min-h-0 px-3 text-[8px]">{language === "en" ? "Ignore" : "ไม่ใช้"}</button></div><div className="mt-3 rounded-xl border border-amber-300/10 bg-amber-300/[0.05] p-3 text-[8px] leading-4 text-amber-100">{language === "en" ? "Temporary Google discovery candidate. Verify with an owned/authorized source before creating or updating a permanent internal record. Google Place ID may remain as the external identity link." : "Candidate ชั่วคราวจาก Google • ให้ตรวจด้วยแหล่ง Owned/Authorized ก่อนเพิ่มหรือแก้ข้อมูลถาวร โดยเก็บ Google Place ID เป็นตัวเชื่อมภายนอกได้"}</div></section>}
+
+        <GooglePlaceIdManager places={places} language={language} onReload={onReload} />
 
         <GoogleMaintenancePanel places={places} language={language} />
 
