@@ -101,10 +101,10 @@ export function PlaceDetail({
 
   return (
     <>
-      <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/65 backdrop-blur-sm">
+      <div className="amd-sheet-backdrop">
         <button type="button" aria-label={copy.close} onClick={onClose} className="absolute inset-0" />
-        <section className="relative max-h-[92dvh] w-full max-w-[520px] overflow-y-auto rounded-t-[34px] border border-white/10 bg-[#08111d]/98 shadow-2xl">
-          <div className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] bg-[#08111d]/90 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-2xl">
+        <section className="amd-sheet amd-glass-strong relative max-h-[92dvh] w-full max-w-[520px] overflow-y-auto rounded-t-[34px] border-b-0 shadow-2xl">
+          <div className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] bg-[var(--amd-glass-strong)] px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-2xl">
             <div className="h-1.5 w-12 rounded-full bg-white/15" />
             <button type="button" aria-label={copy.close} onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]">
               <X className="h-4 w-4" />
@@ -123,22 +123,22 @@ export function PlaceDetail({
           <div className="relative -mt-9 px-4 pb-[calc(28px+env(safe-area-inset-bottom))]">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">{category?.name || (language === "en" ? "Place" : "สถานที่")}</p>
-                <h2 className="mt-1 text-[25px] font-black tracking-[-0.035em]">{place.name}</h2>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-300">{category?.name || (language === "en" ? "Place" : "สถานที่")}</p>
+                <h2 className="mt-1 text-[25px] font-bold tracking-[-0.035em]">{place.name}</h2>
                 {place.nameEn && <p className="mt-1 text-xs text-white/42">{place.nameEn}</p>}
               </div>
               <button type="button" aria-label={saved ? "นำออกจากรายการโปรด" : "เพิ่มรายการโปรด"} onClick={onSave} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06]">
-                <Heart className={`h-5 w-5 ${saved ? "fill-pink-400 text-pink-300" : "text-white/75"}`} />
+                <Heart className={`amd-heart h-5 w-5 ${saved ? "amd-heart-saved fill-[#008CFF] text-[#149CFF]" : "text-white/75"}`} />
               </button>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              {isLocal && <span className="rounded-xl border border-pink-300/15 bg-pink-300/[0.08] px-2.5 py-2 text-[10px] font-black text-pink-100">LOCAL</span>}
-              {place.placeType === "chain" && <span className="rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-2 text-[10px] font-black text-white/60">CHAIN</span>}
-              {isLocal && localScore != null && localScore >= 78 && <span className="rounded-xl border border-amber-300/15 bg-amber-300/[0.08] px-2.5 py-2 text-[10px] font-black text-amber-100">🔥 Local Pick {localScore}</span>}
+              {isLocal && <span className="rounded-xl border border-[rgba(0,140,255,.24)] bg-[rgba(0,122,255,.07)] px-2.5 py-2 text-[10px] font-bold text-[#8ecbff]">LOCAL</span>}
+              {place.placeType === "chain" && <span className="rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-2 text-[10px] font-bold text-white/60">CHAIN</span>}
+              {isLocal && localScore != null && localScore >= 78 && <span className="rounded-xl border border-amber-300/15 bg-amber-300/[0.08] px-2.5 py-2 text-[10px] font-bold text-amber-100">Local Pick {localScore}</span>}
               {place.rating != null && (
                 <span className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-2 text-[10px] font-bold">
-                  <Star className="h-3.5 w-3.5 fill-cyan-300 text-cyan-300" /> {place.rating.toFixed(1)}
+                  <Star className="h-3.5 w-3.5 fill-[#FFC341] text-[#FFC341]" /> {place.rating.toFixed(1)}
                   {place.reviewCount != null ? ` • ${place.reviewCount.toLocaleString()} รีวิว` : ""}
                 </span>
               )}
@@ -158,7 +158,7 @@ export function PlaceDetail({
             </div>
 
             <div className="mt-5 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.aboutPlace}</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.aboutPlace}</p>
               <p className="mt-2 text-[12px] leading-6 text-white/68">{place.description}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">{place.tags.map((tag) => <span key={tag} className="rounded-lg bg-white/[0.055] px-2 py-1 text-[9px] text-white/55">{tag}</span>)}</div>
             </div>
@@ -177,35 +177,35 @@ export function PlaceDetail({
 
             {(menuItems.length > 0 || place.popularMenus.length > 0 || place.recommendedItems.length > 0) && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.popularMenu}</p>
-                {menuItems.length > 0 ? <div className="mt-3 grid grid-cols-2 gap-2">{menuItems.map((item) => <div key={item.id} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><p className="text-[11px] font-black">{item.name}</p><p className="mt-1 text-[9px] text-white/40">{item.price != null ? `${item.price.toLocaleString()} ${language === "en" ? "THB" : "บาท"}` : copy.unknownData}</p>{item.isPopular && <span className="mt-2 inline-block rounded-lg bg-cyan-300/[0.08] px-2 py-1 text-[8px] font-bold text-cyan-100">{copy.popular}</span>}</div>)}</div> : <div className="mt-3 space-y-2">{[...place.popularMenus, ...place.recommendedItems].map((item) => <div key={item} className="flex items-center gap-2 text-[11px] text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-cyan-300" />{item}</div>)}</div>}
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.popularMenu}</p>
+                {menuItems.length > 0 ? <div className="mt-3 grid grid-cols-2 gap-2">{menuItems.map((item) => <div key={item.id} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><p className="text-[11px] font-bold">{item.name}</p><p className="mt-1 text-[9px] text-white/40">{item.price != null ? `${item.price.toLocaleString()} ${language === "en" ? "THB" : "บาท"}` : copy.unknownData}</p>{item.isPopular && <span className="mt-2 inline-block rounded-lg bg-cyan-300/[0.08] px-2 py-1 text-[8px] font-bold text-cyan-100">{copy.popular}</span>}</div>)}</div> : <div className="mt-3 space-y-2">{[...place.popularMenus, ...place.recommendedItems].map((item) => <div key={item} className="flex items-center gap-2 text-[11px] text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-cyan-300" />{item}</div>)}</div>}
               </div>
             )}
 
             {place.deliveryPlatforms?.length ? (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.delivery}</p>
-                <div className="mt-3 flex flex-wrap gap-2">{place.deliveryPlatforms.map((platform) => <a key={`${platform.provider}-${platform.url}`} href={platform.url} target="_blank" rel="noreferrer" className="min-h-11 rounded-2xl border border-cyan-300/12 bg-cyan-300/[0.07] px-4 py-3 text-[10px] font-black text-cyan-100">{platform.provider}</a>)}</div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.delivery}</p>
+                <div className="mt-3 flex flex-wrap gap-2">{place.deliveryPlatforms.map((platform) => <a key={`${platform.provider}-${platform.url}`} href={platform.url} target="_blank" rel="noreferrer" className="min-h-11 rounded-2xl border border-cyan-300/12 bg-cyan-300/[0.07] px-4 py-3 text-[10px] font-bold text-cyan-100">{platform.provider}</a>)}</div>
               </div>
             ) : null}
 
             {amenities.length > 0 && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.amenities}</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.amenities}</p>
                 <div className="mt-3 flex flex-wrap gap-2">{amenities.map(([label]) => <span key={String(label)} className="rounded-xl border border-cyan-300/10 bg-cyan-300/[0.06] px-2.5 py-2 text-[10px] text-cyan-100">{String(label)}</span>)}</div>
               </div>
             )}
 
             {gallery.length > 0 && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.photos}</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.photos}</p>
                 <div className="mt-3 grid grid-cols-2 gap-2">{gallery.slice(0, 6).map((image) => <img key={image} src={image} alt={`${place.name} gallery`} loading="lazy" decoding="async" className="aspect-[4/3] w-full rounded-2xl object-cover" />)}</div>
               </div>
             )}
 
             {hasHours && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] px-4 py-2">
-                <p className="py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.openingHours}</p>
+                <p className="py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.openingHours}</p>
                 {place.is24Hours ? <ValueRow label={copy.everyDay} value={copy.open24} /> : place.openingHoursText && !DAYS.some(({ key }) => Boolean(place.openingHours[key])) ? <ValueRow label={copy.openingData} value={place.openingHoursText} /> : DAYS.map(({ key, label }) => <ValueRow key={key} label={language === "en" ? copy[key] : label} value={place.openingHours[key] || "ยังไม่มีข้อมูล"} />)}
                 {openingFreshness.stale && place.openingHoursVerifiedAt && <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-300/[0.06] p-2.5 text-[9px] leading-4 text-amber-100/70"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />เวลาเปิดอาจมีการเปลี่ยนแปลง กรุณาตรวจสอบก่อนเดินทาง</div>}
               </div>
@@ -214,16 +214,16 @@ export function PlaceDetail({
             <div className={`mt-4 rounded-[24px] border p-4 ${place.verified ? "border-emerald-300/15 bg-emerald-300/[0.055]" : "border-amber-300/15 bg-amber-300/[0.05]"}`}>
               <div className="flex items-center gap-2">
                 <ShieldCheck className={`h-4 w-4 ${place.verified ? "text-emerald-300" : "text-amber-200"}`} />
-                <p className="text-[11px] font-black">{place.verified ? copy.dataVerified : copy.dataPartial}</p>
+                <p className="text-[11px] font-bold">{place.verified ? copy.dataVerified : copy.dataPartial}</p>
               </div>
               <p className="mt-2 text-[10px] leading-5 text-white/48">{copy.lastVerified}: {place.lastVerified || copy.unknownVerified}</p>
               <p className="text-[10px] leading-5 text-white/48">{copy.source}: {place.source.length ? place.source.join(" • ") : copy.unknownVerified}</p>
               {place.notes && <p className="mt-1 text-[10px] leading-5 text-white/48">{copy.notes}: {place.notes}</p>}
             </div>
 
-            <button type="button" onClick={() => setReportOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.045] text-[10px] font-black text-amber-100"><AlertTriangle className="h-4 w-4" />{copy.reportWrong}</button>
+            <button type="button" onClick={() => setReportOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.045] text-[10px] font-bold text-amber-100"><AlertTriangle className="h-4 w-4" />{copy.reportWrong}</button>
 
-            <a href={place.googleMapsUrl || googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-300 text-[11px] font-black text-[#031018]">
+            <a href={place.googleMapsUrl || googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-300 text-[11px] font-bold text-[#031018]">
               {copy.openGoogleMaps} <ArrowUpRight className="h-4 w-4" />
             </a>
           </div>

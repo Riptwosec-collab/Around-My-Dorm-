@@ -24,6 +24,7 @@ import {
   Info,
   Languages,
   LocateFixed,
+  LoaderCircle,
   Map as MapIcon,
   MapPin,
   Moon,
@@ -55,6 +56,7 @@ import { FoodNowSheet, type FoodNowOptions } from "@/components/FoodNowSheet";
 import { HomeLocationSheet } from "@/components/HomeLocationSheet";
 import { InfoSheet } from "@/components/InfoSheet";
 import { MapBottomSheet } from "@/components/MapBottomSheet";
+import { Toast, type ToastTone } from "@/components/Toast";
 import { GOOGLE_PLACE_FIELDS, loadGoogleMaps, mapGooglePlace } from "@/lib/google-maps";
 import { getCopy } from "@/locales";
 import { getGooglePlacesCache, makeGooglePlacesCacheKey, setGooglePlacesCache } from "@/lib/google-places-cache";
@@ -375,8 +377,9 @@ function MiniMapArtwork() {
       <div className="amd-map-dot left-[21%] top-[32%]" />
       <div className="amd-map-dot bottom-[25%] left-[44%]" />
       <div className="amd-map-dot right-[18%] top-[18%]" />
-      <div className="absolute left-[12%] top-[18%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(0,229,195,.28)] bg-[#061424]/90 text-[15px]">☕</div>
-      <div className="absolute bottom-[15%] right-[15%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(155,108,255,.34)] bg-[#07111f]/90 text-[15px]">🛍️</div>
+      <div className="absolute left-[12%] top-[18%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(232,238,248,.22)] bg-[#061424]/90 text-[#e8eef8]"><Coffee className="h-4 w-4" /></div>
+      <div className="absolute bottom-[17%] left-[38%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(255,157,60,.24)] bg-[#07111f]/90 text-[#ff9d3c]"><Utensils className="h-4 w-4" /></div>
+      <div className="absolute bottom-[15%] right-[15%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(0,122,255,.3)] bg-[#07111f]/90 text-[#149CFF]"><Car className="h-4 w-4" /></div>
     </div>
   );
 }
@@ -432,6 +435,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [infoSheet, setInfoSheet] = useState<"help" | "about" | null>(null);
   const [homeLocationOpen, setHomeLocationOpen] = useState(false);
   const [foodNowOpen, setFoodNowOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [mapSearchCenter, setMapSearchCenter] = useState(DORM_CENTER);
   const [pendingMapCenter, setPendingMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [showSearchArea, setShowSearchArea] = useState(false);
@@ -586,11 +590,16 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     if (place) setSelectedPlace(place);
   }, [tab, allPlaces]);
 
+  function showToast(message: string, tone: ToastTone = "success") {
+    setToast({ message, tone });
+  }
+
   function isFavorite(place: Place) {
     return favorites.some((saved) => saved.id === place.id || (saved.googlePlaceId && place.googlePlaceId === saved.googlePlaceId));
   }
 
   function toggleFavorite(place: Place) {
+    const removing = isFavorite(place);
     setFavorites((current) => {
       const exists = current.some((saved) => saved.id === place.id || (saved.googlePlaceId && place.googlePlaceId === saved.googlePlaceId));
       const next = exists
@@ -604,6 +613,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       }));
       return next;
     });
+    showToast(removing ? (settings.language === "en" ? "Removed from Saved" : "นำออกจากบันทึกแล้ว") : (settings.language === "en" ? "Saved" : "บันทึกแล้ว"), removing ? "removed" : "success");
   }
 
   function addRecent(place: Place) {
@@ -693,7 +703,10 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     setCollectionEditor(null);
   }
   function toggleFavoriteCollection(place: Place, collectionId: string) {
+    const target = collections.find((collection) => collection.id === collectionId);
+    const adding = !target?.placeIds.includes(place.id);
     setCollections((current) => current.map((collection) => collection.id !== collectionId ? collection : { ...collection, placeIds: collection.placeIds.includes(place.id) ? collection.placeIds.filter((id) => id !== place.id) : Array.from(new Set([place.id, ...collection.placeIds])) }));
+    if (target) showToast(adding ? `✓ ${settings.language === "en" ? "Added to" : "เพิ่มไปยัง"} ${target.title}` : `${settings.language === "en" ? "Removed from" : "นำออกจาก"} ${target.title}`, adding ? "success" : "removed");
   }
 
   useEffect(() => {
@@ -718,12 +731,15 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       markersRef.current.forEach((marker) => { if ("map" in marker) marker.map = null; else marker.setMap?.(null); }); markersRef.current = [];
       const placeMarkers: any[] = [];
       const makeMarker = (position: {lat:number;lng:number}, title: string, color: string, selected = false) => {
-        if (mapId && markerLib) { const pin = new markerLib.PinElement({ background: selected ? "#ffffff" : color, borderColor: selected ? "#00D9FF" : "#d8e4f5", glyphColor: selected ? "#007AFF" : "#07101b", scale: selected ? 1.2 : .9 }); return new markerLib.AdvancedMarkerElement({ map: mapRef.current, position, title, content: pin.element }); }
+        if (mapId && markerLib) { const pin = new markerLib.PinElement({ background: selected ? "#ffffff" : color, borderColor: selected ? "#00D9FF" : "#d8e4f5", glyphColor: selected ? "#007AFF" : "#07101b", scale: selected ? 1.2 : .9 }); if (selected) pin.element.classList.add("amd-marker-selected"); return new markerLib.AdvancedMarkerElement({ map: mapRef.current, position, title, content: pin.element }); }
         return new window.google.maps.Marker({ map: mapRef.current, position, title, icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: selected ? 10 : 7, fillColor: selected ? "#ffffff" : color, fillOpacity: 1, strokeColor: selected ? "#00D9FF" : "#d8e4f5", strokeWeight: 2 } });
       };
       const originMarker = makeMarker(origin, originMode === "dorm" ? DORM_NAME : copy.yourLocation, "#007AFF", true); markersRef.current.push(originMarker);
       visiblePlaces.forEach((place) => { if (place.latitude == null || place.longitude == null) return; const marker = makeMarker({lat:place.latitude,lng:place.longitude}, place.name, MARKER_COLORS[place.category] || "#8ca0bb", selectedPlace?.id === place.id); marker.addListener("click", () => { addRecent(place); setSelectedPlace(place); }); placeMarkers.push(marker); markersRef.current.push(marker); });
-      if (placeMarkers.length) clustererRef.current = new MarkerClusterer({ map: mapRef.current, markers: placeMarkers });
+      if (placeMarkers.length) {
+        const renderer: any = { render: ({ count, position }: any) => new window.google.maps.Marker({ position, icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 17, fillColor: "#061424", fillOpacity: .96, strokeColor: "#008CFF", strokeOpacity: .92, strokeWeight: 2 }, label: { text: String(count), color: "#F7F9FC", fontSize: "11px", fontWeight: "700" }, zIndex: 1000 + count }) };
+        clustererRef.current = new MarkerClusterer({ map: mapRef.current, markers: placeMarkers, renderer });
+      }
     })();
     return () => { cancelled = true; };
   }, [tab, apiReady, mapId, origin, originMode, radiusMeters, visiblePlaces, selectedPlace, mapSearchCenter, copy.yourLocation]);
@@ -742,7 +758,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       <div className="amd-shell">
         <div className="amd-content">
           {tab === "explore" && (
-            <div className="amd-page">
+            <div className="amd-page amd-page-enter">
               <PageHeader
                 title={copy.explore}
                 subtitle={copy.exploreSubtitle}
@@ -757,14 +773,19 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <div className="relative amd-input">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--amd-text-3)]" />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} className="h-14 w-full rounded-[20px] bg-transparent pl-12 pr-14 text-[13px] font-medium text-[var(--amd-text)] outline-none placeholder:text-[var(--amd-text-3)]" />
-                <button type="button" onClick={() => setFilterOpen(true)} className="amd-btn absolute right-2 top-1/2 grid h-10 w-10 min-h-0 -translate-y-1/2 place-items-center rounded-xl border border-[rgba(120,160,210,.18)] bg-white/[0.035] text-[var(--amd-text-2)]">
-                  <SlidersHorizontal className="h-[18px] w-[18px]" />
-                  {filtersCount > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#007AFF] px-1 text-[8px] font-bold text-white">{filtersCount}</span>}
-                </button>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} className="h-14 w-full rounded-[20px] bg-transparent pl-12 pr-[118px] text-[13px] font-medium text-[var(--amd-text)] outline-none placeholder:text-[var(--amd-text-3)]" />
+                <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                  {loadingPlaces && <LoaderCircle aria-label={settings.language === "en" ? "Updating" : "กำลังอัปเดต"} className="h-4 w-4 animate-spin text-[#00D9FF]" />}
+                  {query && <button type="button" aria-label={settings.language === "en" ? "Clear search" : "ล้างคำค้นหา"} onClick={() => setQuery("")} className="amd-btn grid h-9 w-9 min-h-0 place-items-center rounded-xl text-[var(--amd-text-3)]"><X className="h-4 w-4" /></button>}
+                  <button type="button" aria-label={settings.language === "en" ? "Filters" : "ตัวกรอง"} onClick={() => setFilterOpen(true)} className="amd-btn relative grid h-10 w-10 min-h-0 place-items-center rounded-xl border border-[rgba(120,160,210,.18)] bg-white/[0.035] text-[var(--amd-text-2)]">
+                    <SlidersHorizontal className="h-[18px] w-[18px]" />
+                    {filtersCount > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#007AFF] px-1 text-[8px] font-bold text-white">{filtersCount}</span>}
+                  </button>
+                </div>
               </div>
 
-              {locationError && <div className="mt-3 rounded-xl border border-rose-300/15 bg-rose-300/[0.05] px-3 py-2 text-[10px] text-rose-200">{locationError}</div>}
+              {locationError && <div className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] px-3 py-2 text-[10px] text-amber-100">{locationError}</div>}
+              {loadingPlaces && visiblePlaces.length > 0 && <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--amd-text-3)]"><LoaderCircle className="h-3.5 w-3.5 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Updating live data" : "กำลังอัปเดตข้อมูล"}</div>}
 
               <div className="-mx-4 mt-4 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0">
                 <div className="flex w-max gap-2">
@@ -813,7 +834,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <div className="mt-3 space-y-3">
                 {nearbyPicks.map((place) => <PlaceCard key={`near-${place.id}`} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} />)}
-                {!visiblePlaces.length && !loadingPlaces && <div className="amd-glass amd-card p-8 text-center"><Search className="mx-auto h-8 w-8 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.noMatches}</p><button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setQuickFilter(null); }} className="mt-3 text-[11px] font-semibold text-[#149CFF]">{copy.clearFilters}</button></div>}
+                {!visiblePlaces.length && !loadingPlaces && <div className="amd-glass amd-card p-7 text-center"><Search className="mx-auto h-7 w-7 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.noMatches}</p><p className="mt-1 text-[10px] leading-5 text-[var(--amd-text-3)]">{settings.language === "en" ? "Try cafe, mookata or parking" : "ลองค้นหา: ร้านกาแฟ • หมูกระทะ • ที่จอดรถ"}</p><div className="mt-4 flex flex-wrap justify-center gap-2"><button type="button" onClick={() => { setQuery(""); setCategory("cafe"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ร้านกาแฟ</button><button type="button" onClick={() => { setQuery("หมูกระทะ"); setCategory("all"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">หมูกระทะ</button><button type="button" onClick={() => { setQuery(""); setCategory("parking"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ที่จอดรถ</button></div><button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setQuickFilter(null); }} className="mt-4 text-[11px] font-semibold text-[#149CFF]">{copy.clearFilters}</button></div>}
               </div>
 
               <button type="button" onClick={pickFoodNow} className="amd-btn amd-btn-primary mb-2 mt-6 flex w-full items-center justify-center gap-2 rounded-[16px] px-4 py-3 text-[12px] font-bold"><Utensils className="h-4 w-4" /> {copy.foodNow}</button>
@@ -821,7 +842,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           )}
 
           {tab === "map" && (
-            <div className="amd-page">
+            <div className="amd-page amd-page-enter">
               <PageHeader
                 title={copy.map}
                 subtitle={copy.mapSubtitle}
@@ -830,8 +851,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <div className="relative amd-input">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--amd-text-3)]" />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchMap} className="h-14 w-full rounded-[20px] bg-transparent pl-12 pr-14 text-[13px] outline-none placeholder:text-[var(--amd-text-3)]" />
-                <button type="button" onClick={() => setFilterOpen(true)} className="absolute right-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-xl border border-[rgba(120,160,210,.18)] bg-white/[0.035]"><SlidersHorizontal className="h-4 w-4" /></button>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchMap} className="h-14 w-full rounded-[20px] bg-transparent pl-12 pr-[104px] text-[13px] outline-none placeholder:text-[var(--amd-text-3)]" />
+                <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">{loadingPlaces && <LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" />}{query && <button type="button" aria-label={settings.language === "en" ? "Clear search" : "ล้างคำค้นหา"} onClick={() => setQuery("")} className="amd-btn grid h-9 w-9 min-h-0 place-items-center rounded-xl text-[var(--amd-text-3)]"><X className="h-4 w-4" /></button>}<button type="button" aria-label={settings.language === "en" ? "Filters" : "ตัวกรอง"} onClick={() => setFilterOpen(true)} className="amd-btn grid h-10 w-10 min-h-0 place-items-center rounded-xl border border-[rgba(120,160,210,.18)] bg-white/[0.035]"><SlidersHorizontal className="h-4 w-4" /></button></div>
               </div>
 
               <div className="-mx-4 mt-4 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0"><div className="flex w-max gap-2">
@@ -856,7 +877,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           )}
 
           {tab === "favorites" && (
-            <div className="amd-page">
+            <div className="amd-page amd-page-enter">
               <PageHeader title={copy.saved} subtitle={copy.savedSubtitle} right={<button type="button" onClick={createCollection} className="amd-chip flex items-center gap-2 px-3 text-[11px] font-semibold"><Plus className="h-4 w-4" /> {copy.addItem}</button>} />
 
               <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Grid2X2 className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[19px] font-semibold">{copy.myCollections}</h2></div><button type="button" onClick={() => setSelectedCollection(null)} className="text-[11px] font-semibold text-[#149CFF]">{copy.viewAll} <ChevronRight className="inline h-3.5 w-3.5" /></button></div>
@@ -876,7 +897,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           )}
 
           {tab === "recent" && (
-            <div className="amd-page">
+            <div className="amd-page amd-page-enter">
               <PageHeader title={copy.recent} subtitle={copy.recentSubtitle} right={<button type="button" onClick={() => changeTab("map")} className="amd-glass grid h-12 w-12 place-items-center rounded-full text-[#149CFF]"><MapIcon className="h-5 w-5" /></button>} />
 
               <section className="amd-hero-map min-h-[164px] p-5">
@@ -902,7 +923,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           )}
 
           {tab === "settings" && (
-            <div className="amd-page">
+            <div className="amd-page amd-page-enter">
               <PageHeader title={copy.settings} subtitle={copy.settingsSubtitle} />
 
               <section className="amd-glass amd-card-selected amd-card flex items-center gap-4 p-4">
@@ -943,13 +964,13 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           <div className="grid h-full grid-cols-5 px-1">
             {navItems.map((item) => {
               const active = tab === item.id;
-              return <button key={item.id} type="button" aria-current={active ? "page" : undefined} onClick={() => changeTab(item.id)} className={`relative flex min-w-0 flex-col items-center justify-center gap-1 text-[9px] font-semibold transition ${active ? "amd-nav-active" : "text-[var(--amd-text-3)]"}`}>{active && <span className="absolute top-0 h-[2px] w-8 rounded-full bg-[#19E6FF] shadow-[0_0_16px_rgba(25,230,255,.95)]" />}<item.icon className={`h-[22px] w-[22px] ${active ? "drop-shadow-[0_0_9px_rgba(0,217,255,.65)]" : ""}`} /><span className="truncate">{item.label}</span></button>;
+              return <button key={item.id} type="button" aria-current={active ? "page" : undefined} onClick={() => changeTab(item.id)} className={`amd-nav-item relative flex min-w-0 flex-col items-center justify-center gap-1 text-[9px] font-semibold ${active ? "amd-nav-item-active amd-nav-active" : "text-[var(--amd-text-3)]"}`}>{active && <span className="amd-nav-indicator absolute top-0 h-[2px] w-8 rounded-full bg-[#19E6FF] shadow-[0_0_14px_rgba(25,230,255,.72)]" />}<item.icon className={`h-[22px] w-[22px] ${active ? "drop-shadow-[0_0_9px_rgba(0,217,255,.65)]" : ""}`} /><span className="truncate">{item.label}</span></button>;
             })}
           </div>
         </nav>
       </div>
 
-      {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} />}
+      {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} resultCount={visiblePlaces.length} />}
       {detailPlace && <PlaceDetail place={detailPlace} saved={isFavorite(detailPlace)} language={settings.language} onClose={() => setDetailPlace(null)} onSave={() => toggleFavorite(detailPlace)} onMap={() => { setDetailPlace(null); openMap(detailPlace); }} />}
       {collectionEditor && <CollectionEditorSheet mode={collectionEditor.mode} collection={collectionEditor.collection} language={settings.language} onClose={() => setCollectionEditor(null)} onSubmit={submitCollectionEditor} />}
       {collectionSelectorPlace && <CollectionSelectorSheet place={collectionSelectorPlace} collections={collections} language={settings.language} onToggle={(collectionId) => toggleFavoriteCollection(collectionSelectorPlace, collectionId)} onClose={() => setCollectionSelectorPlace(null)} />}
@@ -957,6 +978,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       {infoSheet && <InfoSheet kind={infoSheet} language={settings.language} onClose={() => setInfoSheet(null)} />}
       {homeLocationOpen && <HomeLocationSheet language={settings.language} custom={settings.customHomeLocation} onDorm={() => { useDormLocation(); setHomeLocationOpen(false); }} onCurrent={() => { useMyLocation(); setHomeLocationOpen(false); }} onCustom={useCustomHomeLocation} onClose={() => setHomeLocationOpen(false)} />}
       {foodNowOpen && <FoodNowSheet language={settings.language} defaultRadius={radiusMeters} onClose={() => setFoodNowOpen(false)} onSubmit={recommendFoodNow} />}
+      {toast && <Toast message={toast.message} tone={toast.tone} onDone={() => setToast(null)} />}
     </main>
   );
 }
