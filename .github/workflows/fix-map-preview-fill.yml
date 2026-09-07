@@ -1,0 +1,78 @@
+name: Fix Map Preview Fill
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-map-preview-fill.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-map-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fill fallback preview across full map container
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('components/AroundMyDormApp.tsx')
+          app = app_path.read_text(encoding='utf-8')
+          old = 'className="absolute inset-0 amd-hero-map rounded-none border-0"'
+          new = 'className="amd-hero-map amd-map-fallback rounded-none border-0"'
+          if old in app:
+              app = app.replace(old, new, 1)
+          elif new not in app:
+              raise SystemExit('Map fallback target not found')
+          app_path.write_text(app, encoding='utf-8')
+
+          css_path = Path('app/globals.css')
+          css = css_path.read_text(encoding='utf-8')
+          block = '''\n\n/* Map fallback must fill the same viewport as the live Google Map.\n   .amd-hero-map is relative by default for hero cards, so this modifier\n   restores absolute full-bleed positioning only inside the map screen. */\n.amd-map-fallback {\n  position: absolute !important;\n  inset: 0;\n  width: 100%;\n  height: 100%;\n  min-height: 100%;\n}\n\n.amd-map-fallback > .absolute.inset-y-0.right-0 {\n  left: 0;\n  right: 0;\n  width: 100% !important;\n  opacity: 0.92;\n}\n'''
+          if '.amd-map-fallback {' not in css:
+              css += block
+          css_path.write_text(css, encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/AroundMyDormApp.tsx app/globals.css package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No map preview changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Make map preview fill full map viewport'
+          git push origin HEAD:main
