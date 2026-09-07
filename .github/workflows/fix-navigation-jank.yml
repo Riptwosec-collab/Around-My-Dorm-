@@ -16,180 +16,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Apply smooth navigation fixes
-        shell: python
-        run: |
-          from pathlib import Path
-
-          app = Path('components/AroundMyDormApp.tsx')
-          s = app.read_text()
-
-          old = 'import { loadPlacesFromDatabase } from "@/lib/database/places";'
-          new = old + '\nimport { loadGoogleMaps } from "@/lib/google-maps";'
-          if new not in s:
-              if old not in s:
-                  raise SystemExit('database import anchor not found')
-              s = s.replace(old, new, 1)
-
-          helper_anchor = 'export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }) {'
-          helper = '''const TAB_ROUTES: Record<Tab, string> = {
-            explore: "/",
-            map: "/map/",
-            favorites: "/saved/",
-            recent: "/recent/",
-            settings: "/settings/",
-          };
-
-          function tabFromPath(pathname: string): Tab {
-            if (pathname.startsWith("/map")) return "map";
-            if (pathname.startsWith("/saved") || pathname.startsWith("/favorites")) return "favorites";
-            if (pathname.startsWith("/recent")) return "recent";
-            if (pathname.startsWith("/settings")) return "settings";
-            return "explore";
-          }
-
-          '''
-          if 'const TAB_ROUTES:' not in s:
-              if helper_anchor not in s:
-                  raise SystemExit('app export anchor not found')
-              s = s.replace(helper_anchor, helper + helper_anchor, 1)
-
-          copy_anchor = '  const copy = getCopy(settings.language);\n\n'
-          effects = '''  const copy = getCopy(settings.language);
-
-          // Warm the Maps JavaScript bundle after the first paint so the first Map tab open
-          // does not compete with the initial app render. This does not create a map instance.
-          useEffect(() => {
-            if (!googleMapsApiKey || typeof window === "undefined" || window.google?.maps) return;
-            const timer = window.setTimeout(() => {
-              void loadGoogleMaps(googleMapsApiKey).catch(() => {});
-            }, 900);
-            return () => window.clearTimeout(timer);
-          }, [googleMapsApiKey]);
-
-          // Bottom-tab navigation stays inside the mounted app. Using Next router.push here
-          // remounted the entire client shell, reloaded the database and replayed entry animation,
-          // which caused the visible flash/stall reported on mobile.
-          useEffect(() => {
-            const syncTabFromUrl = () => {
-              setSelectedPlace(null);
-              setTab(tabFromPath(window.location.pathname));
-            };
-            window.addEventListener("popstate", syncTabFromUrl);
-            return () => window.removeEventListener("popstate", syncTabFromUrl);
-          }, []);
-
-          '''
-          if 'Bottom-tab navigation stays inside the mounted app' not in s:
-              if copy_anchor not in s:
-                  raise SystemExit('copy effect anchor not found')
-              s = s.replace(copy_anchor, effects, 1)
-
-          old_change = '''  function changeTab(next: Tab) {
-            setSelectedPlace(null); setTab(next);
-            const routes: Record<Tab, string> = { explore: "/", map: "/map/", favorites: "/saved/", recent: "/recent/", settings: "/settings/" };
-            router.push(routes[next]);
-          }
-
-          function openMap(place: Place) {
-            addRecent(place); setTab("map"); setSelectedPlace(place); router.push(`/map/?place=${encodeURIComponent(place.slug)}`);
-          }
-'''
-          new_change = '''  function changeTab(next: Tab) {
-            if (next === tab) return;
-            setSelectedPlace(null);
-            setTab(next);
-            if (typeof window !== "undefined") {
-              const route = TAB_ROUTES[next];
-              if (window.location.pathname !== route || window.location.search) {
-                window.history.pushState({ amdTab: next }, "", route);
-              }
-            }
-          }
-
-          function openMap(place: Place) {
-            addRecent(place);
-            setTab("map");
-            setSelectedPlace(place);
-            if (typeof window !== "undefined") {
-              window.history.pushState({ amdTab: "map", place: place.slug }, "", `/map/?place=${encodeURIComponent(place.slug)}`);
-            }
-          }
-'''
-          if new_change not in s:
-              if old_change not in s:
-                  raise SystemExit('navigation function anchor not found')
-              s = s.replace(old_change, new_change, 1)
-
-          s = s.replace('(mapLoadState === "idle" || mapLoadState === "loading")', 'mapLoadState === "loading"')
-          app.write_text(s)
-
-          maps = Path('components/GoogleMapsMap.tsx')
-          s = maps.read_text()
-          old = '''    if (!apiKey || !containerRef.current) return;
-              let cancelled = false;
-              onStateChange?.("loading");
-
-              void loadGoogleMaps(apiKey)
-'''
-          new = '''    if (!apiKey || !containerRef.current) return;
-              let cancelled = false;
-              const mapsAlreadyLoaded = Boolean(window.google?.maps);
-              if (!mapsAlreadyLoaded) onStateChange?.("loading");
-
-              void loadGoogleMaps(apiKey)
-'''
-          if new not in s:
-              if old not in s:
-                  raise SystemExit('GoogleMapsMap loading anchor not found')
-              s = s.replace(old, new, 1)
-          maps.write_text(s)
-
-          css = Path('app/globals.css')
-          s = css.read_text()
-          old = '''.amd-page-enter {
-            animation: amd-page-in var(--motion-normal) var(--ease-standard) both;
-          }
-'''
-          new = '''.amd-page-enter {
-            animation: none;
-          }
-'''
-          if new not in s:
-              if old not in s:
-                  raise SystemExit('page animation anchor not found')
-              s = s.replace(old, new, 1)
-
-          mobile_anchor = '@media (max-width: 430px) {'
-          mobile_perf = '''@media (max-width: 767px) {
-            /* Lower mobile GPU composition cost while keeping the glass appearance. */
-            .amd-glass,
-            .amd-input,
-            .amd-chip {
-              backdrop-filter: blur(12px);
-              -webkit-backdrop-filter: blur(12px);
-            }
-
-            .amd-glass-strong,
-            .amd-nav {
-              backdrop-filter: blur(18px);
-              -webkit-backdrop-filter: blur(18px);
-            }
-          }
-
-          '''
-          if 'Lower mobile GPU composition cost' not in s:
-              if mobile_anchor not in s:
-                  raise SystemExit('mobile media anchor not found')
-              s = s.replace(mobile_anchor, mobile_perf + mobile_anchor, 1)
-          css.write_text(s)
-
-          print('Navigation performance patches applied')
+        run: python scripts/fix-navigation-jank.py
 
       - name: Install dependencies
         run: npm ci
@@ -205,10 +39,10 @@ jobs:
 
       - name: Commit optimized navigation
         run: |
-          rm -f .github/workflows/fix-navigation-jank.yml
+          rm -f .github/workflows/fix-navigation-jank.yml scripts/fix-navigation-jank.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add components/AroundMyDormApp.tsx components/GoogleMapsMap.tsx app/globals.css .github/workflows/fix-navigation-jank.yml
+          git add -A components/AroundMyDormApp.tsx components/GoogleMapsMap.tsx app/globals.css .github/workflows/fix-navigation-jank.yml scripts/fix-navigation-jank.py
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
