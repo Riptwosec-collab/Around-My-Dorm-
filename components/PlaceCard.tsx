@@ -1,13 +1,23 @@
 "use client";
 
 import {
+  BriefcaseBusiness,
+  Car,
   Clock3,
+  Coffee,
   Diamond,
+  Dumbbell,
   Heart,
   MapPin,
   Navigation,
+  Pill,
+  Scissors,
   ShieldCheck,
+  ShoppingBag,
   Star,
+  Store,
+  Utensils,
+  WashingMachine,
 } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
 import { getCopy } from "@/locales";
@@ -18,7 +28,21 @@ import {
   getPlaceOpenStatus,
   googleMapsDirectionsUrl,
 } from "@/lib/place-utils";
-import type { Place } from "@/types/place";
+import type { CategoryId, Place } from "@/types/place";
+
+function CategoryFallback({ category }: { category: CategoryId }) {
+  const common = "h-8 w-8 stroke-[1.7]";
+  if (["food", "local_food", "noodle", "thai_food", "isan_food", "mookata", "japanese", "korean_food", "vietnamese_food", "hotpot", "bbq", "chinese_food", "night_food"].includes(category)) return <Utensils className={common} />;
+  if (category === "cafe" || category === "bar") return <Coffee className={common} />;
+  if (category === "parking" || category === "monthly_parking") return <Car className={common} />;
+  if (category === "pharmacy" || category === "clinic") return <Pill className={common} />;
+  if (category === "fitness") return <Dumbbell className={common} />;
+  if (category === "laundry") return <WashingMachine className={common} />;
+  if (category === "shopping" || category === "supermarket" || category === "convenience") return <ShoppingBag className={common} />;
+  if (category === "salon" || category === "barber") return <Scissors className={common} />;
+  if (category === "service") return <BriefcaseBusiness className={common} />;
+  return <Store className={common} />;
+}
 
 export function PlaceCard({
   place,
@@ -45,8 +69,6 @@ export function PlaceCard({
   const hiddenGem = isLocal && place.localFavorite && localScore != null && localScore >= 78;
   const price = formatPrice(place);
   const copy = getCopy(language);
-  const navigateLabel = copy.navigate;
-  const detailLabel = copy.details;
 
   const statusClass =
     status.tone === "green" || status.tone === "cyan"
@@ -58,43 +80,49 @@ export function PlaceCard({
           : "text-[var(--amd-text-3)]";
 
   return (
-    <article className="amd-glass amd-card group overflow-hidden transition duration-200 hover:border-[rgba(0,140,255,.34)]">
+    <article className="amd-glass amd-card group overflow-hidden transition-[border-color,box-shadow] duration-[var(--motion-normal)] hover:border-[rgba(0,140,255,.28)]">
       <div className="flex min-h-[154px]">
         <div className="relative w-[35%] min-w-[112px] max-w-[190px] shrink-0 overflow-hidden bg-[#07111f]">
           {place.coverImage || place.image ? (
-            <img
-              src={place.coverImage || place.image || ""}
-              alt={place.name}
-              loading="lazy"
-              decoding="async"
-              className="h-full min-h-[154px] w-full object-cover"
-              onError={(event) => {
-                event.currentTarget.style.display = "none";
-              }}
-            />
+            <>
+              <img
+                src={place.coverImage || place.image || ""}
+                alt={place.name}
+                loading="lazy"
+                decoding="async"
+                className="h-full min-h-[154px] w-full object-cover contrast-[.98] saturate-[.94]"
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
+              />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/[0.04]" />
+            </>
           ) : (
-            <div className="grid h-full min-h-[154px] place-items-center bg-[radial-gradient(circle_at_40%_30%,rgba(0,140,255,.14),transparent_34%),#07111f]">
+            <div className="grid h-full min-h-[154px] place-items-center bg-[radial-gradient(circle_at_40%_30%,rgba(0,140,255,.12),transparent_34%),#07111f] text-[#8bbfe9]">
               <div className="text-center">
-                <span className="text-4xl">{category?.icon || "📍"}</span>
-                <p className="mt-2 px-2 text-[9px] font-semibold text-[var(--amd-text-3)]">{copy.unknownData}</p>
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-[18px] border border-[rgba(120,160,210,.12)] bg-white/[0.035]">
+                  <CategoryFallback category={place.category} />
+                </div>
+                <p className="mt-2 px-2 text-[9px] font-semibold leading-4 text-[var(--amd-text-3)]">{copy.unknownData}</p>
               </div>
             </div>
           )}
           <button
             type="button"
             aria-label={saved ? (language === "en" ? "Remove from saved" : "นำออกจากรายการโปรด") : (language === "en" ? "Save place" : "บันทึกร้าน")}
+            aria-pressed={saved}
             onClick={onSave}
             className="amd-btn absolute left-2.5 top-2.5 grid h-10 w-10 min-h-0 place-items-center rounded-full border border-[rgba(120,160,210,.22)] bg-[#05101d]/80 shadow-lg backdrop-blur-xl"
           >
-            <Heart className={`h-[18px] w-[18px] ${saved ? "fill-[#008CFF] text-[#149CFF] drop-shadow-[0_0_8px_rgba(0,140,255,.85)]" : "text-white/75"}`} />
+            <Heart className={`amd-heart h-[18px] w-[18px] ${saved ? "amd-heart-saved fill-[#008CFF] text-[#149CFF]" : "text-white/75"}`} />
           </button>
         </div>
 
         <div className="min-w-0 flex-1 p-3.5 sm:p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <h3 className="truncate text-[17px] font-bold tracking-[-0.025em] text-[var(--amd-text)] sm:text-[18px]">{place.name}</h3>
-              <p className="mt-1 truncate text-[11px] text-[var(--amd-text-2)]">
+              <h3 className="truncate text-[17px] font-bold tracking-[-0.018em] text-[var(--amd-text)] sm:text-[18px]">{place.name}</h3>
+              <p className="mt-1 truncate text-[11px] leading-4 text-[var(--amd-text-2)]">
                 {category?.name || (language === "en" ? "Place" : "สถานที่")}{place.area ? ` • ${place.area}` : ""}
               </p>
             </div>
@@ -102,36 +130,22 @@ export function PlaceCard({
           </div>
 
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {isLocal && (
-              <span className="rounded-md border border-[rgba(0,140,255,.34)] bg-[rgba(0,122,255,.07)] px-2 py-1 text-[9px] font-bold text-[#149CFF]">LOCAL</span>
-            )}
-            {isChain && (
-              <span className="rounded-md border border-[rgba(155,108,255,.32)] bg-[rgba(155,108,255,.07)] px-2 py-1 text-[9px] font-bold text-[#b795ff]">CHAIN</span>
-            )}
-            {place.verified && (
-              <span className="flex items-center gap-1 rounded-md border border-[rgba(0,229,195,.28)] bg-[rgba(0,229,195,.055)] px-2 py-1 text-[9px] font-bold text-[#00E5C3]">
-                <ShieldCheck className="h-3 w-3" /> VERIFIED
-              </span>
-            )}
-            {hiddenGem && (
-              <span className="flex items-center gap-1 rounded-md border border-[rgba(0,229,195,.25)] bg-[rgba(0,229,195,.045)] px-2 py-1 text-[9px] font-bold text-[#49ead2]">
-                <Diamond className="h-3 w-3" /> HIDDEN GEM
-              </span>
-            )}
+            {isLocal && <span className="rounded-md border border-[rgba(0,140,255,.3)] bg-[rgba(0,122,255,.07)] px-2 py-1 text-[9px] font-bold text-[#149CFF]">LOCAL</span>}
+            {isChain && <span className="rounded-md border border-[rgba(155,108,255,.28)] bg-[rgba(155,108,255,.06)] px-2 py-1 text-[9px] font-bold text-[#b795ff]">CHAIN</span>}
+            {place.verified && <span className="flex items-center gap-1 rounded-md border border-[rgba(0,229,195,.24)] bg-[rgba(0,229,195,.05)] px-2 py-1 text-[9px] font-bold text-[#00E5C3]"><ShieldCheck className="h-3 w-3" /> VERIFIED</span>}
+            {hiddenGem && <span className="flex items-center gap-1 rounded-md border border-[rgba(0,229,195,.2)] bg-[rgba(0,229,195,.04)] px-2 py-1 text-[9px] font-bold text-[#49ead2]"><Diamond className="h-3 w-3" /> HIDDEN GEM</span>}
           </div>
 
           <div className="mt-2.5 space-y-1 text-[11px]">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className={`font-semibold ${statusClass}`}>{status.label}</span>
+              <span className={`amd-status font-semibold ${statusClass}`}>{status.label}</span>
               {status.secondaryText && <><span className="text-[var(--amd-text-3)]">•</span><span className="text-[var(--amd-text-2)]">{status.secondaryText}</span></>}
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[var(--amd-text-2)]">
-              <span className="font-medium">{price}</span>
-              <span className="text-[var(--amd-text-3)]">•</span>
-              <span>{formatDistance(place.distanceKm)}</span>
+              <span className="font-medium">{price}</span><span className="text-[var(--amd-text-3)]">•</span><span>{formatDistance(place.distanceKm)}</span>
             </div>
             {(place.walkingMinutes != null || place.distance?.motorcycleMinutes != null || place.drivingMinutes != null) && (
-              <div className="flex flex-wrap items-center gap-2 text-[9px] text-[var(--amd-text-3)]">
+              <div className="flex flex-wrap items-center gap-2 text-[9px] leading-4 text-[var(--amd-text-3)]">
                 {place.walkingMinutes != null && <span>{language === "en" ? "Walk" : "เดิน"} {place.walkingMinutes} {language === "en" ? "min" : "นาที"}</span>}
                 {place.distance?.motorcycleMinutes != null && <span>{language === "en" ? "Motorcycle" : "มอเตอร์ไซค์"} {place.distance.motorcycleMinutes} {language === "en" ? "min" : "นาที"}</span>}
                 {place.drivingMinutes != null && <span>{language === "en" ? "Drive" : "รถยนต์"} {place.drivingMinutes} {language === "en" ? "min" : "นาที"}</span>}
@@ -148,36 +162,14 @@ export function PlaceCard({
                   {place.reviewCount != null && <span className="text-[var(--amd-text-3)]">({place.reviewCount.toLocaleString()})</span>}
                 </div>
               ) : (
-                <button type="button" onClick={onDetail} className="flex items-center gap-1 text-[10px] font-semibold text-[#79bfff]">
-                  <Clock3 className="h-3 w-3" /> {detailLabel}
-                </button>
+                <button type="button" onClick={onDetail} className="flex items-center gap-1 text-[10px] font-semibold text-[#79bfff]"><Clock3 className="h-3 w-3" /> {copy.details}</button>
               )}
             </div>
 
             <div className="flex shrink-0 gap-2">
-              <button
-                type="button"
-                onClick={onDetail}
-                className="amd-btn hidden h-11 rounded-xl border border-[rgba(120,160,210,.2)] bg-[rgba(8,18,33,.62)] px-3 text-[10px] font-semibold text-[var(--amd-text-2)] sm:block"
-              >
-                {detailLabel}
-              </button>
-              <button
-                type="button"
-                onClick={onMap}
-                aria-label={language === "en" ? "View on map" : "ดูบนแผนที่"}
-                className="amd-btn grid h-11 w-11 min-h-0 place-items-center rounded-xl border border-[rgba(0,140,255,.28)] bg-[rgba(0,122,255,.09)] text-[#00D9FF] sm:hidden"
-              >
-                <MapPin className="h-4 w-4" />
-              </button>
-              <a
-                href={googleMapsDirectionsUrl(place)}
-                target="_blank"
-                rel="noreferrer"
-                className="amd-btn amd-btn-primary flex h-11 items-center justify-center gap-1.5 rounded-xl px-3.5 text-[10px] font-bold"
-              >
-                <Navigation className="h-4 w-4" /> {navigateLabel}
-              </a>
+              <button type="button" onClick={onDetail} className="amd-btn hidden h-11 rounded-xl border border-[rgba(120,160,210,.18)] bg-[rgba(8,18,33,.58)] px-3 text-[10px] font-semibold text-[var(--amd-text-2)] sm:block">{copy.details}</button>
+              <button type="button" onClick={onMap} aria-label={language === "en" ? "View on map" : "ดูบนแผนที่"} className="amd-btn grid h-11 w-11 min-h-0 place-items-center rounded-xl border border-[rgba(0,140,255,.25)] bg-[rgba(0,122,255,.08)] text-[#00D9FF] sm:hidden"><MapPin className="h-4 w-4" /></button>
+              <a href={googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="amd-btn amd-btn-primary flex h-11 items-center justify-center gap-1.5 rounded-xl px-3.5 text-[10px] font-bold"><Navigation className="h-4 w-4" /> {copy.navigate}</a>
             </div>
           </div>
         </div>
