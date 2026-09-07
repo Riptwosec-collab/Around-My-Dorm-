@@ -79,7 +79,7 @@ function confidence(seed: Place, candidate: SearchPlace) {
 }
 
 function isChain(seed: Place) {
-  return seed.placeType === "chain" || Boolean(seed.chainBrand);
+  return seed.placeType === "chain";
 }
 
 function identitySafe(seed: Place, candidate: SearchPlace) {
