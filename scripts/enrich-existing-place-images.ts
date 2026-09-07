@@ -6,6 +6,7 @@ import type { Place, PlaceImage } from "@/types/place";
 
 const API_KEY = process.env.GOOGLE_PLACES_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 const OUT = path.join(process.cwd(), "data", "place-image-enrichment.json");
+const MAX_REQUESTS = Math.max(1, Number(process.env.MAX_IMAGE_ENRICH_REQUESTS || 100));
 const FIELD_MASK = [
   "places.id",
   "places.displayName",
@@ -77,13 +78,28 @@ function confidence(seed: Place, candidate: SearchPlace) {
   return score;
 }
 
+function isChain(seed: Place) {
+  return seed.placeType === "chain" || Boolean(seed.chainBrand);
+}
+
+function identitySafe(seed: Place, candidate: SearchPlace) {
+  const score = confidence(seed, candidate);
+  const distance = candidateDistanceKm(seed, candidate);
+  if (score < 72) return false;
+  // Chain branches require tighter coordinate confirmation. A similar name is not enough.
+  if (isChain(seed) && distance != null && distance > 0.25) return false;
+  if (distance != null && distance > 1) return false;
+  return true;
+}
+
 function chooseBest(seed: Place, candidates: SearchPlace[]) {
   const ranked = candidates
     .map((candidate) => ({ candidate, score: confidence(seed, candidate) }))
+    .filter(({ candidate }) => identitySafe(seed, candidate))
     .sort((a, b) => b.score - a.score);
   const first = ranked[0];
   const second = ranked[1];
-  if (!first || first.score < 72) return null;
+  if (!first) return null;
   if (second && first.score - second.score < 8) return null;
   return first.candidate;
 }
@@ -118,6 +134,7 @@ async function getPlace(placeId: string) {
 
 function selectPhotos(raw: SearchPlace) {
   const photos = raw.photos ?? [];
+  const seen = new Set<string>();
   return photos
     .map((photo, index) => {
       const width = photo.widthPx ?? 0;
@@ -128,17 +145,21 @@ function selectPhotos(raw: SearchPlace) {
       return { photo, score: landscape + resolution - index * 0.2 };
     })
     .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .map(({ photo }): PlaceImage | null => photo.name ? ({
-      url: "",
-      source: "google_places",
-      photoReference: photo.name,
-      attribution: photo.authorAttributions?.map((item) => item.displayName).filter(Boolean).join(", ") || null,
-      width: photo.widthPx ?? null,
-      height: photo.heightPx ?? null,
-      verified: true,
-    }) : null)
-    .filter((photo): photo is PlaceImage => Boolean(photo));
+    .map(({ photo }): PlaceImage | null => {
+      if (!photo.name || seen.has(photo.name)) return null;
+      seen.add(photo.name);
+      return {
+        url: "",
+        source: "google_places",
+        photoReference: photo.name,
+        attribution: photo.authorAttributions?.map((item) => item.displayName).filter(Boolean).join(", ") || null,
+        width: photo.widthPx ?? null,
+        height: photo.heightPx ?? null,
+        verified: true,
+      };
+    })
+    .filter((photo): photo is PlaceImage => Boolean(photo))
+    .slice(0, 8);
 }
 
 async function readExisting() {
@@ -149,28 +170,68 @@ async function readExisting() {
   }
 }
 
+function isAlreadyEnriched(patch?: ExistingPatch) {
+  return Boolean(patch?.googlePlaceId && patch.imageMetadata?.some((image) => image.verified && image.photoReference));
+}
+
+function estimateRequests(existing: Record<string, ExistingPatch>) {
+  let alreadyEnriched = 0;
+  let details = 0;
+  let textSearch = 0;
+  for (const seed of PLACES) {
+    const patch = existing[seed.id];
+    if (isAlreadyEnriched(patch)) {
+      alreadyEnriched += 1;
+      continue;
+    }
+    const linkedId = seed.googlePlaceId || patch?.googlePlaceId;
+    if (linkedId) details += 1;
+    else textSearch += 1;
+  }
+  return { alreadyEnriched, details, textSearch, total: details + textSearch };
+}
+
 async function main() {
   if (!API_KEY) {
     throw new Error("Missing GOOGLE_PLACES_API_KEY (preferred) or NEXT_PUBLIC_GOOGLE_MAPS_API_KEY. No enrichment was performed.");
   }
 
   const output = await readExisting();
+  const estimate = estimateRequests(output);
+  if (estimate.total > MAX_REQUESTS) {
+    throw new Error(`Enrichment requires up to ${estimate.total} Google Places requests, exceeding MAX_IMAGE_ENRICH_REQUESTS=${MAX_REQUESTS}. No requests were sent.`);
+  }
+
+  console.log(`Approved request budget: estimated ${estimate.total} new requests (${estimate.details} details + ${estimate.textSearch} text searches), ${estimate.alreadyEnriched} already enriched.`);
+
   let matched = 0;
   let photos = 0;
   let uncertain = 0;
+  let attempted = 0;
 
   for (const [index, seed] of PLACES.entries()) {
+    const previous = output[seed.id];
+    if (isAlreadyEnriched(previous)) {
+      console.log(`[${index + 1}/${PLACES.length}] CACHE existing enrichment: ${seed.name}`);
+      continue;
+    }
+
     try {
       let real: SearchPlace | null = null;
-      if (seed.googlePlaceId) {
-        real = await getPlace(seed.googlePlaceId);
+      const linkedId = seed.googlePlaceId || previous?.googlePlaceId;
+      if (linkedId) {
+        attempted += 1;
+        const candidate = await getPlace(linkedId);
+        // Even existing links are re-checked against branch/name/location before attaching photos.
+        real = identitySafe(seed, candidate) ? candidate : null;
       } else {
+        attempted += 1;
         real = chooseBest(seed, await searchText(seed));
       }
 
       if (!real?.id) {
         uncertain += 1;
-        console.log(`[${index + 1}/${PLACES.length}] SKIP uncertain: ${seed.name}`);
+        console.log(`[${index + 1}/${PLACES.length}] SKIP uncertain identity/branch: ${seed.name}`);
         continue;
       }
 
@@ -181,9 +242,9 @@ async function main() {
         coverImage: seed.coverImage ?? seed.image ?? null,
         images: seed.images,
         galleryImages: seed.galleryImages ?? seed.images,
-        imageSource: imageMetadata.length ? "Google Places" : seed.imageSource ?? null,
+        imageSource: imageMetadata.length ? "Google Places" : seed.imageSource ?? "fallback artwork",
         imageAttribution: imageMetadata[0]?.attribution ?? null,
-        imageVerifiedAt: new Date().toISOString().slice(0, 10),
+        imageVerifiedAt: imageMetadata.length ? new Date().toISOString().slice(0, 10) : null,
       };
 
       output[seed.id] = patch;
@@ -194,11 +255,11 @@ async function main() {
       console.warn(`[${index + 1}/${PLACES.length}] ERROR ${seed.name}:`, error instanceof Error ? error.message : error);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   await fs.writeFile(OUT, `${JSON.stringify(output, null, 2)}\n`, "utf8");
-  console.log(`Done. Audited ${PLACES.length} places, matched ${matched}, stored ${photos} photo references, uncertain ${uncertain}.`);
+  console.log(`Done. Audited ${PLACES.length} places, attempted ${attempted} requests, matched ${matched}, stored ${photos} unique photo references, uncertain ${uncertain}.`);
 }
 
 void main();
