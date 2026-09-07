@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, FileUp, History, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react";
 import { CATEGORIES } from "@/data/categories";
 import { auditPlaces, findDuplicatePairs, selectPlacesForUpdate, type UpdateMode } from "@/lib/place-update-engine";
@@ -97,6 +97,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   const [mode, setMode] = useState<UpdateMode>("older30");
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [cancelRequested, setCancelRequested] = useState(false);
+  const cancelRef = useRef(false);
   const [auditDone, setAuditDone] = useState(false);
   const [pending, setPending] = useState(() => loadPendingPlaceChanges());
   const [history, setHistory] = useState<LocalPlaceHistory[]>(() => loadLocalPlaceHistory());
@@ -120,11 +121,12 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
 
   async function runLocalAudit() {
     setCancelRequested(false);
+    cancelRef.current = false;
     setAuditDone(false);
     setMessage(null);
     setProgress({ current: 0, total: selected.length });
     for (let index = 0; index < selected.length; index += 25) {
-      if (cancelRequested) break;
+      if (cancelRef.current) break;
       const current = Math.min(index + 25, selected.length);
       setProgress({ current, total: selected.length });
       await new Promise((resolve) => window.setTimeout(resolve, 35));
@@ -242,7 +244,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
             <label className="amd-btn flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><FileUp className="h-4 w-4" />{language === "en" ? "Review Import File" : "ตรวจไฟล์ Import"}<input type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importProviderFile(file); event.currentTarget.value = ""; }} /></label>
             <button type="button" onClick={() => setManualOpen((value) => !value)} className="amd-btn flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><Plus className="h-4 w-4" />{language === "en" ? "Add Manual Place" : "เพิ่มร้านเอง"}</button>
             <button type="button" onClick={() => setMessage(language === "en" ? "External discovery is maintenance-only. Run an approved provider scan outside normal browsing, then import its normalized JSON here." : "External Discovery เป็น Maintenance-only ให้รัน Approved Provider Scan แล้วนำไฟล์ JSON ที่ Normalize แล้วมาตรวจที่นี่")} className="amd-btn flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><Search className="h-4 w-4" />{language === "en" ? "Find New Places" : "ค้นหาร้านใหม่"}</button>
-            {progress && <button type="button" onClick={() => setCancelRequested(true)} className="amd-btn min-h-11 rounded-xl border border-rose-300/15 px-4 text-[10px] font-bold text-rose-200">{language === "en" ? "Cancel" : "ยกเลิก"}</button>}
+            {progress && <button type="button" onClick={() => { cancelRef.current = true; setCancelRequested(true); }} className="amd-btn min-h-11 rounded-xl border border-rose-300/15 px-4 text-[10px] font-bold text-rose-200">{language === "en" ? "Cancel" : "ยกเลิก"}</button>}
           </div>
           {progress && <div className="mt-3"><div className="flex justify-between text-[9px] text-[var(--amd-text-3)]"><span>{language === "en" ? "Checking places" : "กำลังตรวจข้อมูล"}</span><span>{progress.current} / {progress.total}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full bg-[#149CFF] transition-all" style={{ width: `${progress.total ? (progress.current / progress.total) * 100 : 0}%` }} /></div></div>}
           {message && <p className="mt-3 rounded-xl border border-cyan-300/10 bg-cyan-300/[0.05] px-3 py-2 text-[9px] leading-4 text-cyan-100">{message}</p>}
