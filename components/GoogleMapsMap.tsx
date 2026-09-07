@@ -71,6 +71,8 @@ function markerContent(place: Place, selected: boolean) {
   const el = document.createElement("button");
   el.type = "button";
   el.setAttribute("aria-label", place.name);
+  el.className = `amd-google-marker${selected ? " amd-google-marker-selected" : ""}`;
+  el.dataset.selected = selected ? "true" : "false";
   const color = CATEGORY_COLORS[place.category] || CATEGORY_COLORS.other;
   Object.assign(el.style, {
     width: selected ? "30px" : "20px",
@@ -89,6 +91,7 @@ function clusterContent(count: number) {
   const el = document.createElement("button");
   el.type = "button";
   el.setAttribute("aria-label", `${count} places`);
+  el.className = "amd-google-cluster";
   el.textContent = count > 99 ? "99+" : String(count);
   Object.assign(el.style, {
     minWidth: count > 99 ? "42px" : "36px",
@@ -109,6 +112,7 @@ function clusterContent(count: number) {
 function homeContent() {
   const el = document.createElement("div");
   el.setAttribute("aria-label", "Baan Supar Apartment / Home");
+  el.className = "amd-google-home-marker";
   el.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="white" d="M3 10.8 12 3l9 7.8v9.7a.5.5 0 0 1-.5.5H15v-6H9v6H3.5a.5.5 0 0 1-.5-.5v-9.7Z"/></svg>';
   Object.assign(el.style, {
     width: "38px",
@@ -403,5 +407,5 @@ export function GoogleMapsMap({
     map.panTo(center);
   }, [center, selectedPlace]);
 
-  return <div ref={containerRef} className="absolute inset-0 bg-[#02060D]" aria-label="Around My Dorm Google map" />;
+  return <div ref={containerRef} className="amd-google-map-canvas absolute inset-0 bg-[#02060D]" aria-label="Around My Dorm Google map" />;
 }
