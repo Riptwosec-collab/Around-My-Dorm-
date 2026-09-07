@@ -43,6 +43,7 @@ jobs:
           rm -f components/MapboxMap.tsx
           rm -f .github/workflows/apply-mapbox-database-first.yml
           sed -i '/mapbox-gl\/dist\/mapbox-gl.css/d' app/globals.css
+          sed -i 's/Mapbox is used as the map engine only/Google Maps is used as the map engine only/g; s/Mapbox ใช้เป็น Map Engine เท่านั้น/Google Maps ใช้เป็น Map Engine เท่านั้น/g' components/DataManagement.tsx
           npm uninstall mapbox-gl
 
       - name: Validate final Google-only runtime
