@@ -271,7 +271,8 @@ export function GoogleMapsMap({
   useEffect(() => {
     if (!apiKey || !containerRef.current) return;
     let cancelled = false;
-    onStateChange?.("loading");
+    const mapsAlreadyLoaded = Boolean(window.google?.maps);
+    if (!mapsAlreadyLoaded) onStateChange?.("loading");
 
     void loadGoogleMaps(apiKey)
       .then(async () => {

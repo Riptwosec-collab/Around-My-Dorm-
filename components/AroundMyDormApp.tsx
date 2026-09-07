@@ -60,6 +60,7 @@ import { GoogleMapsMap } from "@/components/GoogleMapsMap";
 import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
 import { DataManagement } from "@/components/DataManagement";
 import { loadPlacesFromDatabase } from "@/lib/database/places";
+import { loadGoogleMaps } from "@/lib/google-maps";
 import { Toast, type ToastTone } from "@/components/Toast";
 import { getCopy } from "@/locales";
 import { addRecentView, getTodayRecentStats, loadRecentViews, resolveRecentPlaces, saveRecentViews } from "@/lib/storage/recent";
@@ -322,6 +323,22 @@ function LoadingCards() {
   );
 }
 
+const TAB_ROUTES: Record<Tab, string> = {
+  explore: "/",
+  map: "/map/",
+  favorites: "/saved/",
+  recent: "/recent/",
+  settings: "/settings/",
+};
+
+function tabFromPath(pathname: string): Tab {
+  if (pathname.startsWith("/map")) return "map";
+  if (pathname.startsWith("/saved") || pathname.startsWith("/favorites")) return "favorites";
+  if (pathname.startsWith("/recent")) return "recent";
+  if (pathname.startsWith("/settings")) return "settings";
+  return "explore";
+}
+
 export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }) {
   const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
   const googleMapId = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID ?? "";
@@ -363,6 +380,27 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [pendingMapCenter, setPendingMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [showSearchArea, setShowSearchArea] = useState(false);
   const copy = getCopy(settings.language);
+
+  // Warm the Maps JavaScript bundle after first paint so opening Map does not
+  // compete with the initial UI render. This does not create a map instance.
+  useEffect(() => {
+    if (!googleMapsApiKey || typeof window === "undefined" || window.google?.maps) return;
+    const timer = window.setTimeout(() => {
+      void loadGoogleMaps(googleMapsApiKey).catch(() => {});
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [googleMapsApiKey]);
+
+  // Keep bottom-tab navigation inside the mounted app. router.push here used to
+  // remount the full shell, reload the database, and replay page entry animation.
+  useEffect(() => {
+    const syncTabFromUrl = () => {
+      setSelectedPlace(null);
+      setTab(tabFromPath(window.location.pathname));
+    };
+    window.addEventListener("popstate", syncTabFromUrl);
+    return () => window.removeEventListener("popstate", syncTabFromUrl);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
@@ -525,13 +563,24 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }
 
   function changeTab(next: Tab) {
-    setSelectedPlace(null); setTab(next);
-    const routes: Record<Tab, string> = { explore: "/", map: "/map/", favorites: "/saved/", recent: "/recent/", settings: "/settings/" };
-    router.push(routes[next]);
+    if (next === tab) return;
+    setSelectedPlace(null);
+    setTab(next);
+    if (typeof window !== "undefined") {
+      const route = TAB_ROUTES[next];
+      if (window.location.pathname !== route || window.location.search) {
+        window.history.pushState({ amdTab: next }, "", route);
+      }
+    }
   }
 
   function openMap(place: Place) {
-    addRecent(place); setTab("map"); setSelectedPlace(place); router.push(`/map/?place=${encodeURIComponent(place.slug)}`);
+    addRecent(place);
+    setTab("map");
+    setSelectedPlace(place);
+    if (typeof window !== "undefined") {
+      window.history.pushState({ amdTab: "map", place: place.slug }, "", `/map/?place=${encodeURIComponent(place.slug)}`);
+    }
   }
 
   function useMyLocation() {
@@ -751,7 +800,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                       }}
                       onStateChange={(state) => setMapLoadState(state)}
                     />
-                    {(mapLoadState === "idle" || mapLoadState === "loading") && <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#02060D]/55 backdrop-blur-[2px]"><div className="amd-glass flex items-center gap-2 rounded-full px-4 py-2 text-[10px] text-[var(--amd-text-2)]"><LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Loading Google Maps" : "กำลังโหลด Google Maps"}</div></div>}
+                    {mapLoadState === "loading" && <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#02060D]/55 backdrop-blur-[2px]"><div className="amd-glass flex items-center gap-2 rounded-full px-4 py-2 text-[10px] text-[var(--amd-text-2)]"><LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Loading Google Maps" : "กำลังโหลด Google Maps"}</div></div>}
                     {mapLoadState === "error" && <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><p className="text-[12px] font-semibold">{settings.language === "en" ? "Google Maps could not load" : "โหลด Google Maps ไม่สำเร็จ"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">{settings.language === "en" ? "Stored place data remains available from the Around My Dorm database." : "ข้อมูลร้านที่บันทึกไว้ยังใช้งานได้จากฐานข้อมูล Around My Dorm"}</p></div></div>}
                   </>
                 ) : (

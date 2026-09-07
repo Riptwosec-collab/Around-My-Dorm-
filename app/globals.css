@@ -160,7 +160,7 @@ img {
 }
 
 .amd-page-enter {
-  animation: amd-page-in var(--motion-normal) var(--ease-standard) both;
+  animation: none;
 }
 
 .amd-safe-top {
@@ -513,6 +513,22 @@ img {
 
   .amd-page {
     max-width: 1100px;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Reduce mobile GPU composition cost while preserving the glass look. */
+  .amd-glass,
+  .amd-input,
+  .amd-chip {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .amd-glass-strong,
+  .amd-nav {
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
   }
 }
 
