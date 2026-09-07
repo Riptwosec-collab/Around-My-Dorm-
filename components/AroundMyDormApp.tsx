@@ -61,6 +61,7 @@ import { GOOGLE_PLACE_FIELDS, loadGoogleMaps, mapGooglePlace } from "@/lib/googl
 import { getCopy } from "@/locales";
 import { getGooglePlacesCache, makeGooglePlacesCacheKey, setGooglePlacesCache } from "@/lib/google-places-cache";
 import { LEGACY_DARK_MAP_STYLES } from "@/lib/map-style";
+import { mergePlaceImageData } from "@/lib/place-images";
 import { addRecentView, getTodayRecentStats, loadRecentViews, resolveRecentPlaces, saveRecentViews } from "@/lib/storage/recent";
 import type { RecentView } from "@/types/app";
 import {
@@ -225,7 +226,7 @@ function mergeSeedAndLive(seedPlaces: Place[], livePlaces: Place[]) {
     });
     if (!live) return seed;
     used.add(live.id);
-    return {
+    return mergePlaceImageData(seed, {
       ...seed,
       googlePlaceId: live.googlePlaceId,
       address: live.address || seed.address,
@@ -245,7 +246,13 @@ function mergeSeedAndLive(seedPlaces: Place[], livePlaces: Place[]) {
       website: live.website || seed.website,
       googleMapsUrl: live.googleMapsUrl || seed.googleMapsUrl,
       image: live.image || seed.image,
+      coverImage: live.coverImage || seed.coverImage || seed.image,
       images: live.images.length ? live.images : seed.images,
+      galleryImages: live.galleryImages?.length ? live.galleryImages : seed.galleryImages ?? seed.images,
+      imageSource: live.imageSource || seed.imageSource,
+      imageAttribution: live.imageAttribution || seed.imageAttribution,
+      imageVerifiedAt: live.imageVerifiedAt || seed.imageVerifiedAt,
+      imageMetadata: live.imageMetadata?.length ? live.imageMetadata : seed.imageMetadata,
       delivery: live.delivery ?? seed.delivery,
       dineIn: live.dineIn ?? seed.dineIn,
       takeaway: live.takeaway ?? seed.takeaway,
@@ -255,7 +262,7 @@ function mergeSeedAndLive(seedPlaces: Place[], livePlaces: Place[]) {
       source: Array.from(new Set([...seed.source, ...live.source])),
       tags: Array.from(new Set([...seed.tags, ...live.tags])),
       notes: seed.notes || live.notes,
-    } satisfies Place;
+    } satisfies Place);
   });
   return dedupePlaces([...merged, ...livePlaces.filter((place) => !used.has(place.id))]);
 }

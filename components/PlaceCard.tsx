@@ -20,6 +20,7 @@ import {
   WashingMachine,
 } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
+import { PlacePhoto } from "@/components/PlacePhoto";
 import { getCopy } from "@/locales";
 import {
   calculateLocalScore,
@@ -83,30 +84,8 @@ export function PlaceCard({
     <article className="amd-glass amd-card group overflow-hidden transition-[border-color,box-shadow] duration-[var(--motion-normal)] hover:border-[rgba(0,140,255,.28)]">
       <div className="flex min-h-[154px]">
         <div className="relative w-[35%] min-w-[112px] max-w-[190px] shrink-0 overflow-hidden bg-[#07111f]">
-          {place.coverImage || place.image ? (
-            <>
-              <img
-                src={place.coverImage || place.image || ""}
-                alt={place.name}
-                loading="lazy"
-                decoding="async"
-                className="h-full min-h-[154px] w-full object-cover contrast-[.98] saturate-[.94]"
-                onError={(event) => {
-                  event.currentTarget.style.display = "none";
-                }}
-              />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/[0.04]" />
-            </>
-          ) : (
-            <div className="grid h-full min-h-[154px] place-items-center bg-[radial-gradient(circle_at_40%_30%,rgba(0,140,255,.12),transparent_34%),#07111f] text-[#8bbfe9]">
-              <div className="text-center">
-                <div className="mx-auto grid h-14 w-14 place-items-center rounded-[18px] border border-[rgba(120,160,210,.12)] bg-white/[0.035]">
-                  <CategoryFallback category={place.category} />
-                </div>
-                <p className="mt-2 px-2 text-[9px] font-semibold leading-4 text-[var(--amd-text-3)]">{copy.unknownData}</p>
-              </div>
-            </div>
-          )}
+          <PlacePhoto place={place} fallbackLabel={copy.unknownData} className="h-full min-h-[154px] w-full object-cover contrast-[.98] saturate-[.94]" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/[0.04]" />
           <button
             type="button"
             aria-label={saved ? (language === "en" ? "Remove from saved" : "นำออกจากรายการโปรด") : (language === "en" ? "Save place" : "บันทึกร้าน")}

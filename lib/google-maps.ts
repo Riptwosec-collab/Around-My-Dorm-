@@ -1,5 +1,6 @@
-import type { CategoryId, DayKey, OpeningHours, OpeningPeriod, Place, StructuredOpeningHours } from "@/types/place";
+import type { CategoryId, DayKey, OpeningHours, OpeningPeriod, Place, StructuredOpeningHours, PlaceImage} from "@/types/place";
 import { DORM_CENTER, googleMapsSearchUrl, withDistance } from "@/lib/place-utils";
+import { selectBestPlaceImage } from "@/lib/place-images";
 
 const EMPTY_HOURS: OpeningHours = {
   monday: null,
@@ -108,10 +109,14 @@ export function mapGooglePlace(raw: any): Place {
   const category = categoryFromGoogleType(primaryType);
   const structuredOpeningHours = structuredHoursFromGoogle(raw.currentOpeningHours);
   const openingHoursText = Array.isArray(raw.currentOpeningHours?.weekdayDescriptions) ? raw.currentOpeningHours.weekdayDescriptions.join(" | ") : null;
-  let image: string | null = null;
-  try {
-    image = raw.photos?.[0]?.getURI?.({ maxWidth: 1000, maxHeight: 720 }) || null;
-  } catch {}
+  const imageMetadata: PlaceImage[] = (raw.photos || []).slice(0, 8).map((photo: any) => {
+    let url = "";
+    try { url = photo.getURI?.({ maxWidth: 1200, maxHeight: 900 }) || ""; } catch {}
+    const attribution = Array.isArray(photo.authorAttributions) ? photo.authorAttributions.map((item: any) => item.displayName).filter(Boolean).join(", ") : null;
+    return { url, source: "google_places" as const, photoReference: photo.name || null, attribution: attribution || null, width: typeof photo.widthPx === "number" ? photo.widthPx : null, height: typeof photo.heightPx === "number" ? photo.heightPx : null, verified: true };
+  }).filter((photo: PlaceImage) => Boolean(photo.url));
+  const bestPhoto = imageMetadata.length ? selectBestPlaceImage({ ...({} as Place), imageMetadata }) : null;
+  const image = bestPhoto?.url || null;
 
   const base: Place = {
     id: `google-${raw.id}`,
@@ -157,7 +162,13 @@ export function mapGooglePlace(raw: any): Place {
     website: raw.websiteURI || null,
     googleMapsUrl: raw.googleMapsURI || googleMapsSearchUrl(raw.displayName || "สถานที่", raw.formattedAddress),
     image,
-    images: image ? [image] : [],
+    coverImage: image,
+    images: imageMetadata.map((photo) => photo.url),
+    galleryImages: imageMetadata.map((photo) => photo.url),
+    imageSource: image ? "Google Places" : null,
+    imageAttribution: bestPhoto?.attribution ?? null,
+    imageVerifiedAt: image ? new Date().toISOString().slice(0, 10) : null,
+    imageMetadata,
     paymentMethods: [],
     delivery: raw.delivery ?? null,
     deliveryApps: [],

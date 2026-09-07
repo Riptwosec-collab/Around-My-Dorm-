@@ -116,6 +116,16 @@ export type MenuItem = {
   verifiedAt?: string | null;
 };
 
+export type PlaceImage = {
+  url: string;
+  source: "google_places" | "official_website" | "seed" | "official_social" | "fallback";
+  photoReference?: string | null;
+  attribution?: string | null;
+  width?: number | null;
+  height?: number | null;
+  verified?: boolean;
+};
+
 export type DeliveryPlatform = {
   provider: string;
   url: string;
@@ -214,6 +224,8 @@ export type Place = {
   menuImages?: string[];
   parkingImages?: string[];
   imageSource?: string | null;
+  imageAttribution?: string | null;
+  imageMetadata?: PlaceImage[];
 
   paymentMethods: string[];
   delivery: boolean | null;

@@ -17,6 +17,7 @@ import {
 import { CATEGORY_MAP } from "@/data/categories";
 import { getCopy } from "@/locales";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
+import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import {
   calculateLocalScore,
   formatDistance,
@@ -112,11 +113,7 @@ export function PlaceDetail({
           </div>
 
           <div className="relative h-[220px] bg-gradient-to-br from-[#10233a] to-[#07101b]">
-            {place.coverImage || place.image ? (
-              <img src={place.coverImage || place.image || ""} alt={place.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-            ) : (
-              <div className="grid h-full place-items-center"><div className="text-center"><span className="text-6xl">{category?.icon || "📍"}</span><p className="mt-2 text-[10px] text-white/30">{copy.unknownData}</p></div></div>
-            )}
+            <PlacePhoto place={place} eager className="h-full w-full object-cover" fallbackLabel={copy.unknownData} />
             <div className="absolute inset-0 bg-gradient-to-t from-[#08111d] via-transparent to-transparent" />
           </div>
 
@@ -156,6 +153,14 @@ export function PlaceDetail({
               )}
               <button type="button" onClick={share} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Share2 className="h-4 w-4" />{copy.share}</button>
             </div>
+
+            {gallery.length > 1 && (
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between"><p className="text-[11px] font-bold">{language === "en" ? "Place photos" : "รูปภาพสถานที่"}</p><span className="text-[9px] text-[var(--amd-text-3)]">{gallery.slice(0, 8).length} {language === "en" ? "photos" : "รูป"}</span></div>
+                <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{gallery.slice(0, 8).map((url, index) => <img key={`${url}-${index}`} src={url} alt={`${place.name} ${index + 1}`} loading="lazy" decoding="async" className="h-28 w-40 shrink-0 rounded-[16px] object-cover" />)}</div>
+                <div className="mt-2"><PlacePhotoAttribution place={place} /></div>
+              </div>
+            )}
 
             <div className="mt-5 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.aboutPlace}</p>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Car, ChevronUp, Coffee, Navigation, ShieldCheck, Store, Utensils } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
+import { PlacePhoto } from "@/components/PlacePhoto";
 import { getCopy } from "@/locales";
 import { formatDistance, formatPrice, getPlaceOpenStatus, googleMapsDirectionsUrl } from "@/lib/place-utils";
 import type { Language } from "@/types/app";
@@ -57,11 +58,7 @@ export function MapBottomSheet({ place, language, onDetails }: { place: Place; l
       </button>
 
       <div className="flex gap-3">
-        {place.coverImage || place.image ? (
-          <img src={place.coverImage || place.image || ""} alt="" loading="lazy" decoding="async" className={`${imageSize} shrink-0 rounded-[16px] object-cover transition-[width,height] duration-[var(--motion-normal)]`} />
-        ) : (
-          <div className={`${imageSize} grid shrink-0 place-items-center rounded-[16px] border border-[rgba(120,160,210,.12)] bg-white/[0.035] text-[#8bbfe9] transition-[width,height] duration-[var(--motion-normal)]`}><FallbackIcon place={place} /></div>
-        )}
+        <div className={`${imageSize} relative shrink-0 overflow-hidden rounded-[16px] transition-[width,height] duration-[var(--motion-normal)]`}><PlacePhoto place={place} className="h-full w-full object-cover" /></div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
