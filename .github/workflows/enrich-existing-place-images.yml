@@ -1,0 +1,53 @@
+name: Enrich Existing Place Images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: enrich-existing-place-images
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY || secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Require Google Places API key
+        run: |
+          if [ -z "$GOOGLE_PLACES_API_KEY" ]; then
+            echo "Missing GOOGLE_PLACES_API_KEY or NEXT_PUBLIC_GOOGLE_MAPS_API_KEY GitHub Actions secret."
+            exit 1
+          fi
+      - name: Audit and enrich every existing place
+        run: npm run enrich:images
+      - name: Validate enriched dataset
+        run: npm run validate:data
+      - name: Type check
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit verified photo enrichment
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/place-image-enrichment.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Enrich existing places with verified Google Places photos"
+            git push
+          else
+            echo "No confident new image matches to commit."
+          fi
