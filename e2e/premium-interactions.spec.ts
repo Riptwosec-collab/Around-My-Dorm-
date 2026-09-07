@@ -20,7 +20,17 @@ test("navigation, search and PlaceCard interactions remain touch-safe without Pl
     await page.setViewportSize(viewport);
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    const search = page.locator(".amd-input input").first();
+    const searchFrame = page.locator(".amd-input").first();
+    await expect(searchFrame).toBeVisible();
+    const frameBox = await searchFrame.boundingBox();
+    if (frameBox) {
+      // Regression guard: liquid-glass child z-index rules must never put the absolute
+      // search icon / action cluster back into normal flow and double the field height.
+      expect(frameBox.height).toBeGreaterThanOrEqual(56);
+      expect(frameBox.height).toBeLessThanOrEqual(64);
+    }
+
+    const search = searchFrame.locator("input").first();
     if (await search.count()) {
       const before = await search.boundingBox();
       await search.focus();
@@ -30,6 +40,20 @@ test("navigation, search and PlaceCard interactions remain touch-safe without Pl
       await search.fill("กาแฟ");
       await page.waitForTimeout(80);
       await search.fill("");
+    }
+
+    const leadingIcon = searchFrame.locator(":scope > svg").first();
+    const trailingCluster = searchFrame.locator(":scope > div.absolute").first();
+    if ((await leadingIcon.count()) && frameBox) {
+      const iconBox = await leadingIcon.boundingBox();
+      if (iconBox) expect(Math.abs((iconBox.y + iconBox.height / 2) - (frameBox.y + frameBox.height / 2))).toBeLessThanOrEqual(3);
+    }
+    if ((await trailingCluster.count()) && frameBox) {
+      const clusterBox = await trailingCluster.boundingBox();
+      if (clusterBox) {
+        expect(Math.abs((clusterBox.y + clusterBox.height / 2) - (frameBox.y + frameBox.height / 2))).toBeLessThanOrEqual(3);
+        expect(clusterBox.x).toBeGreaterThan(frameBox.x + frameBox.width / 2);
+      }
     }
 
     const nav = page.locator(".amd-nav");
