@@ -15,6 +15,8 @@ jobs:
   finish-ui:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
