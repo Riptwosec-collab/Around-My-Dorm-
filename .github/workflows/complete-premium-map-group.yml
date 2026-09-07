@@ -1,0 +1,69 @@
+name: Complete Premium Map Group
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/complete-premium-map-group.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  complete-premium-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Inspect and apply existing premium map architecture
+        run: |
+          python scripts/apply-premium-map-sheets.py
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/layout.tsx')
+          text = p.read_text()
+          marker = 'import "./premium-interactions.css";'
+          imp = 'import "./premium-map-sheets.css";'
+          if imp not in text:
+              if marker not in text:
+                  raise SystemExit('layout import marker missing')
+              text = text.replace(marker, marker + '\n' + imp, 1)
+              p.write_text(text)
+          PY
+      - name: Typecheck
+        run: npm ci --no-audit --no-fund && npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit and architecture tests
+        run: npm test
+      - name: Validate place data
+        run: npm run validate:data
+      - name: Production build
+        run: npm run build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify mobile map, sheets, interactions and zero accidental Places calls
+        run: |
+          npx playwright test e2e/map-functional.spec.ts e2e/premium-interactions.spec.ts e2e/p0-google-api-lock.spec.ts
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated premium map group
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/layout.tsx app/premium-map-sheets.css components/AroundMyDormApp.tsx components/MapBottomSheet.tsx components/GoogleMapsMap.tsx
+          git commit -m 'Complete premium map controls and bottom-sheet wiring'
+          git push
