@@ -1,0 +1,69 @@
+name: Finalize Manual Google Requests
+
+on:
+  push:
+    paths:
+      - '.github/workflows/finalize-manual-google-requests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Finalize manual-only integration
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('components/DataManagement.tsx')
+          s = p.read_text()
+          old = '<GoogleMaintenancePanel places={selected} language={language} />'
+          new = '<GoogleMaintenancePanel places={places} language={language} />'
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif new not in s:
+              raise SystemExit('GoogleMaintenancePanel integration anchor not found')
+          p.write_text(s)
+
+          # Guard against accidental auto-search on Enter in Google discovery.
+          discovery = Path('components/GoogleDiscoverySheet.tsx').read_text()
+          if 'onKeyDown={(event) => { if (event.key === "Enter")' in discovery:
+              raise SystemExit('Forbidden Enter-triggered Google search remains')
+
+          # Place detail must not auto-fetch Google live data.
+          live = Path('components/GoogleLiveEnrichment.tsx').read_text()
+          if 'useEffect' in live and 'runGoogleSinglePlaceDetails' in live:
+              raise SystemExit('Potential automatic Google live request effect detected')
+
+          print('Manual Google integration finalized')
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate manual-only Google request architecture
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run validate:data
+          npm test
+          npm run build
+          npx wrangler deploy --dry-run
+      - name: Commit finalized integration
+        run: |
+          rm -f .github/workflows/finalize-manual-google-requests.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/DataManagement.tsx .github/workflows/finalize-manual-google-requests.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Finalize manual-only Google request controls"
+          git push origin HEAD:main
