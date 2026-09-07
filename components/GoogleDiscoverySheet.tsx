@@ -2,7 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { ExternalLink, LoaderCircle, MapPin, Navigation, Search, ShieldCheck, Star, X } from "lucide-react";
-import { discoverGooglePlaces, type GoogleDiscoveryCandidate } from "@/lib/google-live";
+import {
+  DEFAULT_GOOGLE_DAILY_LIMIT,
+  estimateGoogleTextSearchRequests,
+  getGoogleRequestUsage,
+  runGoogleTextSearchRequest,
+} from "@/lib/google-request-manager";
+import type { GoogleDiscoveryCandidate } from "@/lib/google-live";
 import { haversineKm } from "@/lib/place-utils";
 
 export function GoogleDiscoverySheet({
@@ -26,6 +32,12 @@ export function GoogleDiscoverySheet({
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastSummary, setLastSummary] = useState<{ networkAttempts: number; fromCache: boolean; candidates: number } | null>(null);
+  const [usageVersion, setUsageVersion] = useState(0);
+
+  const estimateInput = useMemo(() => ({ query, center, radiusMeters, language }), [query, center, radiusMeters, language]);
+  const estimate = useMemo(() => estimateGoogleTextSearchRequests(estimateInput), [estimateInput, usageVersion]);
+  const usage = useMemo(() => getGoogleRequestUsage(), [usageVersion]);
 
   const sortedResults = useMemo(() => [...results].sort((a, b) => {
     const da = a.latitude != null && a.longitude != null ? haversineKm(center, { lat: a.latitude, lng: a.longitude }) : Number.POSITIVE_INFINITY;
@@ -34,12 +46,23 @@ export function GoogleDiscoverySheet({
   }), [results, center]);
 
   async function searchGoogle() {
-    if (!query.trim() || !apiKey) return;
+    if (!query.trim() || !apiKey || loading) return;
     setLoading(true);
     setError(null);
     setSearched(true);
     try {
-      setResults(await discoverGooglePlaces(apiKey, { query: query.trim(), center, radiusMeters, language, maxResults: 12 }));
+      const result = await runGoogleTextSearchRequest({
+        apiKey,
+        query: query.trim(),
+        center,
+        radiusMeters,
+        language,
+        maxResults: 12,
+        dailyLimit: DEFAULT_GOOGLE_DAILY_LIMIT,
+      });
+      setResults(result.candidates);
+      setLastSummary({ networkAttempts: result.networkAttempts, fromCache: result.fromCache, candidates: result.candidates.length });
+      setUsageVersion((value) => value + 1);
     } catch (reason) {
       setResults([]);
       setError(reason instanceof Error ? reason.message : (language === "en" ? "Google discovery failed" : "ค้นหา Google ไม่สำเร็จ"));
@@ -53,22 +76,38 @@ export function GoogleDiscoverySheet({
       <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0" />
       <section className="amd-sheet amd-glass-strong relative max-h-[92dvh] w-full max-w-[560px] overflow-y-auto rounded-t-[34px] border-b-0 px-4 pb-[calc(28px+env(safe-area-inset-bottom))] pt-3">
         <div className="sticky top-0 z-20 -mx-4 flex items-center justify-between border-b border-white/[0.06] bg-[var(--amd-glass-strong)] px-4 pb-3 pt-2 backdrop-blur-2xl">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00D9FF]">EXPLICIT GOOGLE DISCOVERY</p><h2 className="mt-1 text-[22px] font-bold">{language === "en" ? "Search more places" : "ค้นหาสถานที่เพิ่มเติม"}</h2></div>
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00D9FF]">MANUAL GOOGLE SEARCH</p><h2 className="mt-1 text-[22px] font-bold">{language === "en" ? "Search more places" : "ค้นหาสถานที่เพิ่มเติม"}</h2></div>
           <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]"><X className="h-4 w-4" /></button>
         </div>
 
         <div className="mt-4 rounded-2xl border border-[#149CFF]/15 bg-[#007AFF]/[0.045] p-3">
-          <div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#00D9FF]" /><p className="text-[9px] leading-5 text-white/50">{language === "en" ? "This is an explicit external Google Places search. Results are temporary candidates and are not silently saved into Around My Dorm." : "นี่คือการค้นหา Google Places แบบกดสั่งเอง ผลลัพธ์เป็น Candidate ชั่วคราวและจะไม่ถูกบันทึกเข้าฐาน Around My Dorm อัตโนมัติ"}</p></div>
+          <div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#00D9FF]" /><p className="text-[9px] leading-5 text-white/50">{language === "en" ? "Typing, changing radius, or opening this sheet sends zero Google Places requests. Search runs only after you press the explicit request button." : "การพิมพ์ เปลี่ยนรัศมี หรือเปิดหน้านี้จะไม่ส่ง Google Places Request การค้นหาจะเริ่มเมื่อคุณกดปุ่มส่ง Request เท่านั้น"}</p></div>
         </div>
 
         {!apiKey && <p className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-300/[0.06] p-3 text-[9px] text-amber-100">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not configured.</p>}
 
         <div className="amd-input relative mt-4">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchGoogle(); }} placeholder={language === "en" ? "e.g. ramen, cafe, parking" : "เช่น ราเมง คาเฟ่ ที่จอดรถ"} className="h-12 w-full rounded-2xl bg-transparent pl-11 pr-24 text-[11px] outline-none" />
-          <button type="button" disabled={loading || !query.trim() || !apiKey} onClick={() => void searchGoogle()} className="amd-btn amd-btn-primary absolute right-1.5 top-1.5 h-9 min-h-0 rounded-xl px-3 text-[9px] font-bold disabled:opacity-45">{loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : (language === "en" ? "Search" : "ค้นหา")}</button>
+          <input value={query} onChange={(event) => { setQuery(event.target.value); setSearched(false); setLastSummary(null); }} placeholder={language === "en" ? "e.g. ramen, cafe, parking" : "เช่น ราเมง คาเฟ่ ที่จอดรถ"} className="h-12 w-full rounded-2xl bg-transparent pl-11 pr-3 text-[11px] outline-none" />
         </div>
 
+        <div className="mt-3 rounded-2xl border border-white/[0.07] bg-black/10 p-3">
+          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#8ecbff]">SEARCH REQUEST ESTIMATE</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-[8px] text-white/30">Query</p><p className="mt-1 truncate text-[10px] font-semibold">{query.trim() || "—"}</p></div>
+            <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-[8px] text-white/30">Radius</p><p className="mt-1 text-[10px] font-semibold">{radiusMeters >= 1000 ? `${(radiusMeters / 1000).toFixed(radiusMeters % 1000 ? 1 : 0)} km` : `${radiusMeters} m`}</p></div>
+            <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-[8px] text-white/30">Estimated Text Search</p><p className="mt-1 text-[15px] font-bold">{estimate.newRequests}</p></div>
+            <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-[8px] text-white/30">Cache hits</p><p className="mt-1 text-[15px] font-bold">{estimate.cacheHits}</p></div>
+          </div>
+          <p className="mt-3 text-[8px] leading-4 text-white/32">{language === "en" ? "The estimate is calculated locally. No Google call occurs while you type." : "ตัวเลขนี้คำนวณในเครื่อง การพิมพ์คำค้นหาไม่เรียก Google"}</p>
+          <button type="button" disabled={loading || !query.trim() || !apiKey || (estimate.newRequests > 0 && usage.today >= DEFAULT_GOOGLE_DAILY_LIMIT)} onClick={() => void searchGoogle()} className="amd-btn amd-btn-primary mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-[10px] font-bold disabled:opacity-45">
+            {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            {estimate.newRequests === 0 && estimate.cacheHits > 0 ? (language === "en" ? "Use cached result — 0 new requests" : "ใช้ Cache — 0 Request ใหม่") : (language === "en" ? "Run 1 Google Search Request" : "ส่ง 1 Google Search Request")}
+          </button>
+          <p className="mt-2 text-center text-[8px] text-white/28">Local usage today: {usage.today} / {DEFAULT_GOOGLE_DAILY_LIMIT}</p>
+        </div>
+
+        {lastSummary && <div className="mt-3 rounded-xl border border-emerald-300/10 bg-emerald-300/[0.04] px-3 py-2 text-[8px] text-emerald-100">REQUEST SUMMARY • Network attempts: {lastSummary.networkAttempts} • {lastSummary.fromCache ? "cache hit" : "external request sent"} • {lastSummary.candidates} candidates returned</div>}
         {error && <p className="mt-3 rounded-xl border border-rose-300/10 bg-rose-300/[0.05] px-3 py-2 text-[9px] text-rose-100">{error}</p>}
 
         <div className="mt-4 space-y-3">
