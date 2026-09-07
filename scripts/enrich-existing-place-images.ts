@@ -116,14 +116,9 @@ async function getPlace(placeId: string) {
   return await response.json() as SearchPlace;
 }
 
-function photoUrl(photoName: string, maxWidthPx: number) {
-  const media = `${photoName}/media`;
-  return `https://places.googleapis.com/v1/${media}?maxWidthPx=${maxWidthPx}&key=${encodeURIComponent(API_KEY)}`;
-}
-
 function selectPhotos(raw: SearchPlace) {
   const photos = raw.photos ?? [];
-  const scored = photos
+  return photos
     .map((photo, index) => {
       const width = photo.widthPx ?? 0;
       const height = photo.heightPx ?? 0;
@@ -134,19 +129,16 @@ function selectPhotos(raw: SearchPlace) {
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 8)
-    .map(({ photo }) => photo);
-
-  return scored
-    .filter((photo): photo is NonNullable<typeof photo> & { name: string } => Boolean(photo.name))
-    .map((photo, index): PlaceImage => ({
-      url: photoUrl(photo.name, index === 0 ? 900 : 1100),
+    .map(({ photo }): PlaceImage | null => photo.name ? ({
+      url: "",
       source: "google_places",
       photoReference: photo.name,
       attribution: photo.authorAttributions?.map((item) => item.displayName).filter(Boolean).join(", ") || null,
       width: photo.widthPx ?? null,
       height: photo.heightPx ?? null,
       verified: true,
-    }));
+    }) : null)
+    .filter((photo): photo is PlaceImage => Boolean(photo));
 }
 
 async function readExisting() {
@@ -186,9 +178,9 @@ async function main() {
       const patch: ExistingPatch = {
         googlePlaceId: real.id,
         imageMetadata,
-        coverImage: imageMetadata[0]?.url ?? seed.coverImage ?? seed.image ?? null,
-        images: imageMetadata.length ? imageMetadata.map((image) => image.url) : seed.images,
-        galleryImages: imageMetadata.length ? imageMetadata.map((image) => image.url) : seed.galleryImages ?? seed.images,
+        coverImage: seed.coverImage ?? seed.image ?? null,
+        images: seed.images,
+        galleryImages: seed.galleryImages ?? seed.images,
         imageSource: imageMetadata.length ? "Google Places" : seed.imageSource ?? null,
         imageAttribution: imageMetadata[0]?.attribution ?? null,
         imageVerifiedAt: new Date().toISOString().slice(0, 10),
@@ -206,7 +198,7 @@ async function main() {
   }
 
   await fs.writeFile(OUT, `${JSON.stringify(output, null, 2)}\n`, "utf8");
-  console.log(`Done. Audited ${PLACES.length} places, matched ${matched}, stored ${photos} photo records, uncertain ${uncertain}.`);
+  console.log(`Done. Audited ${PLACES.length} places, matched ${matched}, stored ${photos} photo references, uncertain ${uncertain}.`);
 }
 
 void main();
