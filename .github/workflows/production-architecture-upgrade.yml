@@ -14,7 +14,7 @@ permissions:
 jobs:
   upgrade:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,6 +28,19 @@ jobs:
 
       - name: Apply production architecture upgrade
         run: python3 scripts/apply-production-architecture-upgrade.py
+
+      - name: Scope Vitest to unit tests
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('vitest.config.ts')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'test: { environment: "jsdom", setupFiles: ["./tests/setup.ts"] }',
+              'test: { include: ["tests/**/*.test.ts"], exclude: ["e2e/**", "node_modules/**"], environment: "jsdom", setupFiles: ["./tests/setup.ts"] }',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
 
       - name: Install and lock dependencies
         run: npm install
@@ -46,6 +59,12 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
 
       - name: Cloudflare dry run
         run: npx wrangler deploy --dry-run
