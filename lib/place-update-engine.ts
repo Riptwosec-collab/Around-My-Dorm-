@@ -1,8 +1,8 @@
-import type { Place } from "@/types/place";
+import type { CategoryId, Place } from "@/types/place";
 import { haversineKm, normalizeText } from "@/lib/place-utils";
 import { freshnessState, shouldRefresh, type FreshnessState } from "@/lib/data-governance";
 
-export type UpdateMode = "all" | "older14" | "older30" | "older90" | "restaurants_cafes" | "parking" | "selected";
+export type UpdateMode = "all" | "older14" | "older30" | "older90" | "restaurants_cafes" | "parking" | "category" | "area" | "selected";
 export type ChangeRisk = "safe" | "review" | "high";
 
 export type FieldDiff = {
@@ -60,7 +60,11 @@ export function diffPlace(existing: Place, incoming: Partial<Place>, source: str
   };
 }
 
-export function selectPlacesForUpdate(places: Place[], mode: UpdateMode, selectedIds: string[] = []) {
+export function selectPlacesForUpdate(
+  places: Place[],
+  mode: UpdateMode,
+  options: { selectedIds?: string[]; category?: CategoryId | null; area?: string | null } = {},
+) {
   const now = Date.now();
   const ageDays = (place: Place) => {
     const raw = place.lastChecked || place.lastUpdated || place.lastVerified;
@@ -74,7 +78,12 @@ export function selectPlacesForUpdate(places: Place[], mode: UpdateMode, selecte
   if (mode === "older90") return places.filter((place) => ageDays(place) > 90);
   if (mode === "restaurants_cafes") return places.filter((place) => place.categories.some((category) => ["food", "local_food", "cafe", "bar", "night_food", "mookata", "hotpot", "bbq"].includes(category)));
   if (mode === "parking") return places.filter((place) => place.categories.includes("parking") || place.categories.includes("monthly_parking"));
-  const ids = new Set(selectedIds);
+  if (mode === "category") return options.category ? places.filter((place) => place.categories.includes(options.category as CategoryId)) : [];
+  if (mode === "area") {
+    const area = normalizeText(options.area || "");
+    return area ? places.filter((place) => normalizeText(`${place.area} ${place.soi || ""} ${place.address || ""}`).includes(area)) : [];
+  }
+  const ids = new Set(options.selectedIds || []);
   return places.filter((place) => ids.has(place.id));
 }
 
