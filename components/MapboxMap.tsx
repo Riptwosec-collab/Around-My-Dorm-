@@ -109,7 +109,8 @@ export function MapboxMap({ token, places, origin, radiusMeters, selectedPlace, 
         mapboxgl.accessToken = token;
         const map = new mapboxgl.Map({
           container: containerRef.current,
-          style: "mapbox://styles/mapbox/dark-v11",
+          style: "mapbox://styles/mapbox/standard",
+          config: { basemap: { lightPreset: "night", theme: "monochrome", showPointOfInterestLabels: false, showTransitLabels: false, show3dObjects: false } },
           center: [center.lng, center.lat],
           zoom: radiusMeters <= 500 ? 15.7 : radiusMeters <= 1000 ? 14.8 : radiusMeters <= 3000 ? 13.8 : 12.8,
           attributionControl: true,

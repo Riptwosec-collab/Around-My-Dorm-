@@ -254,10 +254,15 @@ export type Place = {
 
   recommended: boolean;
   localFavorite: boolean;
+  hiddenGem?: boolean;
   verified: boolean;
   dataStatus?: DataStatus;
   lastVerified: string | null;
   source: string[];
+  sourceId?: string | null;
+  sourceUrl?: string | null;
+  lastChecked?: string | null;
+  lastUpdated?: string | null;
   dataSources?: PlaceDataSource[];
   openingHoursVerifiedAt?: string | null;
   priceVerifiedAt?: string | null;
