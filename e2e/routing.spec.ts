@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 test("recent is a real refresh-safe route and filters stay in place", async ({ page }) => { await page.goto("/recent/"); await expect(page.getByRole("heading", { name: "ดูล่าสุด" })).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/recent\/$/); const filter = page.getByRole("button", { name: /เปิดอยู่ตอนนี้/ }).first(); if (await filter.isVisible()) await filter.click(); await expect(page).toHaveURL(/\/recent\/$/); });
 test("settings route persists through refresh", async ({ page }) => { await page.goto("/settings/"); await expect(page.getByRole("heading", { name: "ตั้งค่า" })).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/settings\/$/); });
-test("legacy favorites redirects to saved", async ({ page }) => { await page.goto("/favorites/"); await page.waitForURL(/\/saved\/$/); });
+test("legacy favorites redirects to saved", async ({ page }) => { await page.goto("/favorites/"); await page.waitForURL(/\/saved\/?$/); });
 test("deep-linked place route renders and survives refresh", async ({ page }) => { await page.goto("/place/rung-mah-pah/"); await expect(page.getByText("Rung-Mah-Pah").first()).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/place\/rung-mah-pah\/$/); });
 test("saved route is real", async ({ page }) => { await page.goto("/saved/"); await expect(page.getByRole("heading", { name: "บันทึก", exact: true })).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/saved\/$/); });
 test("map route is real", async ({ page }) => { await page.goto("/map/"); await expect(page.getByRole("heading", { name: "แผนที่" })).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/map\/$/); });
