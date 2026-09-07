@@ -20,7 +20,6 @@ import {
   Heart,
   HelpCircle,
   History,
-  Home,
   Info,
   Languages,
   LocateFixed,
@@ -77,165 +76,36 @@ import {
   withDistance,
 } from "@/lib/place-utils";
 import type { CategoryId, Place, SortMode } from "@/types/place";
-
-type Tab = "explore" | "map" | "favorites" | "recent" | "settings";
-type OriginMode = "dorm" | "me" | "custom";
-type Language = "th" | "en";
-type ThemeMode = "light" | "dark" | "system";
-type QuickFilter = "open" | "near" | "cafe" | "late" | "parking" | null;
-type MapLoadState = "idle" | "loading" | "ready" | "missing" | "error";
-
-type AppSettings = {
-  theme: ThemeMode;
-  language: Language;
-  notifications: boolean;
-  newPlaceAlerts: boolean;
-  promoAlerts: boolean;
-  parkingAlerts: boolean;
-  verifiedOnly: boolean;
-  defaultRadius: number;
-  preferredCategories: CategoryId[];
-  homeMode: OriginMode;
-  customHomeLocation: { name: string; latitude: number; longitude: number } | null;
-};
-
-type SavedCollection = {
-  id: string;
-  title: string;
-  icon: string;
-  placeIds: string[];
-};
-
-const SETTINGS_KEY = "around-dorm-settings-v3";
-const COLLECTIONS_KEY = "around-dorm-collections-v1";
-const RECENT_META_KEY = "around-dorm-recent-meta-v1";
-
-const DEFAULT_SETTINGS: AppSettings = {
-  theme: "dark",
-  language: "th",
-  notifications: true,
-  newPlaceAlerts: true,
-  promoAlerts: true,
-  parkingAlerts: true,
-  verifiedOnly: false,
-  defaultRadius: 500,
-  preferredCategories: [],
-  homeMode: "dorm",
-  customHomeLocation: null,
-};
-
-const DEFAULT_COLLECTIONS: SavedCollection[] = [
-  { id: "wishlist", title: "อยากไป", icon: "🔖", placeIds: [] },
-  { id: "regular", title: "ร้านประจำ", icon: "⭐", placeIds: [] },
-  { id: "late", title: "ร้านดึก", icon: "🌙", placeIds: [] },
-  { id: "work", title: "คาเฟ่นั่งทำงาน", icon: "💻", placeIds: [] },
-];
-
-const RADII = [
-  { label: "250 ม.", value: 250 },
-  { label: "500 ม.", value: 500 },
-  { label: "1 กม.", value: 1000 },
-  { label: "2 กม.", value: 2000 },
-  { label: "3 กม.", value: 3000 },
-  { label: "5 กม.", value: 5000 },
-];
-
-const FOOD_CATEGORIES = new Set<CategoryId>([
-  "food",
-  "local_food",
-  "noodle",
-  "thai_food",
-  "isan_food",
-  "mookata",
-  "japanese",
-  "korean_food",
-  "vietnamese_food",
-  "hotpot",
-  "bbq",
-  "chinese_food",
-  "night_food",
-]);
-
-const SORT_OPTIONS: { id: SortMode; label: string }[] = [
-  { id: "recommended", label: "แนะนำ" },
-  { id: "distanceAsc", label: "ใกล้ที่สุด" },
-  { id: "distanceDesc", label: "ไกลที่สุด" },
-  { id: "rating", label: "คะแนนสูงสุด" },
-  { id: "reviews", label: "รีวิวเยอะ" },
-  { id: "price", label: "ราคาถูก" },
-  { id: "openNow", label: "เปิดอยู่" },
-  { id: "local", label: "Local" },
-  { id: "late", label: "ร้านดึก" },
-];
-
-function activeFilterCount(filters: FilterState) {
-  return (
-    Object.entries(filters).filter(([key, value]) => !["priceLevels", "maxPrice", "maxWalkingMinutes", "area"].includes(key) && value === true).length +
-    (filters.priceLevels.length ? 1 : 0) +
-    (filters.maxPrice != null ? 1 : 0) +
-    (filters.maxWalkingMinutes != null ? 1 : 0) +
-    (filters.area ? 1 : 0)
-  );
-}
-
-function explicitPriceCeiling(place: Place) {
-  if (place.pricing?.max != null) return place.pricing.max;
-  if (place.pricing?.fixed != null) return place.pricing.fixed;
-  if (place.maxPrice != null) return place.maxPrice;
-  if (place.averagePricePerPerson != null) return place.averagePricePerPerson;
-  return null;
-}
-
-function passesFilters(place: Place, filters: FilterState, verifiedOnly: boolean) {
-  const status = getPlaceOpenStatus(place);
-  if (filters.onlyOpen && status.isOpen !== true) return false;
-  if (filters.only24Hours && !place.is24Hours) return false;
-  if (filters.openLate && place.openLate !== true) return false;
-  if (filters.parking && place.parking.available !== true && !place.categories.includes("parking") && !place.categories.includes("monthly_parking")) return false;
-  if (filters.wifi && place.wifi !== true) return false;
-  if (filters.powerOutlet && place.powerOutlet !== true) return false;
-  if (filters.airConditioned && place.airConditioned !== true) return false;
-  if (filters.delivery && place.delivery !== true) return false;
-  if (filters.takeaway && place.takeaway !== true) return false;
-  if (filters.goodForWorking && place.goodForWorking !== true) return false;
-  if (filters.studentFriendly && place.studentFriendly !== true) return false;
-  if ((filters.verifiedOnly || verifiedOnly) && !place.verified) return false;
-  if (filters.localOnly && !(place.placeType === "local" || place.placeType === "independent" || place.localFavorite)) return false;
-  if (filters.priceLevels.length && (place.priceLevel == null || !filters.priceLevels.includes(place.priceLevel))) return false;
-  if (filters.maxPrice != null) {
-    const ceiling = explicitPriceCeiling(place);
-    if (ceiling == null || ceiling > filters.maxPrice) return false;
-  }
-  if (filters.maxWalkingMinutes != null) {
-    const walking = place.distance?.walkingMinutes ?? place.walkingMinutes;
-    if (walking == null || walking > filters.maxWalkingMinutes) return false;
-  }
-  if (filters.area && !normalizeText(`${place.area} ${place.soi || ""}`).includes(normalizeText(filters.area))) return false;
-  return true;
-}
-
-function sortPlaces(places: Place[], mode: SortMode, preferred = new Set<CategoryId>()) {
-  return [...places].sort((a, b) => {
-    const distanceA = a.distanceKm ?? Number.POSITIVE_INFINITY;
-    const distanceB = b.distanceKm ?? Number.POSITIVE_INFINITY;
-    if (mode === "distanceAsc") return distanceA - distanceB;
-    if (mode === "distanceDesc") return distanceB - distanceA;
-    if (mode === "rating") return (b.rating ?? -1) - (a.rating ?? -1);
-    if (mode === "reviews") return (b.reviewCount ?? -1) - (a.reviewCount ?? -1);
-    if (mode === "price") return (explicitPriceCeiling(a) ?? 999999) - (explicitPriceCeiling(b) ?? 999999);
-    if (mode === "openNow") return Number(getPlaceOpenStatus(b).isOpen === true) - Number(getPlaceOpenStatus(a).isOpen === true);
-    if (mode === "local") return Number(Boolean(b.localFavorite)) - Number(Boolean(a.localFavorite));
-    if (mode === "late") return Number(b.openLate === true) - Number(a.openLate === true);
-    return (
-      Number(preferred.has(b.category)) - Number(preferred.has(a.category)) ||
-      Number(b.recommended) - Number(a.recommended) ||
-      Number(b.localFavorite) - Number(a.localFavorite) ||
-      Number(b.verified) - Number(a.verified) ||
-      (b.rating ?? -1) - (a.rating ?? -1) ||
-      distanceA - distanceB
-    );
-  });
-}
+import { PageHeader, Toggle, SettingRow, MiniMapArtwork, LoadingCards } from "@/components/AppShellPrimitives";
+import {
+  COLLECTIONS_KEY,
+  DEFAULT_COLLECTIONS,
+  DEFAULT_SETTINGS,
+  FOOD_CATEGORIES,
+  RADII,
+  RECENT_META_KEY,
+  SETTINGS_KEY,
+  SORT_OPTIONS,
+  TAB_ROUTES,
+  tabFromPath,
+  type AppSettings,
+  type Language,
+  type MapLoadState,
+  type OriginMode,
+  type QuickFilter,
+  type SavedCollection,
+  type Tab,
+  type ThemeMode,
+} from "@/lib/app-shell-config";
+import {
+  activeFilterCount,
+  explicitPriceCeiling,
+  passesFilters,
+  recommendationReasons,
+  smartLocalPicks,
+  sortPlaces,
+  type RecommendationContext,
+} from "@/lib/place-ranking";
 
 function relativeViewedLabel(iso: string | undefined, language: Language) {
   if (!iso) return language === "en" ? "Recently viewed" : "ดูล่าสุด";
@@ -249,94 +119,6 @@ function relativeViewedLabel(iso: string | undefined, language: Language) {
   if (minutes < 24 * 60) return language === "en" ? `Today ${time.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : `วันนี้ ${time.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`;
   if (minutes < 48 * 60) return language === "en" ? `Yesterday ${time.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : `เมื่อวาน ${time.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`;
   return time.toLocaleDateString(language === "en" ? "en-GB" : "th-TH", { day: "numeric", month: "short" });
-}
-
-function PageHeader({ title, subtitle, right }: { title: string; subtitle: string; right?: React.ReactNode }) {
-  return (
-    <header className="amd-safe-top flex items-start justify-between gap-4 pb-5">
-      <div className="min-w-0">
-        <h1 className="text-[34px] font-bold leading-none tracking-[-0.045em] text-[var(--amd-text)] sm:text-[38px]">{title}</h1>
-        <p className="mt-2 text-[14px] text-[var(--amd-text-2)]">{subtitle}</p>
-      </div>
-      {right}
-    </header>
-  );
-}
-
-function Toggle({ active, onChange }: { active: boolean; onChange: () => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={active}
-      onClick={onChange}
-      className={`relative h-8 w-[52px] shrink-0 rounded-full border transition duration-200 ${active ? "border-[rgba(0,140,255,.72)] bg-[#007AFF] shadow-[0_0_16px_rgba(0,122,255,.28)]" : "border-[rgba(120,160,210,.18)] bg-white/[0.08]"}`}
-    >
-      <span className={`absolute top-[3px] h-6 w-6 rounded-full bg-white shadow transition duration-200 ${active ? "left-[23px]" : "left-[3px]"}`} />
-    </button>
-  );
-}
-
-function SettingRow({ icon, title, subtitle, action }: { icon: React.ReactNode; title: string; subtitle?: string; action: React.ReactNode }) {
-  return (
-    <div className="flex min-h-[66px] items-center gap-3 border-b border-[rgba(120,160,210,.11)] py-3 last:border-b-0">
-      <div className="grid h-9 w-9 shrink-0 place-items-center text-[#00D9FF]">{icon}</div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[14px] font-semibold text-[var(--amd-text)]">{title}</p>
-        {subtitle && <p className="mt-0.5 text-[11px] text-[var(--amd-text-3)]">{subtitle}</p>}
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function MiniMapArtwork() {
-  return (
-    <div className="absolute inset-y-0 right-0 w-[48%] overflow-hidden opacity-95">
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_0_42%,rgba(0,140,255,.12)_42%_44%,transparent_44%_100%)]" />
-      <div className="absolute right-[26%] top-[29%] grid h-14 w-14 place-items-center rounded-full border border-[#149CFF] bg-[rgba(0,122,255,.2)] shadow-[0_0_28px_rgba(0,122,255,.52)]"><Home className="h-6 w-6 text-white" /></div>
-      <div className="amd-map-dot left-[21%] top-[32%]" />
-      <div className="amd-map-dot bottom-[25%] left-[44%]" />
-      <div className="amd-map-dot right-[18%] top-[18%]" />
-      <div className="absolute left-[12%] top-[18%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(232,238,248,.22)] bg-[#061424]/90 text-[#e8eef8]"><Coffee className="h-4 w-4" /></div>
-      <div className="absolute bottom-[17%] left-[38%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(255,157,60,.24)] bg-[#07111f]/90 text-[#ff9d3c]"><Utensils className="h-4 w-4" /></div>
-      <div className="absolute bottom-[15%] right-[15%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(0,122,255,.3)] bg-[#07111f]/90 text-[#149CFF]"><Car className="h-4 w-4" /></div>
-    </div>
-  );
-}
-
-function LoadingCards() {
-  return (
-    <div className="space-y-3">
-      {[0, 1, 2].map((item) => (
-        <div key={item} className="amd-glass amd-card flex h-[154px] overflow-hidden">
-          <div className="amd-skeleton w-[35%]" />
-          <div className="flex-1 p-4">
-            <div className="amd-skeleton h-5 w-2/3 rounded-lg" />
-            <div className="amd-skeleton mt-3 h-3 w-1/2 rounded-lg" />
-            <div className="amd-skeleton mt-5 h-3 w-3/4 rounded-lg" />
-            <div className="amd-skeleton mt-5 h-9 w-28 rounded-xl" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const TAB_ROUTES: Record<Tab, string> = {
-  explore: "/",
-  map: "/map/",
-  favorites: "/saved/",
-  recent: "/recent/",
-  settings: "/settings/",
-};
-
-function tabFromPath(pathname: string): Tab {
-  if (pathname.startsWith("/map")) return "map";
-  if (pathname.startsWith("/saved") || pathname.startsWith("/favorites")) return "favorites";
-  if (pathname.startsWith("/recent")) return "recent";
-  if (pathname.startsWith("/settings")) return "settings";
-  return "explore";
 }
 
 export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }) {
@@ -468,6 +250,12 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
   const allPlaces = useMemo(() => databasePlaces.map((place) => withDistance(place, origin)), [databasePlaces, origin]);
 
+  const recommendationContext = useMemo<RecommendationContext>(() => ({
+    preferredCategories: new Set(settings.preferredCategories || []),
+    favoriteIds: new Set(favorites.map((place) => place.id)),
+    recentIds: new Set(recentViews.map((view) => view.placeId)),
+  }), [settings.preferredCategories, favorites, recentViews]);
+
   const visiblePlaces = useMemo(() => {
     const data = allPlaces.filter((place) => {
       if (category !== "all" && !place.categories.includes(category)) return false;
@@ -477,8 +265,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       if (originMode === "me" && place.distanceKm == null) return false;
       return true;
     });
-    return sortPlaces(data, sortMode, new Set(settings.preferredCategories || []));
-  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, originMode, sortMode, settings.verifiedOnly, settings.preferredCategories]);
+    return sortPlaces(data, sortMode, recommendationContext);
+  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, originMode, sortMode, settings.verifiedOnly, recommendationContext]);
 
   const mapVisiblePlaces = useMemo(() => {
     const data = allPlaces.filter((place) => {
@@ -489,8 +277,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       const fromMapCenter = haversineKm(mapSearchCenter, { lat: place.latitude, lng: place.longitude });
       return fromMapCenter * 1000 <= radiusMeters;
     });
-    return sortPlaces(data, sortMode, new Set(settings.preferredCategories || []));
-  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, mapSearchCenter, sortMode, settings.verifiedOnly, settings.preferredCategories]);
+    return sortPlaces(data, sortMode, recommendationContext);
+  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, mapSearchCenter, sortMode, settings.verifiedOnly, recommendationContext]);
 
   const favoritePlaces = useMemo(() => {
     return favorites.map((saved) => allPlaces.find((place) => place.id === saved.id || (saved.googlePlaceId && place.googlePlaceId === saved.googlePlaceId)) || saved);
@@ -515,7 +303,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     return favoritePlaces.filter((place) => ids.has(place.id));
   }, [favoritePlaces, selectedCollection, collections]);
 
-  const localPicks = useMemo(() => visiblePlaces.filter((place) => place.localFavorite || place.placeType === "local" || place.placeType === "independent").slice(0, 4), [visiblePlaces]);
+  const localPicks = useMemo(() => smartLocalPicks(visiblePlaces, recommendationContext, 4), [visiblePlaces, recommendationContext]);
   const nearbyPicks = useMemo(() => sortPlaces(visiblePlaces, "distanceAsc").slice(0, 5), [visiblePlaces]);
 
   useEffect(() => {
@@ -746,7 +534,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
               </div>
 
               <div className="mt-3 space-y-3">
-                {loadingPlaces && !visiblePlaces.length ? <LoadingCards /> : (localPicks.length ? localPicks : visiblePlaces.slice(0, 4)).map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} />)}
+                {loadingPlaces && !visiblePlaces.length ? <LoadingCards /> : (localPicks.length ? localPicks : visiblePlaces.slice(0, 4)).map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} contextMeta={recommendationReasons(place, recommendationContext, settings.language)[0]} />)}
               </div>
 
               <div className="mt-7 flex items-center justify-between">
