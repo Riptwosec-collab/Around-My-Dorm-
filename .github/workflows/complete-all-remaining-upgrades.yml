@@ -1,0 +1,111 @@
+name: Complete All Remaining Upgrades
+
+on:
+  push:
+    paths:
+      - .github/workflows/complete-all-remaining-upgrades.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: complete-all-remaining-upgrades
+  cancel-in-progress: false
+
+jobs:
+  finish-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY || secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+      MAX_IMAGE_ENRICH_REQUESTS: 100
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply final app decomposition and CI migration
+        run: python3 scripts/finish-all-remaining.py
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Preview photo request budget with zero external requests
+        run: npm run enrich:images:estimate
+
+      - name: Enrich all existing place photos when Google key is configured
+        run: |
+          if [ -n "$GOOGLE_PLACES_API_KEY" ]; then
+            echo "Google Places key detected. Running explicitly approved one-time enrichment within a 100-request cap."
+            npm run enrich:images
+          else
+            echo "Google Places secret is not configured; preserving existing image data and skipping paid/external requests."
+          fi
+
+      - name: Summarize photo enrichment
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('data/place-image-enrichment.json','utf8'));
+          const entries = Object.values(data);
+          const withPhotos = entries.filter((p) => Array.isArray(p.imageMetadata) && p.imageMetadata.some((i) => i && i.photoReference));
+          const photoCount = entries.reduce((sum,p) => sum + (Array.isArray(p.imageMetadata) ? p.imageMetadata.filter((i) => i && i.photoReference).length : 0), 0);
+          console.log(`Photo enrichment: ${entries.length} place patches, ${withPhotos.length} with Google photo references, ${photoCount} photo references.`);
+          if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Photo enrichment\n- Place patches: ${entries.length}\n- Places with verified Google photo references: ${withPhotos.length}\n- Stored photo references: ${photoCount}\n`);
+          NODE
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit and architecture tests
+        run: npm test
+
+      - name: Validate all place data
+        run: npm run validate:data
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Full mobile and API-lock E2E suite
+        run: npm run test:e2e
+
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+
+      - name: Clean obsolete one-shot workflows and migration helper
+        run: |
+          find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) \
+            ! -name 'build.yml' \
+            ! -name 'enrich-existing-place-images.yml' \
+            ! -name 'complete-all-remaining-upgrades.yml' -delete
+          rm -f scripts/finish-all-remaining.py
+          rm -f .github/workflows/complete-all-remaining-upgrades.yml
+          echo "Remaining stable workflows:"
+          find .github/workflows -maxdepth 1 -type f -print | sort
+
+      - name: Commit completed upgrade
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No final changes to commit."
+            exit 0
+          fi
+          git commit -m "Finish app decomposition, smart recommendations and CI cleanup"
+          git push
