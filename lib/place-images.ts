@@ -10,8 +10,22 @@ function unique<T>(items: T[], key: (item: T) => string) {
   });
 }
 
+function googlePhotoUrl(photoReference: string, maxWidthPx = 900) {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+  if (!apiKey || !photoReference) return "";
+  return `https://places.googleapis.com/v1/${photoReference}/media?maxWidthPx=${maxWidthPx}&key=${encodeURIComponent(apiKey)}`;
+}
+
+function materializeImage(image: PlaceImage): PlaceImage {
+  if (image.url) return image;
+  if (image.source === "google_places" && image.photoReference) {
+    return { ...image, url: googlePhotoUrl(image.photoReference) };
+  }
+  return image;
+}
+
 export function normalizePlaceImages(place: Place): PlaceImage[] {
-  const metadata = place.imageMetadata ?? [];
+  const metadata = (place.imageMetadata ?? []).map(materializeImage);
   const legacy: PlaceImage[] = [place.coverImage, place.image, ...(place.galleryImages ?? []), ...(place.images ?? [])]
     .filter((url): url is string => Boolean(url))
     .map((url) => ({
@@ -24,7 +38,7 @@ export function normalizePlaceImages(place: Place): PlaceImage[] {
       photoReference: null,
     }));
 
-  return unique([...metadata, ...legacy], (item) => `${item.photoReference ?? ""}|${item.url}`);
+  return unique([...metadata, ...legacy].filter((image) => Boolean(image.url || image.photoReference)), (item) => `${item.photoReference ?? ""}|${item.url}`);
 }
 
 export function selectBestPlaceImage(place: Place): PlaceImage | null {
@@ -47,9 +61,10 @@ export function selectBestPlaceImage(place: Place): PlaceImage | null {
 }
 
 export function getPlaceImageCandidates(place: Place) {
-  const best = selectBestPlaceImage(place);
-  const rest = normalizePlaceImages(place).filter((image) => image.url !== best?.url);
-  return best ? [best, ...rest] : rest;
+  const normalized = normalizePlaceImages(place).filter((image) => Boolean(image.url));
+  const best = selectBestPlaceImage({ ...place, imageMetadata: normalized });
+  const rest = normalized.filter((image) => `${image.photoReference ?? ""}|${image.url}` !== `${best?.photoReference ?? ""}|${best?.url ?? ""}`);
+  return best?.url ? [best, ...rest] : rest;
 }
 
 export function mergePlaceImageData(seed: Place, live: Place): Place {
@@ -57,14 +72,15 @@ export function mergePlaceImageData(seed: Place, live: Place): Place {
   const liveImages = normalizePlaceImages(live);
   const mergedImages = unique([...liveImages, ...seedImages], (item) => `${item.photoReference ?? ""}|${item.url}`).slice(0, 8);
   const best = selectBestPlaceImage({ ...seed, imageMetadata: mergedImages });
+  const usableUrls = mergedImages.map((image) => image.url).filter(Boolean);
 
   return {
     ...seed,
     imageMetadata: mergedImages,
-    coverImage: best?.url ?? seed.coverImage ?? seed.image ?? null,
-    image: best?.url ?? seed.image ?? null,
-    images: mergedImages.map((image) => image.url),
-    galleryImages: mergedImages.map((image) => image.url),
+    coverImage: best?.url || seed.coverImage || seed.image || null,
+    image: best?.url || seed.image || null,
+    images: usableUrls.length ? usableUrls : seed.images,
+    galleryImages: usableUrls.length ? usableUrls : seed.galleryImages ?? seed.images,
     imageSource: best ? sourceLabel(best.source) : seed.imageSource ?? null,
     imageAttribution: best?.attribution ?? seed.imageAttribution ?? null,
     imageVerifiedAt: best?.verified ? live.lastVerified ?? seed.imageVerifiedAt ?? null : seed.imageVerifiedAt ?? null,
