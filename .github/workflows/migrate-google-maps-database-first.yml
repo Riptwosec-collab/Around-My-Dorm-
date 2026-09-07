@@ -1,0 +1,174 @@
+name: Migrate Google Maps Database First
+
+on:
+  push:
+    paths:
+      - '.github/workflows/migrate-google-maps-database-first.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply Google Maps migration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # AroundMyDormApp: switch map renderer without touching the database-first place flow.
+          p = Path('components/AroundMyDormApp.tsx')
+          s = p.read_text()
+          s = s.replace('import { MapboxMap } from "@/components/MapboxMap";', 'import { GoogleMapsMap } from "@/components/GoogleMapsMap";\nimport { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";')
+          s = s.replace('  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? "";', '  const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";\n  const googleMapId = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID ?? "";')
+          s = s.replace('  const [mapLoadState, setMapLoadState] = useState<MapLoadState>(mapboxToken ? "idle" : "missing");', '  const [mapLoadState, setMapLoadState] = useState<MapLoadState>(googleMapsApiKey ? "idle" : "missing");')
+          state_anchor = '  const [dataManagementOpen, setDataManagementOpen] = useState(false);\n'
+          if 'googleDiscoveryOpen' not in s:
+              s = s.replace(state_anchor, state_anchor + '  const [googleDiscoveryOpen, setGoogleDiscoveryOpen] = useState(false);\n')
+
+          old_more = '<button type="button" onClick={() => setDataManagementOpen(true)} className="ml-3 mt-4 text-[11px] font-semibold text-[#00D9FF]">{settings.language === "en" ? "Search more places" : "ค้นหาเพิ่มเติม"}</button>'
+          new_more = '<button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="ml-3 mt-4 text-[11px] font-semibold text-[#00D9FF]">{settings.language === "en" ? "Search more places" : "ค้นหาเพิ่มเติม"}</button>'
+          if old_more in s:
+              s = s.replace(old_more, new_more, 1)
+
+          start_marker = '                {mapboxToken ? ('
+          next_marker = '\n\n                <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2">'
+          if start_marker not in s:
+              raise SystemExit('Mapbox runtime block not found')
+          start = s.index(start_marker)
+          end = s.index(next_marker, start)
+          google_block = '''                {googleMapsApiKey ? (
+                  <>
+                    <GoogleMapsMap
+                      apiKey={googleMapsApiKey}
+                      mapId={googleMapId}
+                      places={mapVisiblePlaces}
+                      origin={origin}
+                      radiusMeters={radiusMeters}
+                      selectedPlace={selectedPlace}
+                      center={mapSearchCenter}
+                      onSelectPlace={(place) => { addRecent(place); setSelectedPlace(place); }}
+                      onMoveEnd={(next) => {
+                        const moved = Math.abs(next.lat - mapSearchCenter.lat) > 0.0008 || Math.abs(next.lng - mapSearchCenter.lng) > 0.0008;
+                        if (moved) { setPendingMapCenter(next); setShowSearchArea(true); }
+                      }}
+                      onStateChange={(state) => setMapLoadState(state)}
+                    />
+                    {(mapLoadState === "idle" || mapLoadState === "loading") && <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#02060D]/55 backdrop-blur-[2px]"><div className="amd-glass flex items-center gap-2 rounded-full px-4 py-2 text-[10px] text-[var(--amd-text-2)]"><LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Loading Google Maps" : "กำลังโหลด Google Maps"}</div></div>}
+                    {mapLoadState === "error" && <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><p className="text-[12px] font-semibold">{settings.language === "en" ? "Google Maps could not load" : "โหลด Google Maps ไม่สำเร็จ"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">{settings.language === "en" ? "Stored place data remains available from the Around My Dorm database." : "ข้อมูลร้านที่บันทึกไว้ยังใช้งานได้จากฐานข้อมูล Around My Dorm"}</p></div></div>}
+                  </>
+                ) : (
+                  <div className="amd-hero-map amd-map-fallback rounded-none border-0">
+                    <MiniMapArtwork />
+                    <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><div className="flex items-start gap-3"><MapIcon className="mt-0.5 h-6 w-6 shrink-0 text-[#00D9FF]" /><div><p className="text-[12px] font-semibold">{settings.language === "en" ? "Google Maps is not configured" : "ยังไม่ได้ตั้งค่า Google Maps"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY and NEXT_PUBLIC_GOOGLE_MAP_ID to Cloudflare build variables.</p></div></div></div></div>
+                  </div>
+                )}'''
+          s = s[:start] + google_block + s[end:]
+
+          search_area_anchor = '{showSearchArea && pendingMapCenter && <button type="button" onClick={() => { setMapSearchCenter(pendingMapCenter); setPendingMapCenter(null); setSelectedPlace(null); setShowSearchArea(false); }} className="amd-btn amd-btn-primary absolute left-1/2 top-[64px] z-20 -translate-x-1/2 rounded-full px-4 py-2 text-[10px] font-bold shadow-xl">{copy.searchThisArea}</button>}'
+          if search_area_anchor in s and 'Search Google for more places' not in s:
+              s = s.replace(search_area_anchor, search_area_anchor + '{showSearchArea && <button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="amd-glass absolute left-1/2 top-[108px] z-20 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-[9px] font-semibold text-[#8ecbff]">{settings.language === "en" ? "Search Google for more places" : "ค้นหา Google เพิ่มเติม"}</button>}', 1)
+
+          bottom_anchor = '      {dataManagementOpen && <DataManagement places={allPlaces} databaseSource={databaseSource} language={settings.language} onClose={() => setDataManagementOpen(false)} onReload={() => { void reloadDatabase(); }} />}\n'
+          discovery = '''      {googleDiscoveryOpen && <GoogleDiscoverySheet initialQuery={query || (category !== "all" ? CATEGORY_MAP[category]?.name || "" : "")} center={mapSearchCenter} radiusMeters={radiusMeters} language={settings.language} onClose={() => setGoogleDiscoveryOpen(false)} onReviewCandidate={(candidate) => { try { sessionStorage.setItem("around-dorm-google-candidate-review-v1", JSON.stringify(candidate)); } catch {} setGoogleDiscoveryOpen(false); setDataManagementOpen(true); showToast(settings.language === "en" ? "Candidate opened for admin review" : "ส่ง Candidate ไปหน้า Data Management แล้ว"); }} />}\n'''
+          if bottom_anchor not in s:
+              raise SystemExit('Bottom sheet anchor not found')
+          if 'around-dorm-google-candidate-review-v1' not in s:
+              s = s.replace(bottom_anchor, discovery + bottom_anchor, 1)
+          p.write_text(s)
+
+          # Place Detail: Google live enrichment is explicit/optional and does not replace stored data.
+          p = Path('components/PlaceDetail.tsx')
+          s = p.read_text()
+          if 'GoogleLiveEnrichment' not in s:
+              s = s.replace('import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";', 'import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";\nimport { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";')
+              anchor = '            {gallery.length > 1 && (\n'
+              if anchor not in s:
+                  raise SystemExit('PlaceDetail gallery anchor not found')
+              s = s.replace(anchor, '            <GoogleLiveEnrichment place={place} language={language} />\n\n' + anchor, 1)
+          p.write_text(s)
+
+          # Data Management: 30/60/90-day scopes, manual Google Place ID checks, candidate review.
+          p = Path('components/DataManagement.tsx')
+          s = p.read_text()
+          if 'GoogleMaintenancePanel' not in s:
+              s = s.replace('import { CATEGORIES } from "@/data/categories";', 'import { CATEGORIES } from "@/data/categories";\nimport { GoogleMaintenancePanel } from "@/components/GoogleMaintenancePanel";')
+
+          candidate_state_anchor = '  const [selectedPlaceIds, setSelectedPlaceIds] = useState<string[]>([]);\n'
+          if 'googleCandidate' not in s:
+              candidate_state = candidate_state_anchor + '''  const [googleCandidate, setGoogleCandidate] = useState<any>(() => {
+    if (typeof window === "undefined") return null;
+    try { return JSON.parse(sessionStorage.getItem("around-dorm-google-candidate-review-v1") || "null"); } catch { return null; }
+  });
+'''
+              s = s.replace(candidate_state_anchor, candidate_state, 1)
+
+          s = s.replace('{ label: language === "en" ? "Stale" : "ข้อมูลเก่า", value: summary.stale }', '{ label: language === "en" ? "Stale" : "ข้อมูลเก่า", value: summary.stale + summary.staleSoon }')
+
+          old_options = '<option value="all">{language === "en" ? "All places" : "ทุกสถานที่"}</option><option value="older14">{language === "en" ? "Older than 14 days" : "เก่ากว่า 14 วัน"}</option><option value="older30">{language === "en" ? "Older than 30 days" : "เก่ากว่า 30 วัน"}</option><option value="older90">{language === "en" ? "Older than 90 days" : "เก่ากว่า 90 วัน"}</option><option value="restaurants_cafes">{language === "en" ? "Restaurants & cafes" : "ร้านอาหารและคาเฟ่"}</option><option value="parking">{language === "en" ? "Parking only" : "ที่จอดรถเท่านั้น"}</option><option value="category">{language === "en" ? "Selected category" : "เลือกหมวด"}</option><option value="area">{language === "en" ? "Selected area" : "เลือกพื้นที่"}</option><option value="selected">{language === "en" ? "Selected places only" : "เลือกเฉพาะร้าน"}</option>'
+          new_options = '<option value="all">{language === "en" ? "All places" : "ทุกสถานที่"}</option><option value="older30">{language === "en" ? "Older than 30 days" : "เก่ากว่า 30 วัน"}</option><option value="older60">{language === "en" ? "Older than 60 days" : "เก่ากว่า 60 วัน"}</option><option value="older90">{language === "en" ? "Older than 90 days" : "เก่ากว่า 90 วัน"}</option><option value="restaurants">{language === "en" ? "Restaurants only" : "ร้านอาหารเท่านั้น"}</option><option value="cafes">{language === "en" ? "Cafes only" : "คาเฟ่เท่านั้น"}</option><option value="restaurants_cafes">{language === "en" ? "Restaurants & cafes" : "ร้านอาหารและคาเฟ่"}</option><option value="parking">{language === "en" ? "Parking only" : "ที่จอดรถเท่านั้น"}</option><option value="category">{language === "en" ? "Selected category" : "เลือกหมวด"}</option><option value="area">{language === "en" ? "Selected area" : "เลือกพื้นที่"}</option><option value="selected">{language === "en" ? "Selected places only" : "เลือกเฉพาะร้าน"}</option>'
+          if old_options not in s:
+              raise SystemExit('DataManagement update options not found')
+          s = s.replace(old_options, new_options, 1)
+
+          audit_anchor = '        {auditDone && <section className="amd-glass amd-card mt-4 p-4">'
+          if audit_anchor not in s:
+              raise SystemExit('DataManagement audit anchor not found')
+          if '<GoogleMaintenancePanel places={selected}' not in s:
+              candidate_panel = '''        {googleCandidate && <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#00D9FF]">NEW PLACE CANDIDATE</p><p className="mt-1 text-[13px] font-semibold">{googleCandidate.name || "Google candidate"}</p><p className="mt-1 text-[8px] leading-4 text-[var(--amd-text-3)]">{googleCandidate.address || "—"}</p><p className="mt-1 text-[8px] text-[var(--amd-text-3)]">Google Place ID: {googleCandidate.googlePlaceId || "—"}</p></div><button type="button" onClick={() => { try { sessionStorage.removeItem("around-dorm-google-candidate-review-v1"); } catch {} setGoogleCandidate(null); }} className="amd-chip h-9 min-h-0 px-3 text-[8px]">{language === "en" ? "Ignore" : "ไม่ใช้"}</button></div><div className="mt-3 rounded-xl border border-amber-300/10 bg-amber-300/[0.05] p-3 text-[8px] leading-4 text-amber-100">{language === "en" ? "Temporary Google discovery candidate. Do not persist Google-sourced business content automatically. Verify with an owned/authorized source, then create or update the internal record manually. The Google Place ID may be kept as the external link identifier." : "Candidate ชั่วคราวจาก Google • ห้ามบันทึกข้อมูลธุรกิจจาก Google ลงฐานถาวรแบบอัตโนมัติ ให้ตรวจด้วยแหล่ง Owned/Authorized ก่อน แล้วค่อยเพิ่ม/แก้ Internal Record โดยเก็บ Google Place ID เป็นตัวเชื่อมภายนอกได้"}</div></section>}\n\n        <GoogleMaintenancePanel places={selected} language={language} />\n\n'''
+              s = s.replace(audit_anchor, candidate_panel + audit_anchor, 1)
+          p.write_text(s)
+
+          # Normal map load should not preload Places discovery code. Places is imported only on explicit live actions.
+          p = Path('lib/google-maps.ts')
+          s = p.read_text()
+          s = s.replace('&v=weekly&libraries=places,marker&language=th&region=TH', '&v=weekly&libraries=marker&language=th&region=TH')
+          p.write_text(s)
+
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate Google implementation before Mapbox removal
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run validate:data
+          npm test
+          npm run build
+
+      - name: Remove validated Mapbox runtime
+        run: |
+          rm -f components/MapboxMap.tsx
+          rm -f .github/workflows/apply-mapbox-database-first.yml
+          npm uninstall mapbox-gl
+
+      - name: Validate final Google-only runtime
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run validate:data
+          npm test
+          npm run build
+          npx wrangler deploy --dry-run
+
+      - name: Remove one-time migration workflow
+        run: rm -f .github/workflows/migrate-google-maps-database-first.yml
+
+      - name: Commit migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Migrate map runtime from Mapbox to Google Maps"
+            git push
+          fi
