@@ -2,7 +2,19 @@ import type { CategoryId, Place } from "@/types/place";
 import { haversineKm, normalizeText } from "@/lib/place-utils";
 import { freshnessState, shouldRefresh, type FreshnessState } from "@/lib/data-governance";
 
-export type UpdateMode = "all" | "older14" | "older30" | "older90" | "restaurants_cafes" | "parking" | "category" | "area" | "selected";
+export type UpdateMode =
+  | "all"
+  | "older14"
+  | "older30"
+  | "older60"
+  | "older90"
+  | "restaurants_cafes"
+  | "restaurants"
+  | "cafes"
+  | "parking"
+  | "category"
+  | "area"
+  | "selected";
 export type ChangeRisk = "safe" | "review" | "high";
 
 export type FieldDiff = {
@@ -26,13 +38,38 @@ export type MaintenanceSummary = {
   scanned: number;
   verified: number;
   stale: number;
+  staleSoon: number;
   unverified: number;
   needsReview: number;
   freshness: Record<FreshnessState, number>;
 };
 
-const REVIEW_FIELDS = new Set(["openingHours", "openingHoursText", "priceText", "minPrice", "maxPrice", "averagePricePerPerson", "rating", "reviewCount", "images", "coverImage", "parking"]);
-const HIGH_RISK_FIELDS = new Set(["name", "category", "categories", "latitude", "longitude", "address", "permanentlyClosed", "temporaryClosed"]);
+const REVIEW_FIELDS = new Set([
+  "openingHours",
+  "structuredOpeningHours",
+  "openingHoursText",
+  "priceText",
+  "minPrice",
+  "maxPrice",
+  "averagePricePerPerson",
+  "pricing",
+  "rating",
+  "reviewCount",
+  "category",
+  "categories",
+  "address",
+  "parking",
+  "parkingDetails",
+]);
+
+const HIGH_RISK_FIELDS = new Set([
+  "name",
+  "googlePlaceId",
+  "latitude",
+  "longitude",
+  "permanentlyClosed",
+  "temporaryClosed",
+]);
 
 function equalValue(a: unknown, b: unknown) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -43,6 +80,8 @@ export function diffPlace(existing: Place, incoming: Partial<Place>, source: str
   for (const [field, incomingValue] of Object.entries(incoming)) {
     if (incomingValue === undefined || field === "id") continue;
     const previousValue = (existing as unknown as Record<string, unknown>)[field];
+    // Never downgrade a known internal value to a missing incoming value.
+    if (incomingValue === null && previousValue !== null && previousValue !== undefined) continue;
     if (equalValue(previousValue, incomingValue)) continue;
     const risk: ChangeRisk = HIGH_RISK_FIELDS.has(field) ? "high" : REVIEW_FIELDS.has(field) ? "review" : "safe";
     fields.push({ field, previousValue, incomingValue, risk });
@@ -72,11 +111,17 @@ export function selectPlacesForUpdate(
     const time = new Date(raw).getTime();
     return Number.isFinite(time) ? Math.max(0, (now - time) / 86_400_000) : Number.POSITIVE_INFINITY;
   };
+
   if (mode === "all") return places;
   if (mode === "older14") return places.filter((place) => ageDays(place) > 14);
   if (mode === "older30") return places.filter((place) => ageDays(place) > 30);
+  if (mode === "older60") return places.filter((place) => ageDays(place) > 60);
   if (mode === "older90") return places.filter((place) => ageDays(place) > 90);
-  if (mode === "restaurants_cafes") return places.filter((place) => place.categories.some((category) => ["food", "local_food", "cafe", "bar", "night_food", "mookata", "hotpot", "bbq"].includes(category)));
+
+  const restaurantCategories = ["food", "local_food", "noodle", "thai_food", "isan_food", "japanese", "korean_food", "vietnamese_food", "hotpot", "bbq", "chinese_food", "night_food", "mookata"];
+  if (mode === "restaurants") return places.filter((place) => place.categories.some((category) => restaurantCategories.includes(category)));
+  if (mode === "cafes") return places.filter((place) => place.categories.includes("cafe"));
+  if (mode === "restaurants_cafes") return places.filter((place) => place.categories.some((category) => [...restaurantCategories, "cafe", "bar"].includes(category)));
   if (mode === "parking") return places.filter((place) => place.categories.includes("parking") || place.categories.includes("monthly_parking"));
   if (mode === "category") return options.category ? places.filter((place) => place.categories.includes(options.category as CategoryId)) : [];
   if (mode === "area") {
@@ -88,25 +133,43 @@ export function selectPlacesForUpdate(
 }
 
 export function auditPlaces(places: Place[]): MaintenanceSummary {
-  const freshness: Record<FreshnessState, number> = { fresh: 0, verified: 0, aging: 0, stale: 0, unverified: 0 };
+  const freshness: Record<FreshnessState, number> = { fresh: 0, aging: 0, stale_soon: 0, stale: 0, unverified: 0 };
   for (const place of places) freshness[freshnessState(place)] += 1;
   return {
     scanned: places.length,
     verified: places.filter((place) => place.verified).length,
     stale: freshness.stale,
+    staleSoon: freshness.stale_soon,
     unverified: freshness.unverified,
     needsReview: places.filter((place) => shouldRefresh(place) || !place.verified).length,
     freshness,
   };
 }
 
+function sameNormalizedText(a: string | null | undefined, b: string | null | undefined) {
+  const left = normalizeText(a || "");
+  const right = normalizeText(b || "");
+  return Boolean(left && right && (left === right || (left.length >= 8 && right.length >= 8 && (left.includes(right) || right.includes(left)))));
+}
+
+function samePhone(a: string | null | undefined, b: string | null | undefined) {
+  const left = String(a || "").replace(/\D/g, "");
+  const right = String(b || "").replace(/\D/g, "");
+  return left.length >= 8 && right.length >= 8 && left === right;
+}
+
 export function possibleDuplicate(a: Place, b: Place) {
   if (a.id === b.id) return false;
-  const nameA = normalizeText(a.name);
-  const nameB = normalizeText(b.name);
-  const similarName = nameA === nameB || (nameA.length >= 5 && nameB.length >= 5 && (nameA.includes(nameB) || nameB.includes(nameA)));
-  if (!similarName || a.latitude == null || a.longitude == null || b.latitude == null || b.longitude == null) return false;
-  return haversineKm({ lat: a.latitude, lng: a.longitude }, { lat: b.latitude, lng: b.longitude }) <= 0.05;
+  if (a.googlePlaceId && b.googlePlaceId) return a.googlePlaceId === b.googlePlaceId;
+
+  if (a.latitude == null || a.longitude == null || b.latitude == null || b.longitude == null) return false;
+  const close = haversineKm({ lat: a.latitude, lng: a.longitude }, { lat: b.latitude, lng: b.longitude }) <= 0.05;
+  if (!close) return false;
+
+  const nameMatch = sameNormalizedText(a.name, b.name);
+  const addressMatch = sameNormalizedText(a.address, b.address);
+  const phoneMatch = samePhone(a.phone, b.phone);
+  return nameMatch || addressMatch || phoneMatch;
 }
 
 export function findDuplicatePairs(places: Place[]) {
