@@ -71,18 +71,29 @@ function applyLocalDatabaseLayer(places: Place[]) {
   return [...base, ...additions.filter((place) => !known.has(place.id))];
 }
 
+function isPlaceRecord(value: unknown): value is Place {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<Place>;
+  return typeof record.id === "string" && typeof record.name === "string" && typeof record.slug === "string" && Array.isArray(record.categories);
+}
+
 async function loadFromSupabase(): Promise<Place[] | null> {
   const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "") ?? "";
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
   if (!baseUrl || !anonKey) return null;
 
-  const response = await fetch(`${baseUrl}/rest/v1/places?select=*&order=name.asc`, {
+  // The persistent schema stores the complete normalized Place object in `record`.
+  // This prevents SQL naming conventions from leaking into the TypeScript domain model.
+  const response = await fetch(`${baseUrl}/rest/v1/places?select=record&order=name.asc`, {
     headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, Accept: "application/json" },
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`Place database request failed (${response.status})`);
-  const rows = (await response.json()) as Place[];
-  return Array.isArray(rows) ? rows : [];
+  const rows = (await response.json()) as Array<{ record?: unknown }>;
+  if (!Array.isArray(rows)) return null;
+  const places = rows.map((row) => row.record).filter(isPlaceRecord);
+  // An empty/unseeded table should not blank the app; use the embedded database until seeded.
+  return places.length ? places : null;
 }
 
 /** Primary runtime place loader. No external POI discovery is performed here. */
