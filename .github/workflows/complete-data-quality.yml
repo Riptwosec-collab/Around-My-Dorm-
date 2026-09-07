@@ -1,0 +1,59 @@
+name: Complete Data Quality Dashboard
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/complete-data-quality.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  data-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Inspect and apply data quality architecture
+        run: python scripts/apply-data-quality-dashboard.py
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit and architecture tests
+        run: npm test
+      - name: Validate place data
+        run: npm run validate:data
+      - name: Production build
+        run: npm run build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify mobile UI and zero accidental Places calls
+        run: |
+          npx playwright test e2e/premium-interactions.spec.ts --workers=1 --timeout=45000
+          npx playwright test e2e/p0-google-api-lock.spec.ts --workers=1 --timeout=45000
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated data quality upgrade
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/data-quality.ts components/DataQualityDashboard.tsx components/DataManagement.tsx components/PlaceCard.tsx components/PlaceDetail.tsx tests/data-quality.test.ts
+          git commit -m 'Add data quality score, completeness dashboard and freshness labels'
+          git push
