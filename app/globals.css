@@ -2,10 +2,54 @@
 
 :root {
   color-scheme: dark;
-  background: #050812;
-  font-family: Arial, Helvetica, sans-serif;
+  --amd-bg: #02060d;
+  --amd-bg-2: #030812;
+  --amd-bg-3: #050b16;
+  --amd-surface: #08111f;
+  --amd-surface-2: #0a1424;
+  --amd-glass: rgba(8, 18, 33, 0.72);
+  --amd-glass-2: rgba(12, 23, 40, 0.62);
+  --amd-blue: #008cff;
+  --amd-blue-2: #007aff;
+  --amd-bright-blue: #149cff;
+  --amd-cyan: #00d9ff;
+  --amd-cyan-active: #19e6ff;
+  --amd-green: #00e5c3;
+  --amd-purple: #9b6cff;
+  --amd-gold: #ffc341;
+  --amd-text: #f7f9fc;
+  --amd-text-2: #a8b2c4;
+  --amd-text-3: #69768b;
+  --amd-border: rgba(120, 160, 210, 0.18);
+  --amd-border-active: rgba(0, 153, 255, 0.9);
+  --amd-nav-h: 78px;
+  --amd-radius-sm: 10px;
+  --amd-radius-md: 14px;
+  --amd-radius-lg: 18px;
+  --amd-radius-xl: 24px;
+  --amd-radius-2xl: 28px;
+  --amd-shadow: 0 14px 35px rgba(0, 0, 0, 0.35);
+  --amd-shadow-strong: 0 20px 54px rgba(0, 0, 0, 0.48);
+  --amd-glow: 0 0 18px rgba(0, 140, 255, 0.25);
+  background: var(--amd-bg);
+  font-family: "SF Pro Display", "SF Pro Text", Inter, "Noto Sans Thai", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --amd-bg: #eef5ff;
+  --amd-bg-2: #f6f9ff;
+  --amd-bg-3: #e8f1ff;
+  --amd-surface: #ffffff;
+  --amd-surface-2: #f5f8ff;
+  --amd-glass: rgba(255, 255, 255, 0.78);
+  --amd-glass-2: rgba(250, 253, 255, 0.72);
+  --amd-text: #07101f;
+  --amd-text-2: #536176;
+  --amd-text-3: #7a8799;
+  --amd-border: rgba(53, 86, 126, 0.16);
 }
 
 * {
@@ -17,12 +61,17 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: #050812;
+  background: var(--amd-bg);
   overscroll-behavior-y: none;
 }
 
 body {
   min-width: 320px;
+  color: var(--amd-text);
+  background:
+    radial-gradient(circle at 72% 12%, rgba(0, 110, 255, 0.075), transparent 30%),
+    radial-gradient(circle at 18% 52%, rgba(0, 217, 255, 0.035), transparent 34%),
+    linear-gradient(180deg, var(--amd-bg) 0%, var(--amd-bg-2) 55%, var(--amd-bg) 100%);
 }
 
 button,
@@ -32,8 +81,17 @@ textarea {
   font: inherit;
 }
 
-button {
+button,
+a {
   touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgba(25, 230, 255, 0.72);
+  outline-offset: 2px;
 }
 
 img {
@@ -41,34 +99,215 @@ img {
 }
 
 ::selection {
-  background: rgb(103 232 249 / 0.28);
+  background: rgba(0, 153, 255, 0.28);
 }
 
-/* Previous Around My Dorm app shell: keep the experience phone-like on wide screens. */
-.around-dorm-app-shell-note { display: none; }
+.amd-app {
+  min-height: 100dvh;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 70% 18%, rgba(0, 110, 255, 0.06), transparent 34%),
+    var(--amd-bg);
+  color: var(--amd-text);
+}
 
-@media (min-width: 640px) {
-  main .sm\:px-6,
-  main .lg\:px-8 {
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-  }
+.amd-shell {
+  position: relative;
+  width: min(100%, 1180px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  border-left: 1px solid rgba(120, 160, 210, 0.06);
+  border-right: 1px solid rgba(120, 160, 210, 0.06);
+  background: linear-gradient(180deg, rgba(3, 8, 18, 0.9), rgba(2, 6, 13, 0.96));
+}
 
-  main .sm\:-mx-6,
-  main .lg\:-mx-8 {
-    margin-left: -1rem !important;
-    margin-right: -1rem !important;
-  }
+.amd-content {
+  padding-bottom: calc(var(--amd-nav-h) + 32px + env(safe-area-inset-bottom));
+}
+
+.amd-page {
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+
+.amd-safe-top {
+  padding-top: max(22px, env(safe-area-inset-top));
+}
+
+.amd-glass,
+.amd-glass-strong {
+  border: 1px solid var(--amd-border);
+  background: linear-gradient(145deg, rgba(12, 25, 45, 0.84), rgba(5, 12, 24, 0.78));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: var(--amd-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.amd-glass-strong {
+  background: linear-gradient(145deg, rgba(12, 24, 43, 0.92), rgba(4, 10, 21, 0.88));
+  box-shadow: var(--amd-shadow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.amd-card {
+  border-radius: var(--amd-radius-xl);
+}
+
+.amd-card-selected {
+  border-color: var(--amd-border-active);
+  box-shadow: var(--amd-shadow), var(--amd-glow), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.amd-input {
+  min-height: 56px;
+  border: 1px solid rgba(120, 160, 210, 0.2);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(11, 23, 42, 0.84), rgba(6, 13, 25, 0.82));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 10px 28px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.amd-chip {
+  min-height: 44px;
+  border: 1px solid rgba(120, 160, 210, 0.19);
+  border-radius: 999px;
+  background: rgba(8, 17, 31, 0.72);
+  color: var(--amd-text-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.amd-chip:active,
+.amd-btn:active {
+  transform: scale(0.97);
+}
+
+.amd-chip-active {
+  border-color: rgba(0, 153, 255, 0.95);
+  background: linear-gradient(145deg, rgba(0, 122, 255, 0.2), rgba(0, 217, 255, 0.08));
+  color: #f8fbff;
+  box-shadow: 0 0 18px rgba(0, 140, 255, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.amd-btn {
+  min-height: 44px;
+  transition: transform 170ms ease, filter 170ms ease, box-shadow 170ms ease;
+}
+
+.amd-btn-primary {
+  border: 1px solid rgba(20, 156, 255, 0.88);
+  background: linear-gradient(135deg, #008cff, #0066ff);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 112, 255, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.amd-btn-primary:hover {
+  filter: brightness(1.06);
+}
+
+.amd-divider {
+  border-color: rgba(120, 160, 210, 0.11);
+}
+
+.amd-nav {
+  position: fixed;
+  z-index: 70;
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  width: auto;
+  max-width: 430px;
+  height: var(--amd-nav-h);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(120, 160, 210, 0.16);
+  border-radius: 26px;
+  background: rgba(6, 14, 27, 0.84);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.3), 0 16px 38px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
+}
+
+.amd-nav-active {
+  color: var(--amd-cyan);
+  text-shadow: 0 0 16px rgba(0, 217, 255, 0.55);
+}
+
+.amd-hero-map {
+  position: relative;
+  min-height: 178px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 140, 255, 0.7);
+  border-radius: 25px;
+  background:
+    linear-gradient(rgba(0, 95, 220, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 95, 220, 0.09) 1px, transparent 1px),
+    radial-gradient(circle at 72% 45%, rgba(0, 132, 255, 0.24), transparent 18%),
+    linear-gradient(145deg, #071426, #030812 72%);
+  background-size: 28px 28px, 28px 28px, auto, auto;
+  box-shadow: 0 0 24px rgba(0, 132, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.amd-map-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--amd-cyan);
+  box-shadow: 0 0 14px rgba(0, 217, 255, 0.8);
+}
+
+.amd-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.amd-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  animation: amd-shimmer 1.35s infinite;
+}
+
+@keyframes amd-shimmer {
+  100% { transform: translateX(100%); }
 }
 
 @media (min-width: 768px) {
-  main .md\:grid-cols-2 {
-    grid-template-columns: minmax(0, 1fr) !important;
+  .amd-page {
+    max-width: 760px;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .amd-nav {
+    max-width: 760px;
   }
 }
 
-@media (min-width: 1280px) {
-  main .xl\:grid-cols-3 {
-    grid-template-columns: minmax(0, 1fr) !important;
+@media (min-width: 1024px) {
+  .amd-page {
+    max-width: 1120px;
+    padding-left: 30px;
+    padding-right: 30px;
+  }
+
+  .amd-nav {
+    max-width: 760px;
+  }
+}
+
+@media (max-width: 430px) {
+  .amd-shell {
+    border-left: 0;
+    border-right: 0;
   }
 }
