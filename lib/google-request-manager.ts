@@ -50,6 +50,9 @@ export type GoogleRequestUsage = {
   placeDetails: number;
   textSearch: number;
   other: number;
+  failedRequests: number;
+  retries: number;
+  networkAttempts: number;
 };
 
 export type GoogleRequestProgress = {
@@ -155,6 +158,9 @@ export function getGoogleRequestUsage(): GoogleRequestUsage {
     placeDetails: byType("place_details"),
     textSearch: byType("text_search"),
     other: byType("other"),
+    failedRequests: logs.filter((item) => item.status === "failed").length,
+    retries: logs.reduce((sum, item) => sum + (item.retryCount || 0), 0),
+    networkAttempts: attempts(logs),
   };
 }
 

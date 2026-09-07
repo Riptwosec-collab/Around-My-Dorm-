@@ -5,8 +5,6 @@ import { AlertTriangle, CheckCircle2, ExternalLink, Eye, History, LoaderCircle, 
 import { freshnessState } from "@/lib/data-governance";
 import {
   DEFAULT_GOOGLE_DAILY_LIMIT,
-  DEFAULT_GOOGLE_MONTHLY_WARNING,
-  DEFAULT_GOOGLE_BATCH_LIMIT,
   GOOGLE_BATCH_LIMIT_OPTIONS,
   GOOGLE_REQUEST_MODE,
   estimatePlaceDetailRequests,
@@ -23,6 +21,7 @@ import type { GoogleLiveDetails } from "@/lib/google-live";
 import { normalizeText } from "@/lib/place-utils";
 import type { CategoryId, Place } from "@/types/place";
 import { CATEGORIES } from "@/data/categories";
+import { getGoogleApiControlSettings, requestUsageWarning, saveGoogleApiControlSettings } from "@/lib/google-api-control";
 
 type ReviewField = { label: string; existing: unknown; live: unknown; risk: "review" | "high" };
 type ReviewItem = { place: Place; live: GoogleLiveDetails; fields: ReviewField[]; possiblyClosed: boolean };
@@ -84,7 +83,8 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
   const [scopeCategory, setScopeCategory] = useState<CategoryId>("cafe");
   const [scopeArea, setScopeArea] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [safetyLimit, setSafetyLimit] = useState(DEFAULT_GOOGLE_BATCH_LIMIT);
+  const [apiControl, setApiControl] = useState(() => getGoogleApiControlSettings());
+  const safetyLimit = apiControl.batchLimit;
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [singlePlace, setSinglePlace] = useState<Place | null>(null);
@@ -123,6 +123,12 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
   const executableCount = Math.min(estimate.batchRequests, remainingDaily);
   const largeBatch = executableCount > 25;
   const strongWarning = estimate.newRequests >= 100;
+  const dailyWarning = useMemo(() => requestUsageWarning(usage.today, apiControl.dailyWarningLimit), [usage.today, apiControl.dailyWarningLimit]);
+  const monthlyWarning = useMemo(() => requestUsageWarning(usage.month, apiControl.monthlyWarningLimit), [usage.month, apiControl.monthlyWarningLimit]);
+
+  function updateApiControl(patch: Partial<typeof apiControl>) {
+    setApiControl(saveGoogleApiControlSettings(patch));
+  }
 
   function absorbResult(next: GoogleRequestBatchResult) {
     const nextReviews = next.details.map(({ place, live }) => liveReview(place, live));
@@ -189,10 +195,10 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
   const fields = ["Name", "Address", "Coordinates", "Rating", "Review count", "Opening hours", "Phone", "Website", "Photo metadata", "Business status"];
 
   return (
-    <section className="amd-glass amd-card mt-4 p-4">
+    <section data-testid="google-api-control-center" className="amd-glass amd-card mt-4 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="flex flex-wrap items-center gap-2"><p className="text-[11px] font-bold">GOOGLE API REQUEST CONTROL</p><span className="rounded-full border border-cyan-300/20 bg-cyan-300/[0.07] px-2 py-1 text-[8px] font-extrabold text-cyan-200">MANUAL ONLY</span></div>
+          <div className="flex flex-wrap items-center gap-2"><p className="text-[11px] font-bold">GOOGLE API CONTROL CENTER</p><span className="rounded-full border border-cyan-300/20 bg-cyan-300/[0.07] px-2 py-1 text-[8px] font-extrabold text-cyan-200">MANUAL ONLY</span></div>
           <p className="mt-1 text-[9px] leading-5 text-[var(--amd-text-2)]">{language === "en" ? "Google Places requests are never triggered by browsing, filters, map interaction or opening this panel. Estimates are local only." : "Google Places จะไม่ถูกเรียกจากการเปิดหน้า เปลี่ยนตัวกรอง หรือใช้งานแผนที่ ระบบจะคำนวณจำนวนในเครื่องก่อน และส่ง Request เฉพาะเมื่อคุณกดปุ่ม Run เท่านั้น"}</p>
         </div>
         <ShieldCheck className="h-5 w-5 shrink-0 text-[#00D9FF]" />
@@ -233,7 +239,7 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
         ].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-white/[0.035] p-2"><p className="text-[8px] text-white/35">{label}</p><p className="mt-1 text-[15px] font-bold">{value}</p></div>)}</div>
         {scope === "missing_id" && <p className="mt-3 rounded-xl border border-amber-300/10 bg-amber-300/[0.05] p-2 text-[8px] leading-4 text-amber-100">{language === "en" ? "Records without a Google Place ID are not eligible for Place Details. Resolve identity through a separate explicit Google Search request first." : "ร้านที่ไม่มี Google Place ID จะไม่ถูกนับเป็น Place Details Request ต้องใช้ Google Search แบบกดสั่งเองเพื่อหา ID ก่อน"}</p>}
         {estimate.skippedByLimit > 0 && <p className="mt-3 text-[8px] text-amber-100">{estimate.newRequests} requests selected • safety limit {safetyLimit} • this run will send the first {executableCount} only.</p>}
-        <div className="mt-3 flex items-center justify-between gap-3"><span className="text-[8px] text-white/35">Maximum requests per manual run</span><select value={safetyLimit} disabled={Boolean(progress)} onChange={(event) => setSafetyLimit(Number(event.target.value))} className="rounded-xl border border-white/10 bg-[#07111f] px-3 py-2 text-[9px]">{GOOGLE_BATCH_LIMIT_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
+        <div className="mt-3 flex items-center justify-between gap-3"><span className="text-[8px] text-white/35">Maximum requests per manual run</span><select value={safetyLimit} disabled={Boolean(progress)} data-testid="google-api-batch-limit" onChange={(event) => updateApiControl({ batchLimit: Number(event.target.value) as typeof apiControl.batchLimit })} className="rounded-xl border border-white/10 bg-[#07111f] px-3 py-2 text-[9px]">{GOOGLE_BATCH_LIMIT_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" disabled={!requestPlaces.length || Boolean(progress)} onClick={() => setPreviewOpen(true)} className="amd-chip flex min-h-11 items-center gap-2 px-4 text-[9px] font-bold disabled:opacity-40"><Eye className="h-4 w-4" />{language === "en" ? `Preview ${estimate.newRequests} Requests` : `ดูรายการ ${estimate.newRequests} Requests`}</button>
           <button type="button" disabled={!apiKey || executableCount <= 0 || Boolean(progress)} onClick={requestRun} className="amd-btn amd-btn-primary flex min-h-11 items-center gap-2 rounded-xl px-4 text-[10px] font-bold disabled:opacity-40">{progress ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{language === "en" ? `Run ${executableCount} Google Requests` : `ส่ง ${executableCount} Requests`}</button>
@@ -248,10 +254,22 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
       </div>
 
       <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/10 p-3">
-        <p className="text-[9px] font-bold">Google API Usage <span className="ml-1 text-[8px] font-normal text-white/30">Local request count</span></p>
-        <div className="mt-3 grid grid-cols-3 gap-2">{[["This session", usage.session], ["Today", usage.today], ["This month", usage.month]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-white/[0.035] p-2 text-center"><p className="text-[8px] text-white/30">{label}</p><p className="mt-1 text-[16px] font-bold">{value}</p></div>)}</div>
-        <div className="mt-2 grid grid-cols-3 gap-2 text-center">{[["Place Details", usage.placeDetails], ["Text Search", usage.textSearch], ["Other", usage.other]].map(([label, value]) => <div key={String(label)}><p className="text-[7px] text-white/28">{label}</p><p className="text-[10px] font-semibold">{value}</p></div>)}</div>
-        <p className="mt-3 text-[8px] text-white/30">Daily safety limit: {usage.today} / {DEFAULT_GOOGLE_DAILY_LIMIT} • Monthly local warning: {usage.month} / {DEFAULT_GOOGLE_MONTHLY_WARNING}{usage.month >= DEFAULT_GOOGLE_MONTHLY_WARNING * 0.9 ? " • 90% warning reached" : ""}</p>
+        <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold">GOOGLE API USAGE</p><p className="mt-1 text-[8px] text-white/30">Local request tracking • not official Google Billing usage</p></div><span className="rounded-full border border-cyan-300/15 bg-cyan-300/[0.05] px-2 py-1 text-[7px] font-bold text-cyan-200">LOCAL COUNTERS</span></div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{[
+          ["Today", usage.today], ["This Month", usage.month], ["Place Details", usage.placeDetails], ["Text Search", usage.textSearch], ["Failed Requests", usage.failedRequests], ["Retries", usage.retries], ["Network Attempts", usage.networkAttempts], ["This Session", usage.session],
+        ].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-white/[0.035] p-2"><p className="text-[7px] text-white/28">{label}</p><p className="mt-1 text-[15px] font-bold">{value}</p></div>)}</div>
+
+        <div className="mt-4 border-t border-white/[0.06] pt-3">
+          <p className="text-[9px] font-bold">REQUEST SAFETY LIMITS</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <label className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-2"><span className="text-[7px] text-white/30">Maximum per batch</span><select data-testid="api-control-batch-setting" value={apiControl.batchLimit} disabled={Boolean(progress)} onChange={(event) => updateApiControl({ batchLimit: Number(event.target.value) as typeof apiControl.batchLimit })} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-[#07111f] px-2 text-[9px]">{GOOGLE_BATCH_LIMIT_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+            <label className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-2"><span className="text-[7px] text-white/30">Daily warning limit</span><input data-testid="api-control-daily-warning" type="number" min={1} value={apiControl.dailyWarningLimit} onChange={(event) => updateApiControl({ dailyWarningLimit: Number(event.target.value) })} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-[#07111f] px-2 text-[9px]" /></label>
+            <label className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-2"><span className="text-[7px] text-white/30">Monthly warning limit</span><input data-testid="api-control-monthly-warning" type="number" min={1} value={apiControl.monthlyWarningLimit} onChange={(event) => updateApiControl({ monthlyWarningLimit: Number(event.target.value) })} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-[#07111f] px-2 text-[9px]" /></label>
+          </div>
+          <p className="mt-2 text-[8px] leading-4 text-white/28">Default batch size is 50. Limits are never increased automatically. Existing execution ceiling remains {DEFAULT_GOOGLE_DAILY_LIMIT} requests/day.</p>
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">{[["Daily request warning", dailyWarning], ["Monthly request warning", monthlyWarning]].map(([label, warning]) => { const item = warning as typeof dailyWarning; const warnClass = item.level >= 100 ? "border-rose-300/15 bg-rose-300/[0.05] text-rose-100" : item.level >= 90 ? "border-amber-300/20 bg-amber-300/[0.06] text-amber-100" : item.level >= 75 ? "border-amber-300/10 bg-amber-300/[0.035] text-amber-100" : "border-white/[0.06] bg-white/[0.025] text-white/55"; return <div key={String(label)} className={`rounded-xl border p-3 ${warnClass}`}><div className="flex items-center justify-between gap-2"><p className="text-[8px] font-semibold">{String(label)}</p><strong className="text-[11px]">{item.percent}%</strong></div><p className="mt-1 text-[8px]">{item.used.toLocaleString()} / {item.limit.toLocaleString()}</p><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-current opacity-70" style={{ width: `${Math.min(100, item.percent)}%` }} /></div>{item.level >= 90 && <p className="mt-2 text-[8px] leading-4">{language === "en" ? "Google API usage is approaching your configured safety threshold." : "การใช้งาน Google API กำลังเข้าใกล้ Safety Threshold ที่กำหนด"}</p>}</div>; })}</div>
       </div>
 
       {progress && <div className="mt-4 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.04] p-3"><div className="flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" /><p className="text-[10px] font-bold">{language === "en" ? "Checking Google data" : "กำลังตรวจข้อมูล Google"}</p></div><div className="mt-3 grid grid-cols-4 gap-2 text-center">{[["Completed", progress.completed], ["Remaining", progress.remaining], ["Failed", progress.failed], ["Network", progress.networkAttempts]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-white/[0.035] p-2"><p className="text-[7px] text-white/30">{label}</p><p className="mt-1 text-[14px] font-bold">{value}</p></div>)}</div>{progress.currentName && <p className="mt-2 truncate text-[8px] text-white/35">{progress.currentName}</p>}</div>}
