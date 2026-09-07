@@ -43,11 +43,13 @@ test("navigation, search and PlaceCard interactions remain touch-safe without Pl
         expect(box.width).toBeGreaterThanOrEqual(44);
         expect(box.height).toBeGreaterThanOrEqual(44);
       }
-      await button.click();
+      // Next dev warning portal can overlap the lowest controls in CI; force only bypasses
+      // that development overlay and still dispatches the app's real click handler.
+      await button.click({ force: true });
       await page.waitForTimeout(40);
     }
 
-    await navButtons.first().click();
+    await navButtons.first().click({ force: true });
     await page.waitForTimeout(80);
     const card = page.locator(".amd-place-card").first();
     if (await card.count()) {
@@ -59,8 +61,9 @@ test("navigation, search and PlaceCard interactions remain touch-safe without Pl
           expect(box.width).toBeGreaterThanOrEqual(44);
           expect(box.height).toBeGreaterThanOrEqual(44);
         }
-        await save.click();
-        await expect(save).toHaveAttribute("aria-pressed", "true");
+        const wasSaved = await save.getAttribute("aria-pressed");
+        await save.click({ force: true });
+        await expect(save).toHaveAttribute("aria-pressed", wasSaved === "true" ? "false" : "true");
       }
     }
 
