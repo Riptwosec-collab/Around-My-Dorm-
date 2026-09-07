@@ -48,6 +48,14 @@ jobs:
               'use: { ...devices["iPhone 13"], browserName: "chromium" }',
           )
           playwright.write_text(text, encoding='utf-8')
+
+          e2e = Path('e2e/routing.spec.ts')
+          text = e2e.read_text(encoding='utf-8')
+          text = text.replace(
+              'getByRole("heading", { name: "บันทึก" })',
+              'getByRole("heading", { name: "บันทึก", exact: true })',
+          )
+          e2e.write_text(text, encoding='utf-8')
           PY
 
       - name: Install and lock dependencies
