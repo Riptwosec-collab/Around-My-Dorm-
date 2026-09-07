@@ -1,0 +1,205 @@
+from pathlib import Path
+
+ROOT = Path('.')
+
+sw = r'''const VERSION = "amd-v2.3.0-pwa1";
+const APP_CACHE = `${VERSION}-shell`;
+const RUNTIME_CACHE = `${VERSION}-runtime`;
+const APP_SHELL = ["/", "/map/", "/saved/", "/recent/", "/settings/", "/parking/", "/manifest.webmanifest", "/offline.html"];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(APP_CACHE).then((cache) => cache.addAll(APP_SHELL)));
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((key) => ![APP_CACHE, RUNTIME_CACHE].includes(key)).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
+
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(RUNTIME_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    return (await caches.match(request)) || (await caches.match("/offline.html"));
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cached = await caches.match(request);
+  const refresh = fetch(request)
+    .then(async (response) => {
+      if (response.ok) {
+        const cache = await caches.open(RUNTIME_CACHE);
+        await cache.put(request, response.clone());
+      }
+      return response;
+    })
+    .catch(() => null);
+  if (cached) {
+    void refresh;
+    return cached;
+  }
+  return (await refresh) || Response.error();
+}
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+
+  // Maps/Places assets are intentionally outside the PWA caches. Their own
+  // provider caching and the app's explicit API safety policy remain authoritative.
+  if (url.hostname.includes("googleapis.com") || url.hostname.includes("gstatic.com") || url.hostname.includes("google.com/maps")) return;
+
+  if (request.mode === "navigate") {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  if (url.origin === self.location.origin) {
+    event.respondWith(staleWhileRevalidate(request));
+  }
+});
+'''
+(ROOT / 'public/sw.js').write_text(sw, encoding='utf-8')
+
+pwa = r'''"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { RefreshCw, WifiOff, X } from "lucide-react";
+import { loadSettings } from "@/lib/storage/settings";
+import { getCopy } from "@/locales";
+
+export function PwaRuntime() {
+  const [online, setOnline] = useState(true);
+  const [language, setLanguage] = useState<"th" | "en">("th");
+  const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const reloadOnControllerChange = useRef(false);
+
+  useEffect(() => {
+    setOnline(navigator.onLine);
+    setLanguage(loadSettings().language);
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+
+    let registration: ServiceWorkerRegistration | null = null;
+    let installingWorker: ServiceWorker | null = null;
+
+    const onControllerChange = () => {
+      if (!reloadOnControllerChange.current) return;
+      reloadOnControllerChange.current = false;
+      window.location.reload();
+    };
+
+    const inspectRegistration = (next: ServiceWorkerRegistration) => {
+      registration = next;
+      if (next.waiting && navigator.serviceWorker.controller) setWaitingWorker(next.waiting);
+      const onUpdateFound = () => {
+        installingWorker = next.installing;
+        if (!installingWorker) return;
+        const onStateChange = () => {
+          if (installingWorker?.state === "installed" && navigator.serviceWorker.controller && next.waiting) {
+            setWaitingWorker(next.waiting);
+          }
+        };
+        installingWorker.addEventListener("statechange", onStateChange);
+      };
+      next.addEventListener("updatefound", onUpdateFound);
+    };
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+      navigator.serviceWorker.register("/sw.js").then((next) => {
+        inspectRegistration(next);
+        // One lightweight same-origin update check per app start. This never calls Google Places.
+        void next.update().catch(() => undefined);
+      }).catch(() => undefined);
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && navigator.onLine && registration) void registration.update().catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const storage = (event: StorageEvent) => {
+      if (event.key === "around-dorm-settings-v3") setLanguage(loadSettings().language);
+    };
+    window.addEventListener("storage", storage);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("storage", storage);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+    };
+  }, []);
+
+  function applyUpdate() {
+    if (!waitingWorker) return;
+    setRefreshing(true);
+    reloadOnControllerChange.current = true;
+    waitingWorker.postMessage({ type: "SKIP_WAITING" });
+    // Safety fallback for browsers that do not emit controllerchange promptly.
+    window.setTimeout(() => window.location.reload(), 3000);
+  }
+
+  const copy = getCopy(language);
+  return <>
+    {!online && <div role="status" className="fixed left-1/2 top-[max(8px,env(safe-area-inset-top))] z-[200] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-2 rounded-full border border-amber-300/20 bg-[#0a1424]/95 px-4 py-2 text-[10px] font-semibold text-amber-100 shadow-xl backdrop-blur-xl"><WifiOff className="h-4 w-4 shrink-0" /><span className="truncate">{copy.offline} • {copy.offlineBody}</span></div>}
+    {waitingWorker && <div role="status" data-testid="pwa-update-ready" className="fixed bottom-[calc(var(--amd-nav-h)+20px+env(safe-area-inset-bottom))] left-1/2 z-[210] w-[min(390px,calc(100vw-24px))] -translate-x-1/2 rounded-[20px] border border-cyan-300/15 bg-[#07111f]/95 p-3 shadow-2xl backdrop-blur-2xl">
+      <div className="flex items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan-300/15 bg-cyan-300/[0.07]"><RefreshCw className={`h-4 w-4 text-cyan-200 ${refreshing ? "animate-spin" : ""}`} /></div><div className="min-w-0 flex-1"><p className="text-[11px] font-bold text-white">{language === "en" ? "New version available" : "มีเวอร์ชันใหม่พร้อมใช้งาน"}</p><p className="mt-0.5 text-[8px] leading-4 text-white/45">{language === "en" ? "Update now to avoid using an older cached interface." : "อัปเดตเพื่อป้องกันการใช้หน้าแอปเวอร์ชันเก่าจากแคช"}</p></div><button type="button" aria-label={language === "en" ? "Later" : "ไว้ทีหลัง"} onClick={() => setWaitingWorker(null)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white/45"><X className="h-4 w-4" /></button></div>
+      <button type="button" onClick={applyUpdate} disabled={refreshing} className="amd-btn amd-btn-primary mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-[10px] font-bold"><RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />{refreshing ? (language === "en" ? "Updating…" : "กำลังอัปเดต…") : (language === "en" ? "Update now" : "อัปเดตตอนนี้")}</button>
+    </div>}
+  </>;
+}
+'''
+(ROOT / 'components/PwaRuntime.tsx').write_text(pwa, encoding='utf-8')
+
+test = r'''import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+
+describe("PWA update safety", () => {
+  const sw = fs.readFileSync("public/sw.js", "utf8");
+  const runtime = fs.readFileSync("components/PwaRuntime.tsx", "utf8");
+
+  it("versions caches and removes old cache generations", () => {
+    expect(sw).toContain('VERSION = "amd-v2.3.0-pwa1"');
+    expect(sw).toContain("caches.delete");
+  });
+
+  it("uses network-first navigation so stale pages are not preferred online", () => {
+    expect(sw).toContain("request.mode === \"navigate\"");
+    expect(sw).toContain("networkFirst(request)");
+  });
+
+  it("supports an explicit update handshake instead of silently reloading", () => {
+    expect(sw).toContain("SKIP_WAITING");
+    expect(runtime).toContain("pwa-update-ready");
+    expect(runtime).toContain("controllerchange");
+  });
+
+  it("keeps Google provider requests outside service-worker caches", () => {
+    expect(sw).toContain('url.hostname.includes("googleapis.com")');
+    expect(sw).toContain('url.hostname.includes("gstatic.com")');
+  });
+});
+'''
+(ROOT / 'tests/pwa-update-safety.test.ts').write_text(test, encoding='utf-8')
+
+print('PWA update prompt and stale-cache safety staged')
