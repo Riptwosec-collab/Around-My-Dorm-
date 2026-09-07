@@ -1,5 +1,0 @@
-Cloudflare deploy trigger
-2026-09-07T21:27:00+07:00
-source=main
-feature=restore-previous-mobile-app-ui
-commit=d2a61b2c3d22209559e2f3deecd6f5a5e717c1bc

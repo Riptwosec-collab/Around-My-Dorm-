@@ -11,13 +11,18 @@
     "deploy": "npm run build && wrangler deploy",
     "deploy:cloudflare": "npm run build && wrangler deploy",
     "preview": "npm run build && wrangler dev",
-    "preview:cloudflare": "npm run build && wrangler dev"
+    "preview:cloudflare": "npm run build && wrangler dev",
+    "lint": "eslint .",
+    "validate:data": "tsx scripts/validate-data.ts",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
     "next": "^15.5.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "@googlemaps/markerclusterer": "^2.6.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.0",
@@ -26,7 +31,15 @@
     "@types/react-dom": "^19.0.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0",
-    "wrangler": "^4.68.0"
+    "wrangler": "^4.68.0",
+    "@playwright/test": "^1.55.0",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "eslint": "^9.35.0",
+    "jsdom": "^26.1.0",
+    "tsx": "^4.20.5",
+    "typescript-eslint": "^8.43.0",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=20.9.0"

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { PwaRuntime } from "@/components/PwaRuntime";
 
 export const metadata: Metadata = {
   title: "Around My Dorm",
@@ -14,8 +15,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
   themeColor: "#02060D",
 };
@@ -25,7 +24,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="th" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>{children}<PwaRuntime /></body>
     </html>
   );
 }

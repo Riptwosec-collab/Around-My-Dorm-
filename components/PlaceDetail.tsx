@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
+import { getCopy } from "@/locales";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import {
   calculateLocalScore,
@@ -52,14 +53,17 @@ export function PlaceDetail({
   onClose,
   onSave,
   onMap,
+  language = "th",
 }: {
   place: Place;
   saved: boolean;
   onClose: () => void;
   onSave: () => void;
   onMap: () => void;
+  language?: "th" | "en";
 }) {
   const [reportOpen, setReportOpen] = useState(false);
+  const copy = getCopy(language);
   const category = CATEGORY_MAP[place.category];
   const status = getPlaceOpenStatus(place);
   const localScore = place.localScore ?? calculateLocalScore(place);
@@ -98,20 +102,20 @@ export function PlaceDetail({
   return (
     <>
       <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/65 backdrop-blur-sm">
-        <button type="button" aria-label="ปิดรายละเอียด" onClick={onClose} className="absolute inset-0" />
+        <button type="button" aria-label={copy.close} onClick={onClose} className="absolute inset-0" />
         <section className="relative max-h-[92dvh] w-full max-w-[520px] overflow-y-auto rounded-t-[34px] border border-white/10 bg-[#08111d]/98 shadow-2xl">
           <div className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] bg-[#08111d]/90 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-2xl">
             <div className="h-1.5 w-12 rounded-full bg-white/15" />
-            <button type="button" aria-label="ปิดรายละเอียด" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]">
+            <button type="button" aria-label={copy.close} onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]">
               <X className="h-4 w-4" />
             </button>
           </div>
 
           <div className="relative h-[220px] bg-gradient-to-br from-[#10233a] to-[#07101b]">
             {place.coverImage || place.image ? (
-              <img src={place.coverImage || place.image || ""} alt={place.name} loading="lazy" className="h-full w-full object-cover" />
+              <img src={place.coverImage || place.image || ""} alt={place.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
             ) : (
-              <div className="grid h-full place-items-center"><div className="text-center"><span className="text-6xl">{category?.icon || "📍"}</span><p className="mt-2 text-[10px] text-white/30">ยังไม่มีรูปจริงที่ยืนยัน</p></div></div>
+              <div className="grid h-full place-items-center"><div className="text-center"><span className="text-6xl">{category?.icon || "📍"}</span><p className="mt-2 text-[10px] text-white/30">{copy.unknownData}</p></div></div>
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-[#08111d] via-transparent to-transparent" />
           </div>
@@ -119,7 +123,7 @@ export function PlaceDetail({
           <div className="relative -mt-9 px-4 pb-[calc(28px+env(safe-area-inset-bottom))]">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">{category?.name || "สถานที่"}</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">{category?.name || (language === "en" ? "Place" : "สถานที่")}</p>
                 <h2 className="mt-1 text-[25px] font-black tracking-[-0.035em]">{place.name}</h2>
                 {place.nameEn && <p className="mt-1 text-xs text-white/42">{place.nameEn}</p>}
               </div>
@@ -143,66 +147,66 @@ export function PlaceDetail({
             </div>
 
             <div className="mt-4 grid grid-cols-4 gap-2">
-              <button type="button" onClick={onMap} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.08] text-[9px] font-bold text-cyan-200"><MapPin className="h-4 w-4" />แผนที่</button>
-              <a href={googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Navigation className="h-4 w-4" />นำทาง</a>
+              <button type="button" onClick={onMap} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.08] text-[9px] font-bold text-cyan-200"><MapPin className="h-4 w-4" />{copy.mapAction}</button>
+              <a href={googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Navigation className="h-4 w-4" />{copy.navigate}</a>
               {place.phone ? (
-                <a href={`tel:${place.phone}`} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Phone className="h-4 w-4" />โทร</a>
+                <a href={`tel:${place.phone}`} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Phone className="h-4 w-4" />{copy.phone}</a>
               ) : (
-                <button type="button" disabled className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/[0.06] bg-white/[0.025] text-[9px] font-bold text-white/25"><Phone className="h-4 w-4" />ไม่มีเบอร์</button>
+                <button type="button" disabled className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/[0.06] bg-white/[0.025] text-[9px] font-bold text-white/25"><Phone className="h-4 w-4" />{copy.noPhone}</button>
               )}
-              <button type="button" onClick={share} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Share2 className="h-4 w-4" />แชร์</button>
+              <button type="button" onClick={share} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Share2 className="h-4 w-4" />{copy.share}</button>
             </div>
 
             <div className="mt-5 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">เกี่ยวกับร้าน</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.aboutPlace}</p>
               <p className="mt-2 text-[12px] leading-6 text-white/68">{place.description}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">{place.tags.map((tag) => <span key={tag} className="rounded-lg bg-white/[0.055] px-2 py-1 text-[9px] text-white/55">{tag}</span>)}</div>
             </div>
 
             <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] px-4">
-              <ValueRow label="พื้นที่" value={place.area} />
-              <ValueRow label="ที่อยู่" value={place.address || "ยังไม่มีข้อมูลยืนยัน"} />
-              <ValueRow label="ระยะทาง" value={formatDistance(place.distanceKm)} />
-              <ValueRow label="เวลาเดิน" value={place.walkingMinutes != null ? `${place.walkingMinutes} นาที` : "ยังไม่มีข้อมูล Route"} />
-              <ValueRow label="มอเตอร์ไซค์" value={place.distance?.motorcycleMinutes != null ? `${place.distance.motorcycleMinutes} นาที` : "ยังไม่มีข้อมูล Route"} />
-              <ValueRow label="รถยนต์" value={place.drivingMinutes != null ? `${place.drivingMinutes} นาที` : "ยังไม่มีข้อมูล Route"} />
-              <ValueRow label="ราคา" value={formatPrice(place)} />
-              <ValueRow label="เบอร์โทร" value={place.phone || "ยังไม่มีข้อมูลยืนยัน"} />
-              <ValueRow label="ที่จอดรถ" value={place.parkingDetails ? parkingStatus.label : place.parking.available === true ? place.parking.note || "มี" : place.parking.available === false ? "ไม่มี" : "ยังไม่มีข้อมูลยืนยัน"} />
+              <ValueRow label={copy.area} value={place.area} />
+              <ValueRow label={copy.address} value={place.address || copy.unknownData} />
+              <ValueRow label={copy.distance} value={formatDistance(place.distanceKm)} />
+              <ValueRow label={copy.walkTime} value={place.walkingMinutes != null ? `${place.walkingMinutes} นาที` : copy.unknownRoute} />
+              <ValueRow label={copy.motorcycle} value={place.distance?.motorcycleMinutes != null ? `${place.distance.motorcycleMinutes} นาที` : copy.unknownRoute} />
+              <ValueRow label={copy.driveTime} value={place.drivingMinutes != null ? `${place.drivingMinutes} นาที` : copy.unknownRoute} />
+              <ValueRow label={copy.price} value={formatPrice(place)} />
+              <ValueRow label={copy.phoneNumber} value={place.phone || copy.unknownData} />
+              <ValueRow label={copy.parkingInfo} value={place.parkingDetails ? parkingStatus.label : place.parking.available === true ? place.parking.note || "มี" : place.parking.available === false ? "ไม่มี" : copy.unknownData} />
             </div>
 
             {(menuItems.length > 0 || place.popularMenus.length > 0 || place.recommendedItems.length > 0) && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">เมนูเด่น</p>
-                {menuItems.length > 0 ? <div className="mt-3 grid grid-cols-2 gap-2">{menuItems.map((item) => <div key={item.id} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><p className="text-[11px] font-black">{item.name}</p><p className="mt-1 text-[9px] text-white/40">{item.price != null ? `${item.price.toLocaleString()} บาท` : "ยังไม่มีราคายืนยัน"}</p>{item.isPopular && <span className="mt-2 inline-block rounded-lg bg-cyan-300/[0.08] px-2 py-1 text-[8px] font-bold text-cyan-100">ขายดี</span>}</div>)}</div> : <div className="mt-3 space-y-2">{[...place.popularMenus, ...place.recommendedItems].map((item) => <div key={item} className="flex items-center gap-2 text-[11px] text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-cyan-300" />{item}</div>)}</div>}
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.popularMenu}</p>
+                {menuItems.length > 0 ? <div className="mt-3 grid grid-cols-2 gap-2">{menuItems.map((item) => <div key={item.id} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><p className="text-[11px] font-black">{item.name}</p><p className="mt-1 text-[9px] text-white/40">{item.price != null ? `${item.price.toLocaleString()} ${language === "en" ? "THB" : "บาท"}` : copy.unknownData}</p>{item.isPopular && <span className="mt-2 inline-block rounded-lg bg-cyan-300/[0.08] px-2 py-1 text-[8px] font-bold text-cyan-100">{copy.popular}</span>}</div>)}</div> : <div className="mt-3 space-y-2">{[...place.popularMenus, ...place.recommendedItems].map((item) => <div key={item} className="flex items-center gap-2 text-[11px] text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-cyan-300" />{item}</div>)}</div>}
               </div>
             )}
 
             {place.deliveryPlatforms?.length ? (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">สั่ง Delivery</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.delivery}</p>
                 <div className="mt-3 flex flex-wrap gap-2">{place.deliveryPlatforms.map((platform) => <a key={`${platform.provider}-${platform.url}`} href={platform.url} target="_blank" rel="noreferrer" className="min-h-11 rounded-2xl border border-cyan-300/12 bg-cyan-300/[0.07] px-4 py-3 text-[10px] font-black text-cyan-100">{platform.provider}</a>)}</div>
               </div>
             ) : null}
 
             {amenities.length > 0 && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">สิ่งอำนวยความสะดวก</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.amenities}</p>
                 <div className="mt-3 flex flex-wrap gap-2">{amenities.map(([label]) => <span key={String(label)} className="rounded-xl border border-cyan-300/10 bg-cyan-300/[0.06] px-2.5 py-2 text-[10px] text-cyan-100">{String(label)}</span>)}</div>
               </div>
             )}
 
             {gallery.length > 0 && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">รูปภาพ</p>
-                <div className="mt-3 grid grid-cols-2 gap-2">{gallery.slice(0, 6).map((image) => <img key={image} src={image} alt={`${place.name} gallery`} loading="lazy" className="aspect-[4/3] w-full rounded-2xl object-cover" />)}</div>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.photos}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">{gallery.slice(0, 6).map((image) => <img key={image} src={image} alt={`${place.name} gallery`} loading="lazy" decoding="async" className="aspect-[4/3] w-full rounded-2xl object-cover" />)}</div>
               </div>
             )}
 
             {hasHours && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] px-4 py-2">
-                <p className="py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">เวลาเปิด</p>
-                {place.is24Hours ? <ValueRow label="ทุกวัน" value="เปิด 24 ชั่วโมง" /> : place.openingHoursText && !DAYS.some(({ key }) => Boolean(place.openingHours[key])) ? <ValueRow label="เวลาที่มีข้อมูล" value={place.openingHoursText} /> : DAYS.map(({ key, label }) => <ValueRow key={key} label={label} value={place.openingHours[key] || "ยังไม่มีข้อมูล"} />)}
+                <p className="py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{copy.openingHours}</p>
+                {place.is24Hours ? <ValueRow label={copy.everyDay} value={copy.open24} /> : place.openingHoursText && !DAYS.some(({ key }) => Boolean(place.openingHours[key])) ? <ValueRow label={copy.openingData} value={place.openingHoursText} /> : DAYS.map(({ key, label }) => <ValueRow key={key} label={language === "en" ? copy[key] : label} value={place.openingHours[key] || "ยังไม่มีข้อมูล"} />)}
                 {openingFreshness.stale && place.openingHoursVerifiedAt && <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-300/[0.06] p-2.5 text-[9px] leading-4 text-amber-100/70"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />เวลาเปิดอาจมีการเปลี่ยนแปลง กรุณาตรวจสอบก่อนเดินทาง</div>}
               </div>
             )}
@@ -210,17 +214,17 @@ export function PlaceDetail({
             <div className={`mt-4 rounded-[24px] border p-4 ${place.verified ? "border-emerald-300/15 bg-emerald-300/[0.055]" : "border-amber-300/15 bg-amber-300/[0.05]"}`}>
               <div className="flex items-center gap-2">
                 <ShieldCheck className={`h-4 w-4 ${place.verified ? "text-emerald-300" : "text-amber-200"}`} />
-                <p className="text-[11px] font-black">{place.verified ? "ข้อมูลผ่านการตรวจสอบ" : "ข้อมูลบางส่วนยังไม่ได้ยืนยัน"}</p>
+                <p className="text-[11px] font-black">{place.verified ? copy.dataVerified : copy.dataPartial}</p>
               </div>
-              <p className="mt-2 text-[10px] leading-5 text-white/48">Last verified: {place.lastVerified || "ยังไม่มี"}</p>
-              <p className="text-[10px] leading-5 text-white/48">Source: {place.source.length ? place.source.join(" • ") : "ยังไม่มี"}</p>
-              {place.notes && <p className="mt-1 text-[10px] leading-5 text-white/48">หมายเหตุ: {place.notes}</p>}
+              <p className="mt-2 text-[10px] leading-5 text-white/48">{copy.lastVerified}: {place.lastVerified || copy.unknownVerified}</p>
+              <p className="text-[10px] leading-5 text-white/48">{copy.source}: {place.source.length ? place.source.join(" • ") : copy.unknownVerified}</p>
+              {place.notes && <p className="mt-1 text-[10px] leading-5 text-white/48">{copy.notes}: {place.notes}</p>}
             </div>
 
-            <button type="button" onClick={() => setReportOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.045] text-[10px] font-black text-amber-100"><AlertTriangle className="h-4 w-4" />ข้อมูลร้านไม่ถูกต้อง?</button>
+            <button type="button" onClick={() => setReportOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.045] text-[10px] font-black text-amber-100"><AlertTriangle className="h-4 w-4" />{copy.reportWrong}</button>
 
             <a href={place.googleMapsUrl || googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-300 text-[11px] font-black text-[#031018]">
-              เปิด Google Maps <ArrowUpRight className="h-4 w-4" />
+              {copy.openGoogleMaps} <ArrowUpRight className="h-4 w-4" />
             </a>
           </div>
         </section>

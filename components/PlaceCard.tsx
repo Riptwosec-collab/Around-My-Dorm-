@@ -10,6 +10,7 @@ import {
   Star,
 } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
+import { getCopy } from "@/locales";
 import {
   calculateLocalScore,
   formatDistance,
@@ -43,8 +44,9 @@ export function PlaceCard({
   const isChain = place.placeType === "chain" || place.placeType === "franchise";
   const hiddenGem = isLocal && place.localFavorite && localScore != null && localScore >= 78;
   const price = formatPrice(place);
-  const navigateLabel = language === "en" ? "Navigate" : "นำทาง";
-  const detailLabel = language === "en" ? "Details" : "รายละเอียด";
+  const copy = getCopy(language);
+  const navigateLabel = copy.navigate;
+  const detailLabel = copy.details;
 
   const statusClass =
     status.tone === "green" || status.tone === "cyan"
@@ -64,6 +66,7 @@ export function PlaceCard({
               src={place.coverImage || place.image || ""}
               alt={place.name}
               loading="lazy"
+              decoding="async"
               className="h-full min-h-[154px] w-full object-cover"
               onError={(event) => {
                 event.currentTarget.style.display = "none";
@@ -73,13 +76,13 @@ export function PlaceCard({
             <div className="grid h-full min-h-[154px] place-items-center bg-[radial-gradient(circle_at_40%_30%,rgba(0,140,255,.14),transparent_34%),#07111f]">
               <div className="text-center">
                 <span className="text-4xl">{category?.icon || "📍"}</span>
-                <p className="mt-2 px-2 text-[9px] font-semibold text-[var(--amd-text-3)]">ยังไม่มีรูปยืนยัน</p>
+                <p className="mt-2 px-2 text-[9px] font-semibold text-[var(--amd-text-3)]">{copy.unknownData}</p>
               </div>
             </div>
           )}
           <button
             type="button"
-            aria-label={saved ? "นำออกจากรายการโปรด" : "บันทึกร้าน"}
+            aria-label={saved ? (language === "en" ? "Remove from saved" : "นำออกจากรายการโปรด") : (language === "en" ? "Save place" : "บันทึกร้าน")}
             onClick={onSave}
             className="amd-btn absolute left-2.5 top-2.5 grid h-10 w-10 min-h-0 place-items-center rounded-full border border-[rgba(120,160,210,.22)] bg-[#05101d]/80 shadow-lg backdrop-blur-xl"
           >
@@ -92,7 +95,7 @@ export function PlaceCard({
             <div className="min-w-0 flex-1">
               <h3 className="truncate text-[17px] font-bold tracking-[-0.025em] text-[var(--amd-text)] sm:text-[18px]">{place.name}</h3>
               <p className="mt-1 truncate text-[11px] text-[var(--amd-text-2)]">
-                {category?.name || "สถานที่"}{place.area ? ` • ${place.area}` : ""}
+                {category?.name || (language === "en" ? "Place" : "สถานที่")}{place.area ? ` • ${place.area}` : ""}
               </p>
             </div>
             {contextMeta && <span className="shrink-0 text-[9px] text-[var(--amd-text-3)]">{contextMeta}</span>}
@@ -129,9 +132,9 @@ export function PlaceCard({
             </div>
             {(place.walkingMinutes != null || place.distance?.motorcycleMinutes != null || place.drivingMinutes != null) && (
               <div className="flex flex-wrap items-center gap-2 text-[9px] text-[var(--amd-text-3)]">
-                {place.walkingMinutes != null && <span>เดิน {place.walkingMinutes} นาที</span>}
-                {place.distance?.motorcycleMinutes != null && <span>มอเตอร์ไซค์ {place.distance.motorcycleMinutes} นาที</span>}
-                {place.drivingMinutes != null && <span>รถยนต์ {place.drivingMinutes} นาที</span>}
+                {place.walkingMinutes != null && <span>{language === "en" ? "Walk" : "เดิน"} {place.walkingMinutes} {language === "en" ? "min" : "นาที"}</span>}
+                {place.distance?.motorcycleMinutes != null && <span>{language === "en" ? "Motorcycle" : "มอเตอร์ไซค์"} {place.distance.motorcycleMinutes} {language === "en" ? "min" : "นาที"}</span>}
+                {place.drivingMinutes != null && <span>{language === "en" ? "Drive" : "รถยนต์"} {place.drivingMinutes} {language === "en" ? "min" : "นาที"}</span>}
               </div>
             )}
           </div>
@@ -162,7 +165,7 @@ export function PlaceCard({
               <button
                 type="button"
                 onClick={onMap}
-                aria-label="ดูบนแผนที่"
+                aria-label={language === "en" ? "View on map" : "ดูบนแผนที่"}
                 className="amd-btn grid h-11 w-11 min-h-0 place-items-center rounded-xl border border-[rgba(0,140,255,.28)] bg-[rgba(0,122,255,.09)] text-[#00D9FF] sm:hidden"
               >
                 <MapPin className="h-4 w-4" />
