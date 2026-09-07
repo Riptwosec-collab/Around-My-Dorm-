@@ -2,6 +2,25 @@ name: Enrich Existing Place Images
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Preview sends 0 Google requests. Run executes only after the estimate and budget checks pass.
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - run
+      max_requests:
+        description: Hard maximum number of Google Places requests allowed for this run.
+        required: true
+        default: '100'
+        type: choice
+        options:
+          - '10'
+          - '25'
+          - '50'
+          - '100'
 
 permissions:
   contents: write
@@ -15,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY || secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+      MAX_IMAGE_ENRICH_REQUESTS: ${{ inputs.max_requests }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,24 +43,48 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Require Google Places API key
+      - run: npm ci --no-audit --no-fund
+      - name: Estimate complete dataset enrichment without network requests
+        id: estimate
+        run: npm run enrich:images:estimate
+      - name: Request preview summary
         run: |
+          echo "Mode: ${{ inputs.mode }}"
+          echo "Total places: ${{ steps.estimate.outputs.total_places }}"
+          echo "Already enriched: ${{ steps.estimate.outputs.already_enriched }}"
+          echo "Place Details requests: ${{ steps.estimate.outputs.place_details }}"
+          echo "Text Search requests: ${{ steps.estimate.outputs.text_search }}"
+          echo "Estimated new Google requests: ${{ steps.estimate.outputs.estimated_requests }}"
+          echo "Requests sent by preview: ${{ steps.estimate.outputs.network_requests_sent }}"
+          echo "Hard request limit: ${{ inputs.max_requests }}"
+      - name: Enforce explicit Run request budget
+        if: ${{ inputs.mode == 'run' }}
+        run: |
+          ESTIMATED=${{ steps.estimate.outputs.estimated_requests }}
+          LIMIT=${{ inputs.max_requests }}
+          if [ "$ESTIMATED" -gt "$LIMIT" ]; then
+            echo "Estimated $ESTIMATED requests exceeds approved limit $LIMIT. No Google requests will be sent."
+            exit 1
+          fi
           if [ -z "$GOOGLE_PLACES_API_KEY" ]; then
-            echo "Missing GOOGLE_PLACES_API_KEY or NEXT_PUBLIC_GOOGLE_MAPS_API_KEY GitHub Actions secret."
+            echo "Missing GOOGLE_PLACES_API_KEY or NEXT_PUBLIC_GOOGLE_MAPS_API_KEY GitHub Actions secret. No Google requests will be sent."
             exit 1
           fi
       - name: Audit and enrich every existing place
+        if: ${{ inputs.mode == 'run' }}
         run: npm run enrich:images
-      - name: Validate enriched dataset
+      - name: Validate dataset
         run: npm run validate:data
       - name: Type check
         run: npm run typecheck
+      - name: Unit and architecture tests
+        run: npm test
       - name: Production build
         run: npm run build
       - name: Cloudflare dry run
         run: npx wrangler deploy --dry-run
       - name: Commit verified photo enrichment
+        if: ${{ inputs.mode == 'run' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
