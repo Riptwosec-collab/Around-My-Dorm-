@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./premium-liquid-glass.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
 
 export const metadata: Metadata = {
