@@ -1,0 +1,173 @@
+/* Priority group 2: buttons, press feedback, bottom navigation, search and PlaceCard polish. */
+
+/* Search keeps a constant footprint while controls fade/press inside it. */
+.amd-input > button {
+  min-width: 44px;
+  min-height: 44px;
+  transition:
+    opacity var(--motion-normal) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-normal) var(--ease-standard),
+    color var(--motion-normal) var(--ease-standard);
+}
+
+.amd-input > button:active {
+  transform: scale(var(--amd-press-icon));
+  transition-duration: var(--motion-instant);
+}
+
+.amd-input input,
+.amd-input textarea,
+.amd-input select {
+  caret-color: #39c8ff;
+}
+
+/* Bottom navigation: local selected-state motion only; the bar itself never slides. */
+.amd-nav-item {
+  transform-origin: center bottom;
+}
+
+.amd-nav-item svg,
+.amd-nav-item span {
+  transition:
+    transform var(--motion-normal) var(--ease-emphasized),
+    opacity var(--motion-normal) var(--ease-standard),
+    color var(--motion-normal) var(--ease-standard);
+}
+
+.amd-nav-item:not(.amd-nav-item-active) svg {
+  opacity: .72;
+  transform: scale(.97);
+}
+
+.amd-nav-item-active svg {
+  opacity: 1;
+  transform: scale(1.06);
+  filter: drop-shadow(0 0 5px rgba(0, 217, 255, .22));
+}
+
+.amd-nav-item-active span {
+  color: var(--amd-text);
+}
+
+/* Place cards share one consistent interaction vocabulary. */
+.amd-place-card {
+  isolation: isolate;
+  border-color: var(--amd-glass-border-soft);
+}
+
+.amd-place-card-media {
+  box-shadow: inset -1px 0 0 rgba(155, 205, 255, .055);
+}
+
+.amd-place-card-photo,
+.amd-place-card .amd-place-photo {
+  transform: scale(1);
+  transition:
+    opacity var(--motion-normal) var(--ease-standard),
+    transform 360ms var(--ease-standard),
+    filter var(--motion-normal) var(--ease-standard);
+  will-change: opacity;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .amd-place-card:hover .amd-place-card-photo,
+  .amd-place-card:hover .amd-place-photo {
+    transform: scale(1.025);
+  }
+
+  .amd-place-card:hover {
+    border-color: rgba(91, 183, 255, .23);
+  }
+}
+
+/* The save control gets a short physical acknowledgement, not particles/confetti. */
+.amd-save-control {
+  overflow: visible;
+  border-radius: 999px;
+  background: rgba(5, 16, 29, .76);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.075), 0 8px 22px rgba(0,0,0,.28);
+}
+
+.amd-save-control::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(106, 204, 255, .0);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.amd-save-control-active {
+  border-color: rgba(72, 181, 255, .42);
+  background: rgba(0, 105, 230, .16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 8px 22px rgba(0, 102, 220, .14);
+}
+
+.amd-save-control-active::after {
+  animation: amd-save-ring 260ms var(--ease-emphasized) both;
+}
+
+.amd-save-control-active .amd-heart {
+  animation: amd-save-heart 250ms var(--ease-emphasized) both;
+}
+
+@keyframes amd-save-heart {
+  0% { transform: scale(.86); filter: brightness(1.3); }
+  58% { transform: scale(1.12); filter: brightness(1.15); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+@keyframes amd-save-ring {
+  0% { transform: scale(.78); opacity: .75; border-color: rgba(180, 231, 255, .52); }
+  100% { transform: scale(1.20); opacity: 0; border-color: rgba(106, 204, 255, 0); }
+}
+
+/* Keep routine button state changes dimensional and width-stable. */
+.amd-btn[disabled],
+.amd-icon-btn[disabled] {
+  cursor: not-allowed;
+  opacity: .48;
+  filter: saturate(.7);
+  transform: none !important;
+}
+
+.amd-btn > svg,
+.amd-icon-btn > svg {
+  flex: none;
+}
+
+/* A selected PlaceCard stays restrained: edge + inner reflection, no neon halo. */
+.amd-place-card.amd-card-selected {
+  border-color: rgba(45, 170, 255, .50);
+  box-shadow: var(--amd-shadow-interactive), inset 0 0 0 1px rgba(55, 202, 255, .05);
+}
+
+/* Native mobile momentum; horizontal chip rows keep scrollbars visually quiet. */
+@media (pointer: coarse) {
+  .amd-chip-row,
+  [class*="overflow-x-auto"] {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .amd-chip-row::-webkit-scrollbar,
+  [class*="overflow-x-auto"]::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amd-save-control-active::after,
+  .amd-save-control-active .amd-heart {
+    animation: none !important;
+  }
+
+  .amd-place-card-photo,
+  .amd-place-card .amd-place-photo,
+  .amd-nav-item svg,
+  .amd-nav-item span {
+    transform: none !important;
+    transition-duration: var(--motion-instant) !important;
+  }
+}
