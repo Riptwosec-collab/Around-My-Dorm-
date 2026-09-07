@@ -18,7 +18,7 @@ describe("Google API Control Center policy", () => {
   it("accepts only supported batch sizes and persists controls", () => {
     expect(sanitizeGoogleApiControlSettings({ batchLimit: 999 }).batchLimit).toBe(50);
     saveGoogleApiControlSettings({ batchLimit: 25, dailyWarningLimit: 150, monthlyWarningLimit: 1500 });
-    expect(getGoogleApiControlSettings()).toEqual({ batchLimit: 25, dailyWarningLimit: 150, monthlyWarningLimit: 1500 });
+    expect(getGoogleApiControlSettings()).toEqual({ locked: false, batchLimit: 25, dailyWarningLimit: 150, monthlyWarningLimit: 1500 });
   });
 
   it("reports 75, 90 and 100 percent warning bands", () => {

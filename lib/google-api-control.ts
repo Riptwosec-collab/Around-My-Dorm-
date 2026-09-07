@@ -1,4 +1,5 @@
 export type GoogleApiControlSettings = {
+  locked: boolean;
   batchLimit: 10 | 25 | 50 | 100;
   dailyWarningLimit: number;
   monthlyWarningLimit: number;
@@ -9,6 +10,7 @@ export type UsageWarningLevel = 0 | 75 | 90 | 100;
 export const GOOGLE_API_CONTROL_KEY = "around-dorm-google-api-control-v1";
 export const GOOGLE_API_BATCH_OPTIONS = [10, 25, 50, 100] as const;
 export const DEFAULT_GOOGLE_API_CONTROL: GoogleApiControlSettings = {
+  locked: false,
   batchLimit: 50,
   dailyWarningLimit: 200,
   monthlyWarningLimit: 2000,
@@ -27,6 +29,7 @@ function positiveInteger(value: unknown, fallback: number, min: number, max: num
 export function sanitizeGoogleApiControlSettings(value: unknown): GoogleApiControlSettings {
   const record = value && typeof value === "object" ? value as Partial<GoogleApiControlSettings> : {};
   return {
+    locked: record.locked === true,
     batchLimit: allowedBatch(record.batchLimit),
     dailyWarningLimit: positiveInteger(record.dailyWarningLimit, DEFAULT_GOOGLE_API_CONTROL.dailyWarningLimit, 1, 100000),
     monthlyWarningLimit: positiveInteger(record.monthlyWarningLimit, DEFAULT_GOOGLE_API_CONTROL.monthlyWarningLimit, 1, 1000000),
@@ -47,7 +50,18 @@ export function saveGoogleApiControlSettings(patch: Partial<GoogleApiControlSett
   if (typeof localStorage !== "undefined") {
     try { localStorage.setItem(GOOGLE_API_CONTROL_KEY, JSON.stringify(next)); } catch {}
   }
+  if (typeof window !== "undefined") {
+    try { window.dispatchEvent(new CustomEvent("amd-google-api-control-change", { detail: next })); } catch {}
+  }
   return next;
+}
+
+export function googleApiRequestsLocked() {
+  return getGoogleApiControlSettings().locked;
+}
+
+export function assertGoogleNetworkRequestsUnlocked() {
+  if (googleApiRequestsLocked()) throw new Error("Google API requests are locked by the local safety control");
 }
 
 export function requestUsageWarning(used: number, limit: number) {

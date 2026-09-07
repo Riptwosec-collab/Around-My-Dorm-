@@ -1,5 +1,6 @@
 import { discoverGooglePlaces, fetchGoogleLiveDetails, type GoogleDiscoveryCandidate, type GoogleLiveDetails } from "@/lib/google-live";
 import type { Place } from "@/types/place";
+import { assertGoogleNetworkRequestsUnlocked } from "@/lib/google-api-control";
 
 export const GOOGLE_REQUEST_MODE = "manual" as const;
 export const DEFAULT_GOOGLE_BATCH_LIMIT = 50;
@@ -275,6 +276,7 @@ export async function runGoogleRequestBatch(input: {
   const remainingDaily = Math.max(0, dailyLimit - usage.today);
   const queue = preview.queued.slice(0, remainingDaily);
   const logicalRequests = queue.length;
+  if (logicalRequests > 0) assertGoogleNetworkRequestsUnlocked();
   const details: Array<{ place: Place; live: GoogleLiveDetails }> = [];
   const failures: GoogleRequestFailure[] = [];
   let completed = 0;
@@ -334,6 +336,7 @@ export async function retryFailedGoogleRequests(input: {
   const dailyLimit = input.dailyLimit ?? DEFAULT_GOOGLE_DAILY_LIMIT;
   const remainingDaily = Math.max(0, dailyLimit - getGoogleRequestUsage().today);
   const queue = input.failures.slice(0, Math.min(safetyLimit, remainingDaily));
+  if (queue.length > 0) assertGoogleNetworkRequestsUnlocked();
   const details: Array<{ place: Place; live: GoogleLiveDetails }> = [];
   const failures: GoogleRequestFailure[] = [];
   let completed = 0;
@@ -383,6 +386,7 @@ export async function runGoogleTextSearchRequest(input: {
   const usage = getGoogleRequestUsage();
   const dailyLimit = input.dailyLimit ?? DEFAULT_GOOGLE_DAILY_LIMIT;
   if (!fromCache && usage.today >= dailyLimit) throw new Error("Daily manual Google request limit reached");
+  if (!fromCache) assertGoogleNetworkRequestsUnlocked();
   const started = nowMs();
   try {
     const candidates = await discoverGooglePlaces(input.apiKey, { query: input.query, center: input.center, radiusMeters: input.radiusMeters, language: input.language, maxResults: input.maxResults });

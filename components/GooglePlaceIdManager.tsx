@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, Link2, MapPin, Search, ShieldAlert, ShieldCheck, Unlink2, X } from "lucide-react";
 import { applyLocalPlacePatch } from "@/lib/database/places";
 import {
@@ -18,6 +18,7 @@ import { estimateGoogleTextSearchRequests, runGoogleTextSearchRequest } from "@/
 import type { GoogleDiscoveryCandidate } from "@/lib/google-live";
 import { loadMatchConfidenceThreshold, rejectedGooglePlaceIds, saveGooglePlaceMatchRecord, saveMatchConfidenceThreshold } from "@/lib/storage/google-place-matches";
 import type { Place } from "@/types/place";
+import { getGoogleApiControlSettings } from "@/lib/google-api-control";
 
 type Filter = "all" | "linked" | "missing" | "needs_review" | "possible_wrong_match" | "chain";
 type CandidateAssessment = { candidate: GoogleDiscoveryCandidate; assessment: GooglePlaceMatchAssessment };
@@ -44,6 +45,13 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
   const [auditOpen, setAuditOpen] = useState(false);
   const [pendingLowConfidence, setPendingLowConfidence] = useState<CandidateAssessment | null>(null);
   const [threshold, setThreshold] = useState(() => loadMatchConfidenceThreshold(DEFAULT_MATCH_CONFIDENCE_THRESHOLD));
+  const [apiLocked, setApiLocked] = useState(() => getGoogleApiControlSettings().locked);
+
+  useEffect(() => {
+    const syncLock = () => setApiLocked(getGoogleApiControlSettings().locked);
+    window.addEventListener("amd-google-api-control-change", syncLock);
+    return () => window.removeEventListener("amd-google-api-control-change", syncLock);
+  }, []);
 
   const auditIssues = useMemo(() => auditExistingPlaceIds(places), [places]);
   const summary = useMemo(() => placeIdCoverageSummary(places, auditIssues), [places, auditIssues]);
@@ -186,7 +194,7 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
               <div className="flex items-center justify-between gap-3"><div><p className="text-[8px] font-bold text-[#8ecbff]">MATCH REQUEST ESTIMATE</p><p className="mt-1 text-[8px] text-white/35">{matchQuery}</p></div><button type="button" onClick={() => { setMatchingPlace(null); setCandidates([]); }} className="grid h-8 w-8 place-items-center rounded-full bg-white/[0.05]"><X className="h-3.5 w-3.5" /></button></div>
               <div className="mt-3 flex items-end justify-between"><div><p className="text-[8px] text-white/32">{language === "en" ? "Estimated requests" : "Estimated Requests"}</p><p className="mt-1 text-[20px] font-bold text-[#19E6FF]">{estimate?.newRequests ?? 0}</p></div><p className="text-[8px] text-white/28">{estimate?.cacheHits ? "Cache hit available" : "No request has been sent"}</p></div>
               {!matchCenter && <p className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-2 text-[8px] text-amber-100">Coordinates are required before Place ID matching.</p>}
-              <button type="button" disabled={!apiKey || !matchCenter || searching} onClick={() => void runMatchSearch()} className="amd-btn amd-btn-primary mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-[9px] font-bold disabled:opacity-40"><Search className="h-3.5 w-3.5" />{searching ? (language === "en" ? "Searching…" : "กำลังค้นหา…") : estimate?.newRequests === 0 && estimate?.cacheHits ? (language === "en" ? "Use Cached Search — 0 New" : "ใช้ Cache — 0 Request ใหม่") : (language === "en" ? "Run 1 Google Search Request" : "Run 1 Google Search Request")}</button>
+              <button type="button" disabled={!apiKey || apiLocked || !matchCenter || searching} onClick={() => void runMatchSearch()} className="amd-btn amd-btn-primary mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-[9px] font-bold disabled:opacity-40"><Search className="h-3.5 w-3.5" />{apiLocked ? (language === "en" ? "Google Requests Locked" : "Google Requests Locked") : searching ? (language === "en" ? "Searching…" : "กำลังค้นหา…") : estimate?.newRequests === 0 && estimate?.cacheHits ? (language === "en" ? "Use Cached Search — 0 New" : "ใช้ Cache — 0 Request ใหม่") : (language === "en" ? "Run 1 Google Search Request" : "Run 1 Google Search Request")}</button>
               {error && <p className="mt-2 rounded-xl border border-rose-300/10 bg-rose-300/[0.04] p-2 text-[8px] text-rose-100">{error}</p>}
               {searched && !searching && !candidates.length && !error && <p className="mt-3 text-[8px] text-white/35">{language === "en" ? "No acceptable candidates returned." : "ไม่พบ Candidate ที่ใช้ได้"}</p>}
               <div className="mt-3 space-y-2">{candidates.map((item) => <div key={item.candidate.googlePlaceId} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3">
