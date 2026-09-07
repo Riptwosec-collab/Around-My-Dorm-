@@ -29,6 +29,7 @@ import {
   getPlaceOpenStatus,
   googleMapsDirectionsUrl,
 } from "@/lib/place-utils";
+import { dataAgeLabel, scorePlaceDataQuality } from "@/lib/data-quality";
 import type { CategoryId, Place } from "@/types/place";
 
 function CategoryFallback({ category }: { category: CategoryId }) {
@@ -70,6 +71,8 @@ export function PlaceCard({
   const hiddenGem = isLocal && place.localFavorite && localScore != null && localScore >= 78;
   const price = formatPrice(place);
   const copy = getCopy(language);
+  const dataQuality = scorePlaceDataQuality(place);
+  const ageLabel = dataAgeLabel(place, language);
 
   const statusClass =
     status.tone === "green" || status.tone === "cyan"
@@ -145,6 +148,8 @@ export function PlaceCard({
                 <button type="button" onClick={onDetail} className="flex min-h-11 items-center gap-1 text-[10px] font-semibold text-[#79bfff]"><Clock3 className="h-3 w-3" /> {copy.details}</button>
               )}
             </div>
+
+            <div data-quality-mini className="hidden min-w-0 flex-1 flex-col gap-0.5 sm:flex"><span className="text-[9px] font-semibold text-[var(--amd-text-2)]">Data {dataQuality.score}/100</span><span className="truncate text-[8px] text-[var(--amd-text-3)]">{ageLabel}</span></div>
 
             <div className="flex shrink-0 gap-2">
               <button type="button" onClick={onDetail} className="amd-btn amd-btn-secondary hidden h-11 rounded-xl px-3 text-[10px] font-semibold sm:block">{copy.details}</button>

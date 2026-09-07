@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Database, FileUp, History, Plus, RefreshCw
 import { CATEGORIES } from "@/data/categories";
 import { GoogleMaintenancePanel } from "@/components/GoogleMaintenancePanel";
 import { GooglePlaceIdManager } from "@/components/GooglePlaceIdManager";
+import { DataQualityDashboard } from "@/components/DataQualityDashboard";
 import { auditPlaces, findDuplicatePairs, selectPlacesForUpdate, type UpdateMode } from "@/lib/place-update-engine";
 import { freshnessState } from "@/lib/data-governance";
 import { addReviewedLocalPlace, applyLocalPlacePatch, loadLocalPlaceHistory, rollbackLocalPlaceHistory, type LocalPlaceHistory } from "@/lib/database/places";
@@ -274,6 +275,8 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
           <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00D9FF]">DATA MANAGEMENT</p><h2 className="mt-1 text-[22px] font-bold">{language === "en" ? "Place Database" : "จัดการฐานข้อมูลร้าน"}</h2></div>
           <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]"><X className="h-4 w-4" /></button>
         </div>
+
+        <DataQualityDashboard places={places} language={language} />
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[{ label: language === "en" ? "Places" : "สถานที่", value: summary.scanned }, { label: language === "en" ? "Verified" : "ยืนยันแล้ว", value: summary.verified }, { label: language === "en" ? "Stale" : "ข้อมูลเก่า", value: summary.stale + summary.staleSoon }, { label: language === "en" ? "Review" : "ต้องตรวจ", value: summary.needsReview }].map((item) => <div key={item.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-3"><p className="text-[9px] text-[var(--amd-text-3)]">{item.label}</p><p className="mt-1 text-[24px] font-semibold">{item.value}</p></div>)}

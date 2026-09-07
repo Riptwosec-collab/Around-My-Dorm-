@@ -28,6 +28,7 @@ import {
   getPlaceOpenStatus,
   googleMapsDirectionsUrl,
 } from "@/lib/place-utils";
+import { dataAgeLabel, scorePlaceDataQuality } from "@/lib/data-quality";
 import type { OpeningHours, Place } from "@/types/place";
 
 const DAYS: { key: keyof OpeningHours; label: string }[] = [
@@ -73,6 +74,8 @@ export function PlaceDetail({
   const hasHours = place.is24Hours || Boolean(place.openingHoursText) || DAYS.some(({ key }) => Boolean(place.openingHours[key]));
   const openingFreshness = getDataFreshness(place.openingHoursVerifiedAt, 90);
   const parkingStatus = getParkingStatus(place);
+  const dataQuality = scorePlaceDataQuality(place);
+  const dataFreshnessLabel = dataAgeLabel(place, language);
 
   async function share() {
     const url = place.googleMapsUrl || googleMapsDirectionsUrl(place);
@@ -141,6 +144,7 @@ export function PlaceDetail({
                 </span>
               )}
               <span className="rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-2 text-[10px] font-bold">{formatPrice(place)}</span>
+              <span className="rounded-xl border border-cyan-300/10 bg-cyan-300/[0.05] px-2.5 py-2 text-[10px] font-bold text-cyan-100">Data {dataQuality.score}/100</span>
               <span className={`rounded-xl border px-2.5 py-2 text-[10px] font-bold ${status.tone === "green" ? "border-emerald-300/15 bg-emerald-300/[0.08] text-emerald-200" : status.tone === "red" ? "border-rose-300/15 bg-rose-300/[0.08] text-rose-200" : status.tone === "cyan" ? "border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-200" : status.tone === "amber" ? "border-amber-300/15 bg-amber-300/[0.08] text-amber-100" : "border-white/10 bg-white/[0.04] text-white/50"}`}>{status.label}{status.secondaryText ? ` · ${status.secondaryText}` : ""}</span>
             </div>
 
@@ -180,6 +184,7 @@ export function PlaceDetail({
               <ValueRow label={copy.driveTime} value={place.drivingMinutes != null ? `${place.drivingMinutes} นาที` : copy.unknownRoute} />
               <ValueRow label={copy.price} value={formatPrice(place)} />
               <ValueRow label={copy.phoneNumber} value={place.phone || copy.unknownData} />
+              <ValueRow label={language === "en" ? "Data freshness" : "อัปเดตข้อมูล"} value={dataFreshnessLabel} />
               <ValueRow label={copy.parkingInfo} value={place.parkingDetails ? parkingStatus.label : place.parking.available === true ? place.parking.note || "มี" : place.parking.available === false ? "ไม่มี" : copy.unknownData} />
             </div>
 
