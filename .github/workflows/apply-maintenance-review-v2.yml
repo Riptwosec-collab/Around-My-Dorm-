@@ -1,0 +1,70 @@
+name: Apply Maintenance Review V2
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-maintenance-review-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply maintenance scopes and field review
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('components/DataManagement.tsx')
+          s = p.read_text()
+
+          state_anchor = '  const [manual, setManual] = useState({ name: "", category: "food" as CategoryId, latitude: "", longitude: "", address: "", area: "" });\n'
+          if state_anchor in s and 'scopeCategory' not in s:
+              s = s.replace(state_anchor, state_anchor + '  const [scopeCategory, setScopeCategory] = useState<CategoryId>("cafe");\n  const [scopeArea, setScopeArea] = useState("");\n  const [selectedPlaceIds, setSelectedPlaceIds] = useState<string[]>([]);\n')
+
+          s = s.replace('  const selected = useMemo(() => selectPlacesForUpdate(places, mode), [places, mode]);', '  const selected = useMemo(() => selectPlacesForUpdate(places, mode, { selectedIds: selectedPlaceIds, category: scopeCategory, area: scopeArea }), [places, mode, selectedPlaceIds, scopeCategory, scopeArea]);')
+
+          options_anchor = '<option value="parking">{language === "en" ? "Parking only" : "ที่จอดรถเท่านั้น"}</option>'
+          if options_anchor in s and '<option value="category">' not in s:
+              s = s.replace(options_anchor, options_anchor + '<option value="category">{language === "en" ? "Selected category" : "เลือกหมวด"}</option><option value="area">{language === "en" ? "Selected area" : "เลือกพื้นที่"}</option><option value="selected">{language === "en" ? "Selected places only" : "เลือกเฉพาะร้าน"}</option>')
+
+          select_close = '          </select>\n          <div className="mt-3 flex flex-wrap gap-2">'
+          if select_close in s and 'mode === "selected"' not in s:
+              scope_ui = '''          </select>\n          {mode === "category" && <select value={scopeCategory} onChange={(event) => setScopeCategory(event.target.value as CategoryId)} className="amd-input mt-2 h-11 w-full rounded-xl bg-[#07111f] px-3 text-[10px]">{CATEGORIES.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}\n          {mode === "area" && <input value={scopeArea} onChange={(event) => setScopeArea(event.target.value)} placeholder={language === "en" ? "Area / soi / address" : "พื้นที่ / ซอย / ที่อยู่"} className="amd-input mt-2 h-11 w-full rounded-xl px-3 text-[10px]" />}\n          {mode === "selected" && <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-white/[0.07] bg-black/10 p-2">{places.map((place) => { const checked = selectedPlaceIds.includes(place.id); return <label key={place.id} className="flex min-h-10 cursor-pointer items-center gap-2 border-b border-white/[0.04] px-2 text-[9px] last:border-0"><input type="checkbox" checked={checked} onChange={() => setSelectedPlaceIds((current) => checked ? current.filter((id) => id !== place.id) : [...current, place.id])} /><span className="min-w-0 flex-1 truncate">{place.name}</span><span className="text-[var(--amd-text-3)]">{place.area}</span></label>; })}</div>}\n          <div className="mt-3 flex flex-wrap gap-2">'''
+              s = s.replace(select_close, scope_ui, 1)
+
+          function_anchor = '  function ignoreChange(changeId: string) {\n'
+          if function_anchor in s and 'function applySingleField' not in s:
+              functions = '''  function applySingleField(changeId: string, fieldName: string) {\n    const change = pending.find((item) => item.id === changeId);\n    if (!change) return;\n    const place = places.find((item) => item.id === change.placeId);\n    const field = change.fields.find((item) => String(item.field) === fieldName);\n    if (!place || !field) return;\n    applyLocalPlacePatch(place, { [field.field]: field.incomingValue } as Partial<Place>, `${change.source}:field_review`);\n    resolveFieldDecision(changeId, fieldName);\n    setHistory(loadLocalPlaceHistory());\n    onReload();\n  }\n\n  function resolveFieldDecision(changeId: string, fieldName: string) {\n    const next = pending.flatMap((change) => {\n      if (change.id !== changeId) return [change];\n      const fields = change.fields.filter((field) => String(field.field) !== fieldName);\n      if (!fields.length) return [];\n      const risk = (fields.some((field) => field.risk === "high") ? "high" : fields.some((field) => field.risk === "review") ? "review" : "safe") as "safe" | "review" | "high";\n      return [{ ...change, fields, risk }];\n    });\n    savePendingPlaceChanges(next);\n    setPending(next);\n  }\n\n'''
+              s = s.replace(function_anchor, functions + function_anchor)
+
+          old_fields = '{change.fields.slice(0, 4).map((field) => <p key={String(field.field)} className="text-[9px] text-[var(--amd-text-2)]">{String(field.field)}: <span className="text-white/45">{String(field.previousValue ?? "—")}</span> → <span className="text-white/80">{String(field.incomingValue ?? "—")}</span></p>)}'
+          if old_fields in s:
+              new_fields = '''{change.fields.slice(0, 6).map((field) => <div key={String(field.field)} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-2"><p className="text-[9px] font-semibold text-[var(--amd-text-2)]">{String(field.field)} <span className={`ml-1 uppercase ${field.risk === "high" ? "text-amber-200" : field.risk === "review" ? "text-[#8ecbff]" : "text-emerald-200"}`}>{field.risk}</span></p><p className="mt-1 break-all text-[8px] text-white/40">{String(field.previousValue ?? "—")} → <span className="text-white/75">{String(field.incomingValue ?? "—")}</span></p><div className="mt-2 flex gap-1.5"><button type="button" onClick={() => applySingleField(change.id, String(field.field))} className="amd-chip h-8 min-h-0 px-2 text-[8px] text-emerald-200">{language === "en" ? "Use New" : "ใช้ข้อมูลใหม่"}</button><button type="button" onClick={() => resolveFieldDecision(change.id, String(field.field))} className="amd-chip h-8 min-h-0 px-2 text-[8px]">{language === "en" ? "Keep Existing" : "ใช้ข้อมูลเดิม"}</button></div></div>)}'''
+              s = s.replace(old_fields, new_fields, 1)
+          p.write_text(s)
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run validate:data
+      - run: npm test
+      - run: npm run build
+      - run: npx wrangler deploy --dry-run
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/DataManagement.tsx package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Complete maintenance scopes and field review controls"
+            git push
+          fi
