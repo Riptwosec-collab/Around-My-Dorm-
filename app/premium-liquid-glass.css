@@ -1,0 +1,524 @@
+/* Premium Midnight Liquid Glass — visual override layer.
+   This file is intentionally additive: existing components and behavior remain intact. */
+
+:root {
+  --amd-glass-l1: rgba(7, 16, 30, 0.64);
+  --amd-glass-l2: rgba(8, 18, 34, 0.70);
+  --amd-glass-l3: rgba(9, 20, 37, 0.76);
+  --amd-glass-l4: rgba(6, 15, 29, 0.84);
+  --amd-glass-l5: rgba(5, 13, 26, 0.88);
+  --amd-glass-l6: rgba(5, 12, 24, 0.92);
+
+  --amd-glass-border-soft: rgba(155, 205, 255, 0.095);
+  --amd-glass-border: rgba(155, 205, 255, 0.13);
+  --amd-glass-border-hover: rgba(155, 205, 255, 0.19);
+  --amd-glass-border-active: rgba(74, 178, 255, 0.52);
+  --amd-glass-highlight: rgba(255, 255, 255, 0.07);
+
+  --amd-blur-card: 18px;
+  --amd-blur-interactive: 20px;
+  --amd-blur-floating: 24px;
+  --amd-blur-strong: 28px;
+  --amd-blur-toast: 30px;
+
+  --amd-shadow-card: 0 14px 34px rgba(0, 0, 0, 0.30), 0 1px 0 rgba(255, 255, 255, 0.018) inset;
+  --amd-shadow-interactive: 0 18px 42px rgba(0, 0, 0, 0.34), 0 1px 0 rgba(255, 255, 255, 0.045) inset;
+  --amd-shadow-floating: 0 20px 52px rgba(0, 0, 0, 0.39), 0 1px 0 rgba(255, 255, 255, 0.055) inset;
+  --amd-shadow-sheet: 0 -10px 48px rgba(0, 0, 0, 0.30), 0 28px 72px rgba(0, 0, 0, 0.46), 0 1px 0 rgba(255, 255, 255, 0.065) inset;
+  --amd-shadow-toast: 0 18px 52px rgba(0, 0, 0, 0.46), 0 1px 0 rgba(255, 255, 255, 0.075) inset;
+
+  --motion-instant: 90ms;
+  --motion-fast: 130ms;
+  --motion-normal: 190ms;
+  --motion-slow: 280ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-emphasized: cubic-bezier(.16, 1, .3, 1);
+  --ease-spring: cubic-bezier(.16, 1, .3, 1);
+
+  --amd-press-button: .97;
+  --amd-press-card: .985;
+  --amd-press-icon: .94;
+}
+
+:root[data-theme="light"] {
+  --amd-glass-l1: rgba(246, 250, 255, 0.68);
+  --amd-glass-l2: rgba(246, 250, 255, 0.74);
+  --amd-glass-l3: rgba(244, 249, 255, 0.80);
+  --amd-glass-l4: rgba(242, 248, 255, 0.86);
+  --amd-glass-l5: rgba(240, 247, 255, 0.91);
+  --amd-glass-l6: rgba(238, 246, 255, 0.95);
+  --amd-glass-border-soft: rgba(70, 120, 180, 0.10);
+  --amd-glass-border: rgba(70, 120, 180, 0.13);
+  --amd-glass-border-hover: rgba(48, 110, 180, 0.20);
+  --amd-glass-border-active: rgba(0, 122, 255, 0.42);
+  --amd-glass-highlight: rgba(255, 255, 255, 0.76);
+  --amd-shadow-card: 0 14px 34px rgba(53, 88, 132, 0.10), 0 1px 0 rgba(255, 255, 255, 0.82) inset;
+  --amd-shadow-interactive: 0 18px 42px rgba(53, 88, 132, 0.13), 0 1px 0 rgba(255, 255, 255, 0.88) inset;
+  --amd-shadow-floating: 0 20px 50px rgba(53, 88, 132, 0.15), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
+  --amd-shadow-sheet: 0 -8px 38px rgba(53, 88, 132, 0.10), 0 28px 68px rgba(53, 88, 132, 0.18), 0 1px 0 rgba(255, 255, 255, 0.96) inset;
+  --amd-shadow-toast: 0 18px 50px rgba(53, 88, 132, 0.18), 0 1px 0 rgba(255, 255, 255, 0.96) inset;
+}
+
+/* Ambient depth. Keep the background mostly dark and static. */
+body,
+.amd-app {
+  background-image:
+    radial-gradient(circle at 11% 8%, rgba(0, 122, 255, .065), transparent 29%),
+    radial-gradient(circle at 88% 43%, rgba(0, 217, 255, .036), transparent 31%),
+    radial-gradient(circle at 50% 103%, rgba(73, 63, 255, .043), transparent 34%),
+    linear-gradient(180deg, #02060d 0%, #030913 48%, #02060d 100%);
+  background-attachment: fixed;
+}
+
+:root[data-theme="light"] body,
+:root[data-theme="light"] .amd-app {
+  background-image:
+    radial-gradient(circle at 12% 7%, rgba(0, 122, 255, .075), transparent 31%),
+    radial-gradient(circle at 88% 44%, rgba(0, 190, 255, .045), transparent 31%),
+    linear-gradient(180deg, #eef5ff 0%, #f7faff 52%, #edf4ff 100%);
+}
+
+.amd-shell {
+  background: linear-gradient(180deg, rgba(3, 9, 19, .90), rgba(2, 6, 13, .965));
+}
+
+/* Level 1 — normal cards. */
+.amd-glass {
+  border-color: var(--amd-glass-border-soft);
+  background: var(--amd-glass-l1);
+  backdrop-filter: blur(var(--amd-blur-card)) saturate(135%);
+  -webkit-backdrop-filter: blur(var(--amd-blur-card)) saturate(135%);
+  box-shadow: var(--amd-shadow-card);
+}
+
+/* Level 5 — sheets, important panels and modal surfaces. */
+.amd-glass-strong {
+  border-color: var(--amd-glass-border);
+  background: var(--amd-glass-l5);
+  backdrop-filter: blur(var(--amd-blur-strong)) saturate(145%);
+  -webkit-backdrop-filter: blur(var(--amd-blur-strong)) saturate(145%);
+  box-shadow: var(--amd-shadow-sheet);
+}
+
+/* Environmental edge reflection. */
+.amd-glass,
+.amd-glass-strong,
+.amd-card,
+.amd-nav,
+.amd-input {
+  position: relative;
+}
+
+.amd-glass::before,
+.amd-glass-strong::before,
+.amd-nav::before,
+.amd-input::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(145deg, rgba(255,255,255,.055), transparent 31%, transparent 72%, rgba(0,157,255,.025));
+  box-shadow: inset 0 1px 0 var(--amd-glass-highlight);
+  opacity: .8;
+}
+
+.amd-glass > *,
+.amd-glass-strong > *,
+.amd-input > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Cards: dimensional but restrained. */
+.amd-card {
+  transform: translateZ(0);
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    filter var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-normal) var(--ease-standard),
+    box-shadow var(--motion-normal) var(--ease-standard),
+    background-color var(--motion-normal) var(--ease-standard);
+}
+
+.amd-card-selected {
+  border-color: var(--amd-glass-border-active);
+  background: var(--amd-glass-l3);
+  box-shadow: var(--amd-shadow-interactive), inset 0 0 0 1px rgba(0, 217, 255, .055);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .amd-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--amd-glass-border-hover);
+    background: var(--amd-glass-l2);
+    box-shadow: var(--amd-shadow-interactive);
+  }
+}
+
+.amd-card:active {
+  transform: scale(var(--amd-press-card));
+  filter: brightness(.975);
+  transition-duration: var(--motion-instant);
+}
+
+/* Search / input glass. */
+.amd-input {
+  overflow: hidden;
+  border-color: var(--amd-glass-border);
+  background: var(--amd-glass-l2);
+  backdrop-filter: blur(var(--amd-blur-interactive)) saturate(138%);
+  -webkit-backdrop-filter: blur(var(--amd-blur-interactive)) saturate(138%);
+  box-shadow: var(--amd-shadow-card);
+}
+
+.amd-input:focus-within {
+  border-color: rgba(42, 167, 255, .68);
+  background: var(--amd-glass-l3);
+  box-shadow: 0 0 0 3px rgba(0, 153, 255, .095), 0 0 22px rgba(0, 217, 255, .075), var(--amd-shadow-interactive);
+}
+
+.amd-input svg {
+  transition: opacity var(--motion-normal) var(--ease-standard), transform var(--motion-normal) var(--ease-standard), color var(--motion-normal) var(--ease-standard);
+}
+
+.amd-input:focus-within > svg:first-of-type {
+  opacity: .96;
+  color: var(--amd-cyan);
+  transform: translateY(-50%) translateX(2px);
+}
+
+/* Filter chips. */
+.amd-chip {
+  border-color: var(--amd-glass-border);
+  background: var(--amd-glass-l1);
+  backdrop-filter: blur(15px) saturate(132%);
+  -webkit-backdrop-filter: blur(15px) saturate(132%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    filter var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-normal) var(--ease-standard),
+    border-color var(--motion-normal) var(--ease-standard),
+    color var(--motion-normal) var(--ease-standard),
+    box-shadow var(--motion-normal) var(--ease-standard);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .amd-chip:hover {
+    border-color: var(--amd-glass-border-hover);
+    background: var(--amd-glass-l2);
+  }
+}
+
+.amd-chip:active {
+  transform: scale(.97);
+  filter: brightness(.96);
+  transition-duration: var(--motion-instant);
+}
+
+.amd-chip-active {
+  border-color: rgba(62, 174, 255, .58);
+  background: linear-gradient(180deg, rgba(0, 122, 255, .24), rgba(0, 100, 230, .14));
+  color: #f8fbff;
+  box-shadow: inset 0 1px 0 rgba(164, 225, 255, .18), 0 10px 24px rgba(0, 112, 255, .10);
+}
+
+/* Premium button primitives. Existing markup can adopt variants incrementally. */
+.amd-btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transform: translateZ(0);
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    filter var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-normal) var(--ease-standard),
+    background-color var(--motion-normal) var(--ease-standard),
+    box-shadow var(--motion-normal) var(--ease-standard),
+    color var(--motion-normal) var(--ease-standard);
+}
+
+.amd-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.075), transparent 45%);
+  opacity: .7;
+}
+
+.amd-btn-primary {
+  border-color: rgba(85, 188, 255, .72);
+  background: linear-gradient(180deg, rgba(25,145,255,.96), rgba(0,105,230,.91));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), inset 0 -1px 0 rgba(0,62,160,.28), 0 9px 24px rgba(0, 105, 230, .24);
+}
+
+.amd-btn-secondary,
+.amd-btn-glass {
+  border: 1px solid var(--amd-glass-border);
+  background: var(--amd-glass-l2);
+  color: var(--amd-text);
+  backdrop-filter: blur(16px) saturate(135%);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 8px 22px rgba(0,0,0,.18);
+}
+
+.amd-btn-ghost {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--amd-text-2);
+}
+
+.amd-btn-danger {
+  border: 1px solid rgba(255, 99, 120, .22);
+  background: rgba(92, 20, 32, .20);
+  color: #ffb6c1;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.amd-icon-btn {
+  display: inline-grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  border: 1px solid var(--amd-glass-border);
+  border-radius: 14px;
+  background: var(--amd-glass-l2);
+  color: var(--amd-text-2);
+  backdrop-filter: blur(16px) saturate(135%);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 8px 22px rgba(0,0,0,.18);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .amd-btn-primary:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.045);
+    border-color: rgba(115, 205, 255, .84);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 11px 29px rgba(0, 105, 230, .29);
+  }
+
+  .amd-btn-secondary:hover,
+  .amd-btn-glass:hover,
+  .amd-icon-btn:hover {
+    transform: translateY(-1px);
+    border-color: var(--amd-glass-border-hover);
+    background: var(--amd-glass-l3);
+  }
+}
+
+.amd-btn:active {
+  transform: scale(var(--amd-press-button));
+  filter: brightness(.955);
+  transition-duration: var(--motion-instant);
+}
+
+.amd-icon-btn:active {
+  transform: scale(var(--amd-press-icon));
+  filter: brightness(.95);
+  transition-duration: var(--motion-instant);
+}
+
+/* Strong floating navigation. */
+.amd-nav {
+  border-color: var(--amd-glass-border);
+  background: var(--amd-glass-l4);
+  backdrop-filter: blur(var(--amd-blur-strong)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--amd-blur-strong)) saturate(150%);
+  box-shadow: 0 -8px 30px rgba(0,0,0,.24), 0 20px 48px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.065);
+}
+
+.amd-nav-item {
+  min-width: 44px;
+  min-height: 44px;
+  transition: color var(--motion-normal) var(--ease-standard), opacity var(--motion-normal) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+
+.amd-nav-item:active {
+  transform: scale(.96);
+  transition-duration: var(--motion-instant);
+}
+
+.amd-nav-item svg {
+  transform: scale(.95);
+}
+
+.amd-nav-item-active svg {
+  transform: scale(1.06);
+}
+
+.amd-nav-active {
+  text-shadow: 0 0 11px rgba(0, 217, 255, .34);
+}
+
+.amd-nav-indicator {
+  box-shadow: 0 0 10px rgba(25,230,255,.46) !important;
+}
+
+/* Hero gets one level more depth than repeated cards. */
+.amd-hero-map {
+  border-color: rgba(72, 174, 255, .34);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.025), transparent 24%),
+    linear-gradient(rgba(0,95,220,.075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,95,220,.075) 1px, transparent 1px),
+    radial-gradient(circle at 74% 43%, rgba(0,132,255,.18), transparent 19%),
+    linear-gradient(145deg, #061426, #030913 72%);
+  background-size: auto, 28px 28px, 28px 28px, auto, auto;
+  box-shadow: var(--amd-shadow-interactive), inset 0 1px 0 rgba(255,255,255,.065);
+}
+
+/* Sheets and toasts stay above the nav but avoid blackout. */
+.amd-sheet-backdrop {
+  background: rgba(0, 0, 0, .31);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.amd-sheet {
+  box-shadow: var(--amd-shadow-sheet);
+  will-change: transform, opacity;
+}
+
+.amd-toast > .amd-glass-strong {
+  background: var(--amd-glass-l6);
+  backdrop-filter: blur(var(--amd-blur-toast)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--amd-blur-toast)) saturate(150%);
+  box-shadow: var(--amd-shadow-toast);
+}
+
+/* Skeleton geometry stays dark and low contrast. */
+.amd-skeleton {
+  background: linear-gradient(145deg, rgba(9, 20, 35, .74), rgba(7, 15, 29, .58));
+}
+
+.amd-skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(125, 194, 255, .065), transparent);
+}
+
+/* More tactile save feedback, still restrained. */
+.amd-heart-saved {
+  animation-duration: 250ms;
+}
+
+/* Consistent focus without browser-default rings. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 153, 255, .20), 0 0 0 1px rgba(25,230,255,.62) inset;
+}
+
+/* Theme changes should feel continuous and avoid white flashes. */
+html,
+body,
+.amd-app,
+.amd-shell,
+.amd-glass,
+.amd-glass-strong,
+.amd-card,
+.amd-nav,
+.amd-input,
+.amd-chip,
+.amd-btn {
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform, filter;
+  transition-duration: var(--motion-normal);
+  transition-timing-function: var(--ease-standard);
+}
+
+/* Thin desktop scrollbar; preserve native mobile momentum scrolling. */
+@media (hover: hover) and (pointer: fine) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(123, 166, 210, .22) transparent;
+  }
+
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: rgba(123,166,210,.22);
+    background-clip: padding-box;
+  }
+}
+
+/* Lower GPU cost on phones: same hierarchy, lighter blur/shadows. */
+@media (max-width: 767px) {
+  :root {
+    --amd-blur-card: 12px;
+    --amd-blur-interactive: 14px;
+    --amd-blur-floating: 18px;
+    --amd-blur-strong: 20px;
+    --amd-blur-toast: 22px;
+    --amd-shadow-card: 0 10px 26px rgba(0,0,0,.25), 0 1px 0 rgba(255,255,255,.025) inset;
+    --amd-shadow-interactive: 0 14px 32px rgba(0,0,0,.29), 0 1px 0 rgba(255,255,255,.04) inset;
+  }
+
+  body,
+  .amd-app {
+    background-attachment: scroll;
+  }
+
+  .amd-card:hover,
+  .amd-btn:hover,
+  .amd-chip:hover {
+    transform: none;
+  }
+}
+
+/* Accessible fallback where backdrop-filter is unavailable. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .amd-glass,
+  .amd-input,
+  .amd-chip,
+  .amd-btn-secondary,
+  .amd-btn-glass,
+  .amd-icon-btn {
+    background: rgba(8, 18, 33, .94);
+    border-color: rgba(155,205,255,.16);
+    box-shadow: 0 14px 34px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.045);
+  }
+
+  .amd-glass-strong,
+  .amd-nav,
+  .amd-toast > .amd-glass-strong {
+    background: rgba(5, 13, 26, .97);
+  }
+
+  :root[data-theme="light"] .amd-glass,
+  :root[data-theme="light"] .amd-input,
+  :root[data-theme="light"] .amd-chip,
+  :root[data-theme="light"] .amd-btn-secondary,
+  :root[data-theme="light"] .amd-btn-glass,
+  :root[data-theme="light"] .amd-icon-btn,
+  :root[data-theme="light"] .amd-glass-strong,
+  :root[data-theme="light"] .amd-nav {
+    background: rgba(247, 251, 255, .96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amd-card,
+  .amd-btn,
+  .amd-chip,
+  .amd-nav-item,
+  .amd-input svg {
+    transform: none !important;
+  }
+
+  .amd-heart-saved,
+  .amd-marker-selected,
+  .amd-nav-indicator,
+  .amd-toast,
+  .amd-sheet {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
