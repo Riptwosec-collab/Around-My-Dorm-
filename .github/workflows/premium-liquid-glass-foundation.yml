@@ -1,0 +1,42 @@
+name: Premium Liquid Glass Foundation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/premium-liquid-glass.css'
+      - 'app/layout.tsx'
+      - 'e2e/premium-liquid-glass-foundation.spec.ts'
+      - '.github/workflows/premium-liquid-glass-foundation.yml'
+  workflow_dispatch:
+
+jobs:
+  liquid-glass-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Validate place data
+        run: npm run validate:data
+      - name: Unit and architecture tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Responsive liquid glass and zero-Places-call test
+        run: npx playwright test e2e/premium-liquid-glass-foundation.spec.ts
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
