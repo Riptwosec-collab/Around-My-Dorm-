@@ -24,6 +24,8 @@ test("premium liquid glass foundation stays responsive and makes no accidental P
     const metrics = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
     }));
     expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
 
@@ -33,8 +35,8 @@ test("premium liquid glass foundation stays responsive and makes no accidental P
     expect(navBox).not.toBeNull();
     if (navBox) {
       expect(navBox.x).toBeGreaterThanOrEqual(0);
-      expect(navBox.x + navBox.width).toBeLessThanOrEqual(viewport.width + 1);
-      expect(navBox.y + navBox.height).toBeLessThanOrEqual(viewport.height + 1);
+      expect(navBox.x + navBox.width).toBeLessThanOrEqual(metrics.innerWidth + 1);
+      expect(navBox.y + navBox.height).toBeLessThanOrEqual(metrics.innerHeight + 1);
     }
 
     const material = await nav.evaluate((element) => {
