@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/apply-p0-place-id-manager.py'
       - 'scripts/fix-p0-place-id-manager.py'
+      - 'scripts/fix-p0-place-id-e2e.py'
       - '.github/workflows/p0-place-id-manager.yml'
   workflow_dispatch:
 
@@ -29,6 +30,8 @@ jobs:
         run: python3 scripts/apply-p0-place-id-manager.py
       - name: Stabilize Place ID Manager type inference
         run: python3 scripts/fix-p0-place-id-manager.py
+      - name: Stabilize mobile Place ID Manager test selector
+        run: python3 scripts/fix-p0-place-id-e2e.py
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Lint
