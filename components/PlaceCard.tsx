@@ -81,19 +81,20 @@ export function PlaceCard({
           : "text-[var(--amd-text-3)]";
 
   return (
-    <article className="amd-glass amd-card group overflow-hidden transition-[border-color,box-shadow] duration-[var(--motion-normal)] hover:border-[rgba(0,140,255,.28)]">
+    <article className="amd-glass amd-card amd-place-card group overflow-hidden">
       <div className="flex min-h-[154px]">
-        <div className="relative w-[35%] min-w-[112px] max-w-[190px] shrink-0 overflow-hidden bg-[#07111f]">
-          <PlacePhoto place={place} fallbackLabel={copy.unknownData} className="h-full min-h-[154px] w-full object-cover contrast-[.98] saturate-[.94]" />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/[0.04]" />
+        <div className="amd-place-card-media relative w-[35%] min-w-[112px] max-w-[190px] shrink-0 overflow-hidden bg-[#07111f]">
+          <PlacePhoto place={place} fallbackLabel={copy.unknownData} className="amd-place-card-photo h-full min-h-[154px] w-full object-cover contrast-[.98] saturate-[.94]" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-white/[0.025]" />
+          <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/[0.04]" />
           <button
             type="button"
             aria-label={saved ? (language === "en" ? "Remove from saved" : "นำออกจากรายการโปรด") : (language === "en" ? "Save place" : "บันทึกร้าน")}
             aria-pressed={saved}
             onClick={onSave}
-            className="amd-btn absolute left-2.5 top-2.5 grid h-10 w-10 min-h-0 place-items-center rounded-full border border-[rgba(120,160,210,.22)] bg-[#05101d]/80 shadow-lg backdrop-blur-xl"
+            className={`amd-btn amd-icon-btn amd-save-control absolute left-2.5 top-2.5 h-11 w-11 rounded-full ${saved ? "amd-save-control-active" : ""}`}
           >
-            <Heart className={`amd-heart h-[18px] w-[18px] ${saved ? "amd-heart-saved fill-[#008CFF] text-[#149CFF]" : "text-white/75"}`} />
+            <Heart className={`amd-heart h-[18px] w-[18px] ${saved ? "amd-heart-saved fill-[#008CFF] text-[#58b8ff]" : "text-white/78"}`} />
           </button>
         </div>
 
@@ -141,13 +142,13 @@ export function PlaceCard({
                   {place.reviewCount != null && <span className="text-[var(--amd-text-3)]">({place.reviewCount.toLocaleString()})</span>}
                 </div>
               ) : (
-                <button type="button" onClick={onDetail} className="flex items-center gap-1 text-[10px] font-semibold text-[#79bfff]"><Clock3 className="h-3 w-3" /> {copy.details}</button>
+                <button type="button" onClick={onDetail} className="flex min-h-11 items-center gap-1 text-[10px] font-semibold text-[#79bfff]"><Clock3 className="h-3 w-3" /> {copy.details}</button>
               )}
             </div>
 
             <div className="flex shrink-0 gap-2">
-              <button type="button" onClick={onDetail} className="amd-btn hidden h-11 rounded-xl border border-[rgba(120,160,210,.18)] bg-[rgba(8,18,33,.58)] px-3 text-[10px] font-semibold text-[var(--amd-text-2)] sm:block">{copy.details}</button>
-              <button type="button" onClick={onMap} aria-label={language === "en" ? "View on map" : "ดูบนแผนที่"} className="amd-btn grid h-11 w-11 min-h-0 place-items-center rounded-xl border border-[rgba(0,140,255,.25)] bg-[rgba(0,122,255,.08)] text-[#00D9FF] sm:hidden"><MapPin className="h-4 w-4" /></button>
+              <button type="button" onClick={onDetail} className="amd-btn amd-btn-secondary hidden h-11 rounded-xl px-3 text-[10px] font-semibold sm:block">{copy.details}</button>
+              <button type="button" onClick={onMap} aria-label={language === "en" ? "View on map" : "ดูบนแผนที่"} className="amd-btn amd-icon-btn h-11 w-11 rounded-xl text-[#00D9FF] sm:hidden"><MapPin className="h-4 w-4" /></button>
               <a href={googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="amd-btn amd-btn-primary flex h-11 items-center justify-center gap-1.5 rounded-xl px-3.5 text-[10px] font-bold"><Navigation className="h-4 w-4" /> {copy.navigate}</a>
             </div>
           </div>
