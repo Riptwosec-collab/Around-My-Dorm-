@@ -22,18 +22,39 @@ function FallbackIcon({ place }: { place: Place }) {
 export function MapBottomSheet({ place, language, onDetails }: { place: Place; language: Language; onDetails: () => void }) {
   const copy = getCopy(language);
   const [size, setSize] = useState<SheetSize>("half");
+  const [dragOffset, setDragOffset] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const startY = useRef<number | null>(null);
   const status = getPlaceOpenStatus(place);
   const category = CATEGORY_MAP[place.category];
   const typeBadge = place.placeType === "chain" || place.placeType === "franchise" ? "CHAIN" : place.placeType === "local" || place.placeType === "independent" ? "LOCAL" : null;
   const hiddenGem = place.tags.some((tag) => /hidden[ _-]?gem/i.test(tag));
 
-  useEffect(() => setSize("half"), [place.id]);
+  useEffect(() => {
+    setSize("half");
+    setDragOffset(0);
+    setDragging(false);
+    startY.current = null;
+  }, [place.id]);
+
+  function beginDrag(y: number) {
+    startY.current = y;
+    setDragging(true);
+    setDragOffset(0);
+  }
+
+  function moveDrag(y: number) {
+    if (startY.current == null) return;
+    const delta = y - startY.current;
+    setDragOffset(Math.max(-52, Math.min(84, delta)));
+  }
 
   function endDrag(y: number) {
     if (startY.current == null) return;
     const delta = y - startY.current;
     startY.current = null;
+    setDragging(false);
+    setDragOffset(0);
     if (delta > 55) setSize((current) => current === "expanded" ? "half" : "collapsed");
     if (delta < -55) setSize((current) => current === "collapsed" ? "half" : "expanded");
   }
@@ -43,22 +64,37 @@ export function MapBottomSheet({ place, language, onDetails }: { place: Place; l
 
   return (
     <section
-      className={`amd-glass-strong absolute bottom-3 left-3 right-3 rounded-[24px] p-3.5 transition-[max-height,transform,opacity] duration-[var(--motion-slow)] [transition-timing-function:var(--ease-spring)] ${heightClass}`}
-      style={{ zIndex: "var(--z-map-controls)" }}
+      data-snap={size}
+      data-dragging={dragging ? "true" : "false"}
+      className={`amd-map-sheet amd-glass-strong absolute bottom-3 left-3 right-3 rounded-[26px] p-3.5 ${heightClass}`}
+      style={{
+        zIndex: "var(--z-map-controls)",
+        transform: dragOffset ? `translate3d(0, ${dragOffset}px, 0)` : undefined,
+        transition: dragging ? "none" : undefined,
+      }}
       aria-label={language === "en" ? "Selected place" : "สถานที่ที่เลือก"}
     >
       <button
         type="button"
         aria-label={language === "en" ? "Resize place sheet" : "ปรับขนาดแผงรายละเอียด"}
-        onPointerDown={(event) => { startY.current = event.clientY; event.currentTarget.setPointerCapture?.(event.pointerId); }}
+        onPointerDown={(event) => {
+          beginDrag(event.clientY);
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        }}
+        onPointerMove={(event) => moveDrag(event.clientY)}
         onPointerUp={(event) => endDrag(event.clientY)}
-        className="mx-auto mb-2 block h-6 w-20 touch-none"
+        onPointerCancel={() => {
+          startY.current = null;
+          setDragging(false);
+          setDragOffset(0);
+        }}
+        className="amd-map-sheet-handle -mt-1 mx-auto mb-1 grid h-11 w-24 touch-none place-items-center rounded-full"
       >
-        <span className="mx-auto block h-1.5 w-12 rounded-full bg-white/18" />
+        <span className="mx-auto block h-1.5 w-12 rounded-full bg-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,.08)]" />
       </button>
 
       <div className="flex gap-3">
-        <div className={`${imageSize} relative shrink-0 overflow-hidden rounded-[16px] transition-[width,height] duration-[var(--motion-normal)]`}><PlacePhoto place={place} className="h-full w-full object-cover" /></div>
+        <div className={`${imageSize} relative shrink-0 overflow-hidden rounded-[17px] border border-white/[0.045] transition-[width,height] duration-[var(--motion-normal)] [transition-timing-function:var(--ease-standard)]`}><PlacePhoto place={place} className="h-full w-full object-cover" /></div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
@@ -71,7 +107,7 @@ export function MapBottomSheet({ place, language, onDetails }: { place: Place; l
 
           {size !== "collapsed" && (
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <button type="button" onClick={onDetails} className="amd-btn h-11 rounded-xl border border-[rgba(120,160,210,.2)] text-[10px] font-semibold">{copy.details}</button>
+              <button type="button" onClick={onDetails} className="amd-btn amd-btn-secondary h-11 rounded-xl text-[10px] font-semibold">{copy.details}</button>
               <a href={googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="amd-btn amd-btn-primary flex h-11 items-center justify-center gap-1.5 rounded-xl text-[10px] font-bold"><Navigation className="h-4 w-4" />{copy.navigate}</a>
             </div>
           )}
@@ -89,7 +125,7 @@ export function MapBottomSheet({ place, language, onDetails }: { place: Place; l
           </div>
         </div>
       )}
-      {size === "collapsed" && <ChevronUp className="pointer-events-none absolute right-4 top-3 h-4 w-4 text-[var(--amd-text-3)]" />}
+      {size === "collapsed" && <ChevronUp className="pointer-events-none absolute right-4 top-4 h-4 w-4 text-[var(--amd-text-3)]" />}
     </section>
   );
 }
