@@ -1,0 +1,57 @@
+name: P0 API Control Center
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply-p0-api-control-center.py'
+      - '.github/workflows/p0-api-control-center.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  api-control-center:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply API Control Center
+        run: python3 scripts/apply-p0-api-control-center.py
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Validate place data
+        run: npm run validate:data
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Mobile API Control Center safety test
+        run: npx playwright test e2e/p0-api-control-center.spec.ts
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated API Control Center
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/GoogleMaintenancePanel.tsx lib/google-api-control.ts lib/google-request-manager.ts tests/google-api-control.test.ts e2e/p0-api-control-center.spec.ts
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Implement P0 Google API Control Center'
+          git push origin main
