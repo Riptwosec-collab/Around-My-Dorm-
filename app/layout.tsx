@@ -17,14 +17,14 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#050812",
+  themeColor: "#02060D",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="th">
+    <html lang="th" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );
