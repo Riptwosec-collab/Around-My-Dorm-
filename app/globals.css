@@ -537,3 +537,22 @@ img {
     display: none;
   }
 }
+
+
+/* Map fallback must fill the same viewport as the live Google Map.
+   .amd-hero-map is relative by default for hero cards, so this modifier
+   restores absolute full-bleed positioning only inside the map screen. */
+.amd-map-fallback {
+  position: absolute !important;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+.amd-map-fallback > .absolute.inset-y-0.right-0 {
+  left: 0;
+  right: 0;
+  width: 100% !important;
+  opacity: 0.92;
+}

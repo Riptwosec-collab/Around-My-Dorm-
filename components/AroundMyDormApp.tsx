@@ -862,7 +862,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <div className="relative mt-4 h-[58dvh] min-h-[450px] max-h-[720px] overflow-hidden rounded-[28px] border border-[rgba(0,140,255,.28)] bg-[#030812] shadow-[0_0_28px_rgba(0,122,255,.12)]">
                 {apiReady ? <div ref={mapEl} className="absolute inset-0 bg-[#02060D]" /> : (
-                  <div className="absolute inset-0 amd-hero-map rounded-none border-0">
+                  <div className="amd-hero-map amd-map-fallback rounded-none border-0">
                     <MiniMapArtwork />
                     <div className="absolute inset-0 grid place-items-center p-8 text-center"><div className="amd-glass amd-card max-w-[280px] p-5"><MapIcon className="mx-auto h-9 w-9 text-[#00D9FF]" /><p className="mt-3 text-[14px] font-semibold">Google Maps Preview</p><p className="mt-2 text-[10px] leading-5 text-[var(--amd-text-2)]">ตั้งค่า NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ใน Cloudflare เพื่อเปิดแผนที่สดและหมุดจริง</p><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(DORM_NAME)}`} target="_blank" rel="noreferrer" className="amd-btn amd-btn-primary mt-4 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[10px] font-bold"><Navigation className="h-4 w-4" /> เปิด Google Maps</a></div></div>
                   </div>
