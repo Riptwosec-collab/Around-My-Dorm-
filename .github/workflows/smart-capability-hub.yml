@@ -9,6 +9,7 @@ on:
       - lib/cloud/store.ts
       - scripts/apply-smart-capability-hub.py
       - tests/smart-capabilities.test.ts
+      - e2e/smart-capabilities.spec.ts
       - .github/workflows/smart-capability-hub.yml
   workflow_dispatch:
 
