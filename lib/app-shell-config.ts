@@ -28,10 +28,6 @@ export type SavedCollection = {
   placeIds: string[];
 };
 
-export const SETTINGS_KEY = "around-dorm-settings-v3";
-export const COLLECTIONS_KEY = "around-dorm-collections-v1";
-export const RECENT_META_KEY = "around-dorm-recent-meta-v1";
-
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   language: "th",

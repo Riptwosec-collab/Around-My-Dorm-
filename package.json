@@ -20,6 +20,7 @@
     "enrich:images": "tsx scripts/enrich-existing-place-images.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
     "lucide-react": "^0.468.0",
     "next": "^15.5.0",
     "react": "^19.1.0",

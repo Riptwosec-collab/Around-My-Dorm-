@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, WifiOff, X } from "lucide-react";
-import { loadSettings } from "@/lib/storage/settings";
+import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import { getCopy } from "@/locales";
 
 export function PwaRuntime() {
@@ -14,7 +14,14 @@ export function PwaRuntime() {
 
   useEffect(() => {
     setOnline(navigator.onLine);
-    setLanguage(loadSettings().language);
+    void (async () => {
+      try {
+        const user = await ensureCloudUser();
+        const { data } = await supabase.from("amd_user_settings").select("settings").eq("user_id", user.id).maybeSingle();
+        const next = data?.settings as { language?: "th" | "en" } | null;
+        if (next?.language) setLanguage(next.language);
+      } catch {}
+    })();
     const onOnline = () => setOnline(true);
     const onOffline = () => setOnline(false);
     window.addEventListener("online", onOnline);
@@ -59,15 +66,9 @@ export function PwaRuntime() {
     };
     document.addEventListener("visibilitychange", onVisibility);
 
-    const storage = (event: StorageEvent) => {
-      if (event.key === "around-dorm-settings-v3") setLanguage(loadSettings().language);
-    };
-    window.addEventListener("storage", storage);
-
     return () => {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
-      window.removeEventListener("storage", storage);
       document.removeEventListener("visibilitychange", onVisibility);
       if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
     };

@@ -1,51 +1,35 @@
+import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 export type GooglePlaceMatchDecision = "linked" | "rejected" | "review";
+export type GooglePlaceMatchRecord = { id: string; localPlaceId: string; googlePlaceId: string; candidateName: string; decision: GooglePlaceMatchDecision; confidence: number; distanceMeters: number | null; chainSafetyPassed: boolean; createdAt: string };
+let recordsCache: GooglePlaceMatchRecord[] = [];
+let thresholdCache = 75;
 
-export type GooglePlaceMatchRecord = {
-  id: string;
-  localPlaceId: string;
-  googlePlaceId: string;
-  candidateName: string;
-  decision: GooglePlaceMatchDecision;
-  confidence: number;
-  distanceMeters: number | null;
-  chainSafetyPassed: boolean;
-  createdAt: string;
-};
-
-const KEY = "around-dorm-google-place-matches-v1";
-const THRESHOLD_KEY = "around-dorm-google-place-match-threshold-v1";
-
-function read(): GooglePlaceMatchRecord[] {
-  if (typeof localStorage === "undefined") return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(KEY) || "[]") as GooglePlaceMatchRecord[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+export async function loadGooglePlaceMatchRecords() {
+  const user = await ensureCloudUser();
+  const [matches, control] = await Promise.all([
+    supabase.from("amd_google_place_matches").select("place_id,google_place_id,status,confidence,candidate,updated_at").eq("user_id", user.id).order("updated_at", { ascending: false }),
+    supabase.from("amd_google_api_control").select("match_confidence_threshold").eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (matches.error) throw matches.error;
+  if (control.error) throw control.error;
+  thresholdCache = control.data?.match_confidence_threshold || 75;
+  recordsCache = (matches.data || []).filter((row: any) => row.google_place_id).map((row: any) => ({ id: `${row.place_id}:${row.google_place_id}`, localPlaceId: row.place_id, googlePlaceId: row.google_place_id, candidateName: row.candidate?.name || "", decision: row.status === "rejected" ? "rejected" : row.status === "linked" ? "linked" : "review", confidence: row.confidence || 0, distanceMeters: row.candidate?.distanceMeters ?? null, chainSafetyPassed: row.candidate?.chainSafetyPassed !== false, createdAt: row.updated_at }));
+  return recordsCache;
 }
 
-export function loadGooglePlaceMatchRecords() {
-  return read().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export async function saveGooglePlaceMatchRecord(record: Omit<GooglePlaceMatchRecord, "id" | "createdAt">) {
+  const user = await ensureCloudUser();
+  const now = new Date().toISOString();
+  const candidate = { name: record.candidateName, distanceMeters: record.distanceMeters, chainSafetyPassed: record.chainSafetyPassed };
+  const { error } = await supabase.from("amd_google_place_matches").upsert({ user_id: user.id, place_id: record.localPlaceId, google_place_id: record.googlePlaceId, status: record.decision, confidence: record.confidence, candidate, reviewed_at: now, updated_at: now }, { onConflict: "user_id,place_id" });
+  if (error) throw error;
+  await loadGooglePlaceMatchRecords();
 }
 
-export function saveGooglePlaceMatchRecord(record: Omit<GooglePlaceMatchRecord, "id" | "createdAt">) {
-  if (typeof localStorage === "undefined") return;
-  const next: GooglePlaceMatchRecord = { ...record, id: `gmatch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date().toISOString() };
-  localStorage.setItem(KEY, JSON.stringify([next, ...read()].slice(0, 500)));
-}
-
-export function rejectedGooglePlaceIds(localPlaceId: string) {
-  return new Set(read().filter((record) => record.localPlaceId === localPlaceId && record.decision === "rejected").map((record) => record.googlePlaceId));
-}
-
-export function loadMatchConfidenceThreshold(defaultValue = 75) {
-  if (typeof localStorage === "undefined") return defaultValue;
-  const value = Number(localStorage.getItem(THRESHOLD_KEY));
-  return Number.isFinite(value) && value >= 50 && value <= 95 ? value : defaultValue;
-}
-
-export function saveMatchConfidenceThreshold(value: number) {
-  if (typeof localStorage === "undefined") return;
-  localStorage.setItem(THRESHOLD_KEY, String(Math.max(50, Math.min(95, Math.round(value)))));
+export function rejectedGooglePlaceIds(localPlaceId: string) { return new Set(recordsCache.filter((record) => record.localPlaceId === localPlaceId && record.decision === "rejected").map((record) => record.googlePlaceId)); }
+export function loadMatchConfidenceThreshold(defaultValue = 75) { return thresholdCache || defaultValue; }
+export async function saveMatchConfidenceThreshold(value: number) {
+  const user = await ensureCloudUser(); thresholdCache = Math.max(50, Math.min(95, Math.round(value)));
+  const { error } = await supabase.from("amd_google_api_control").upsert({ user_id: user.id, match_confidence_threshold: thresholdCache, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) throw error;
 }

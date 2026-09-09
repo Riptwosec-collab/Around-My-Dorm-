@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, FileUp, History, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react";
 import { CATEGORIES } from "@/data/categories";
 import { GoogleMaintenancePanel } from "@/components/GoogleMaintenancePanel";
@@ -102,8 +102,11 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   const [cancelRequested, setCancelRequested] = useState(false);
   const cancelRef = useRef(false);
   const [auditDone, setAuditDone] = useState(false);
-  const [pending, setPending] = useState(() => loadPendingPlaceChanges());
-  const [history, setHistory] = useState<LocalPlaceHistory[]>(() => loadLocalPlaceHistory());
+  const [pending, setPending] = useState<Awaited<ReturnType<typeof loadPendingPlaceChanges>>>([]);
+  const [history, setHistory] = useState<LocalPlaceHistory[]>([]);
+  useEffect(() => {
+    void Promise.all([loadPendingPlaceChanges(), loadLocalPlaceHistory()]).then(([nextPending, nextHistory]) => { setPending(nextPending); setHistory(nextHistory); }).catch((error) => setMessage(error instanceof Error ? error.message : "Cloud state unavailable"));
+  }, []);
   const [message, setMessage] = useState<string | null>(null);
   const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
@@ -124,10 +127,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
     if (!dates.length) return null;
     return new Date(Math.max(...dates)).toLocaleString(language === "en" ? "en-GB" : "th-TH", { dateStyle: "medium", timeStyle: "short" });
   }, [places, language]);
-  const externalUsage = useMemo(() => {
-    if (typeof window === "undefined") return 0;
-    try { return Number(JSON.parse(localStorage.getItem("around-dorm-external-usage-v1") || "0")) || 0; } catch { return 0; }
-  }, []);
+  const externalUsage = 0;
 
   async function runLocalAudit() {
     setCancelRequested(false);
@@ -146,7 +146,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
     setMessage(language === "en" ? "Local database audit complete. No external POI provider was called." : "ตรวจฐานข้อมูลในแอปเสร็จแล้ว โดยไม่ได้เรียก External POI API");
   }
 
-  function applySafeChange(changeId: string) {
+  async function applySafeChange(changeId: string) {
     const change = pending.find((item) => item.id === changeId);
     if (!change) return;
     const place = places.find((item) => item.id === change.placeId);
@@ -157,7 +157,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
       return;
     }
     const patch = Object.fromEntries(safeFields.map((field) => [field.field, field.incomingValue])) as Partial<Place>;
-    const result = applyLocalPlacePatch(place, patch, change.source);
+    const result = await applyLocalPlacePatch(place, patch, change.source);
     if (!result.appliedFields.length) {
       setMessage(language === "en" ? "Protected higher-confidence fields were not overwritten." : "ไม่ได้เขียนทับฟิลด์ที่มีแหล่งข้อมูลความมั่นใจสูงกว่า");
       return;
@@ -173,23 +173,23 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
     savePendingPlaceChanges(next);
     setPending(next);
     if (result.blockedFields.length) setMessage(language === "en" ? `${result.blockedFields.length} protected field(s) kept for review.` : `เก็บ ${result.blockedFields.length} ฟิลด์ที่มีแหล่งข้อมูลความมั่นใจสูงกว่าไว้ตรวจสอบ`);
-    setHistory(loadLocalPlaceHistory());
+    setHistory(await loadLocalPlaceHistory());
     onReload();
   }
 
-  function applySingleField(changeId: string, fieldName: string) {
+  async function applySingleField(changeId: string, fieldName: string) {
     const change = pending.find((item) => item.id === changeId);
     if (!change) return;
     const place = places.find((item) => item.id === change.placeId);
     const field = change.fields.find((item) => String(item.field) === fieldName);
     if (!place || !field) return;
-    const result = applyLocalPlacePatch(place, { [field.field]: field.incomingValue } as Partial<Place>, `${change.source}:field_review`);
+    const result = await applyLocalPlacePatch(place, { [field.field]: field.incomingValue } as Partial<Place>, `${change.source}:field_review`);
     if (!result.appliedFields.includes(fieldName)) {
       setMessage(language === "en" ? "Field was protected and not changed." : "ฟิลด์นี้ถูกป้องกันและไม่ได้เปลี่ยนแปลง");
       return;
     }
     resolveFieldDecision(changeId, fieldName);
-    setHistory(loadLocalPlaceHistory());
+    setHistory(await loadLocalPlaceHistory());
     onReload();
   }
 
@@ -211,9 +211,9 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
     setPending(next);
   }
 
-  function undo(entry: LocalPlaceHistory) {
-    rollbackLocalPlaceHistory(entry);
-    setHistory(loadLocalPlaceHistory());
+  async function undo(entry: LocalPlaceHistory) {
+    await rollbackLocalPlaceHistory(entry);
+    setHistory(await loadLocalPlaceHistory());
     onReload();
   }
 
@@ -235,7 +235,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
     }
   }
 
-  function addCandidate(item: NewPlaceCandidate, keepSeparate = false) {
+  async function addCandidate(item: NewPlaceCandidate, keepSeparate = false) {
     const candidate = item.candidate;
     if (item.duplicateIds.length && !keepSeparate) {
       setMessage(language === "en" ? "Possible duplicate: review before adding." : "อาจเป็นรายการซ้ำ กรุณาตรวจสอบก่อนเพิ่ม");
@@ -246,13 +246,13 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
       return;
     }
     const place = makeReviewedPlace({ name: candidate.name, category: candidate.category, latitude: candidate.latitude, longitude: candidate.longitude, address: candidate.address, area: candidate.area }, candidate.sourceProvider, candidate);
-    addReviewedLocalPlace(place, candidate.sourceProvider);
+    await addReviewedLocalPlace(place, candidate.sourceProvider);
     setImportPlan((current) => current ? { ...current, newPlaces: current.newPlaces.filter((candidateItem) => candidateItem !== item) } : current);
-    setHistory(loadLocalPlaceHistory());
+    setHistory(await loadLocalPlaceHistory());
     onReload();
   }
 
-  function addManualPlace() {
+  async function addManualPlace() {
     const latitude = Number(manual.latitude);
     const longitude = Number(manual.longitude);
     if (!manual.name.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -260,10 +260,10 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
       return;
     }
     const place = makeReviewedPlace({ name: manual.name.trim(), category: manual.category, latitude, longitude, address: manual.address || null, area: manual.area || null }, "manual");
-    addReviewedLocalPlace(place, "manual");
+    await addReviewedLocalPlace(place, "manual");
     setManual({ name: "", category: "food", latitude: "", longitude: "", address: "", area: "" });
     setManualOpen(false);
-    setHistory(loadLocalPlaceHistory());
+    setHistory(await loadLocalPlaceHistory());
     onReload();
   }
 

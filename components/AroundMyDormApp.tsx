@@ -62,7 +62,8 @@ import { loadPlacesFromDatabase } from "@/lib/database/places";
 import { loadGoogleMaps } from "@/lib/google-maps";
 import { Toast, type ToastTone } from "@/components/Toast";
 import { getCopy } from "@/locales";
-import { addRecentView, getTodayRecentStats, loadRecentViews, resolveRecentPlaces, saveRecentViews } from "@/lib/storage/recent";
+import { addRecentView, getTodayRecentStats, resolveRecentPlaces } from "@/lib/storage/recent";
+import { loadCloudAppState, recordRecentViewCloud, saveCollectionsCloud, saveSettingsCloud, setFavoriteCloud, logRuntimeEventCloud } from "@/lib/cloud/store";
 import type { RecentView } from "@/types/app";
 import {
   DORM_CENTER,
@@ -78,13 +79,10 @@ import {
 import type { CategoryId, Place, SortMode } from "@/types/place";
 import { PageHeader, Toggle, SettingRow, MiniMapArtwork, LoadingCards } from "@/components/AppShellPrimitives";
 import {
-  COLLECTIONS_KEY,
   DEFAULT_COLLECTIONS,
   DEFAULT_SETTINGS,
   FOOD_CATEGORIES,
   RADII,
-  RECENT_META_KEY,
-  SETTINGS_KEY,
   SORT_OPTIONS,
   TAB_ROUTES,
   tabFromPath,
@@ -189,32 +187,34 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     return () => window.clearTimeout(timer);
   }, [query]);
 
+  const [cloudReady, setCloudReady] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
+
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem("around-dorm-favorites-v2") || "[]") as Place[];
-      const recentHistory = loadRecentViews(PLACES);
-      const savedSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null") as Partial<AppSettings> | null;
-      const savedCollections = JSON.parse(localStorage.getItem(COLLECTIONS_KEY) || "null") as SavedCollection[] | null;
-      const nextFavorites = Array.isArray(saved) ? saved : [];
-      setFavorites(nextFavorites);
-      setRecentViews(recentHistory);
-      const mergedSettings = { ...DEFAULT_SETTINGS, ...(savedSettings || {}) };
+    let active = true;
+    void loadCloudAppState(DEFAULT_COLLECTIONS).then((state) => {
+      if (!active) return;
+      setFavorites(state.favorites);
+      setRecentViews(state.recentViews);
+      const mergedSettings = { ...DEFAULT_SETTINGS, ...(state.settings || {}) };
       setSettings({ ...mergedSettings, preferredCategories: Array.isArray(mergedSettings.preferredCategories) ? mergedSettings.preferredCategories : [] });
       setRadiusMeters(mergedSettings.defaultRadius);
       if (mergedSettings.homeMode === "custom" && mergedSettings.customHomeLocation) {
         const customCenter = { lat: mergedSettings.customHomeLocation.latitude, lng: mergedSettings.customHomeLocation.longitude };
         setOrigin(customCenter); setOriginMode("custom"); setMapSearchCenter(customCenter);
       }
-      if (Array.isArray(savedCollections) && savedCollections.length) {
-        setCollections(savedCollections);
-      } else if (nextFavorites.length) {
-        setCollections(DEFAULT_COLLECTIONS.map((collection) => collection.id === "wishlist" ? { ...collection, placeIds: nextFavorites.map((place) => place.id) } : collection));
-      }
-    } catch {}
+      setCollections(state.collections.length ? state.collections : DEFAULT_COLLECTIONS);
+      setCloudReady(true); setCloudError(null);
+      void logRuntimeEventCloud("cloud_state_loaded", { favorites: state.favorites.length, recent: state.recentViews.length, collections: state.collections.length });
+    }).catch((error) => {
+      if (!active) return;
+      setCloudError(error instanceof Error ? error.message : "Cloud unavailable");
+      setCloudReady(false);
+    });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     const resolveTheme = () => {
       const mode = settings.theme === "system"
         ? window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
@@ -229,8 +229,16 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }, [settings]);
 
   useEffect(() => {
-    localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(collections));
-  }, [collections]);
+    if (!cloudReady) return;
+    const timer = window.setTimeout(() => { void saveCollectionsCloud(collections).catch((error) => setCloudError(error instanceof Error ? error.message : "Cloud save failed")); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [collections, cloudReady]);
+
+  useEffect(() => {
+    if (!cloudReady) return;
+    const timer = window.setTimeout(() => { void saveSettingsCloud(settings).catch((error) => setCloudError(error instanceof Error ? error.message : "Cloud save failed")); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [settings, cloudReady]);
 
   async function reloadDatabase() {
     setLoadingPlaces(true);
@@ -329,7 +337,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       const next = exists
         ? current.filter((saved) => !(saved.id === place.id || (saved.googlePlaceId && place.googlePlaceId === saved.googlePlaceId)))
         : [place, ...current].slice(0, 100);
-      localStorage.setItem("around-dorm-favorites-v2", JSON.stringify(next));
+      void setFavoriteCloud(place, !exists).catch((error) => { setCloudError(error instanceof Error ? error.message : "Cloud save failed"); showToast(settings.language === "en" ? "Cloud save failed" : "บันทึกขึ้นคลาวด์ไม่สำเร็จ", "removed"); });
       setCollections((currentCollections) => currentCollections.map((collection) => {
         if (exists) return { ...collection, placeIds: collection.placeIds.filter((id) => id !== place.id) };
         if (collection.id === "wishlist") return { ...collection, placeIds: Array.from(new Set([place.id, ...collection.placeIds])) };
@@ -341,7 +349,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }
 
   function addRecent(place: Place) {
-    setRecentViews((current) => { const next = addRecentView(current, place, PLACES.some((item) => item.id === place.id)); saveRecentViews(next); return next; });
+    setRecentViews((current) => { const next = addRecentView(current, place, PLACES.some((item) => item.id === place.id)); const latest = next[0]; if (latest) void recordRecentViewCloud(latest).catch(() => undefined); return next; });
   }
 
   function openDetail(place: Place) {
@@ -655,6 +663,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
           {tab === "settings" && (
             <div className="amd-page amd-page-enter">
+              <div data-testid="cloud-only-status" className={`mb-3 rounded-2xl border px-3 py-2 text-[9px] ${cloudReady ? "border-emerald-300/15 bg-emerald-300/[0.05] text-emerald-100" : "border-amber-300/15 bg-amber-300/[0.05] text-amber-100"}`}>{cloudReady ? (settings.language === "en" ? "Cloud-only storage active • Supabase sync enabled" : "บันทึกบนคลาวด์เท่านั้น • Supabase Sync ทำงาน") : (settings.language === "en" ? `Cloud storage unavailable${cloudError ? `: ${cloudError}` : ""}` : `คลาวด์ยังไม่พร้อม${cloudError ? `: ${cloudError}` : ""}`)}</div>
               <PageHeader title={copy.settings} subtitle={copy.settingsSubtitle} />
 
               <section className="amd-glass amd-card-selected amd-card flex items-center gap-4 p-4">

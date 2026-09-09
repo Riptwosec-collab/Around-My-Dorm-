@@ -1,48 +1,28 @@
+import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import type { PlaceUpdateDiff } from "@/lib/place-update-engine";
 
-export type PlaceUpdateHistoryEntry = {
-  id: string;
-  placeId: string;
-  placeName: string;
-  changedAt: string;
-  source: string;
-  previousData: Record<string, unknown>;
-  newData: Record<string, unknown>;
-};
+export type PlaceUpdateHistoryEntry = { id: string; placeId: string; placeName: string; changedAt: string; source: string; previousData: Record<string, unknown>; newData: Record<string, unknown> };
 
-const HISTORY_KEY = "around-dorm-place-update-history-v1";
-const PENDING_KEY = "around-dorm-place-update-pending-v1";
-
-function parseArray<T>(key: string): T[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
+export async function loadPendingPlaceChanges(): Promise<PlaceUpdateDiff[]> {
+  const user = await ensureCloudUser();
+  const { data, error } = await supabase.from("amd_pending_place_changes").select("payload").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(500);
+  if (error) throw error;
+  return (data || []).map((row: any) => row.payload).filter(Boolean);
 }
 
-export function loadPendingPlaceChanges() {
-  return parseArray<PlaceUpdateDiff>(PENDING_KEY);
+export async function savePendingPlaceChanges(changes: PlaceUpdateDiff[]) {
+  const user = await ensureCloudUser();
+  const cleared = await supabase.from("amd_pending_place_changes").delete().eq("user_id", user.id);
+  if (cleared.error) throw cleared.error;
+  if (!changes.length) return;
+  const now = new Date().toISOString();
+  const inserted = await supabase.from("amd_pending_place_changes").insert(changes.slice(0, 500).map((payload) => ({ user_id: user.id, payload, updated_at: now })));
+  if (inserted.error) throw inserted.error;
 }
 
-export function savePendingPlaceChanges(changes: PlaceUpdateDiff[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(PENDING_KEY, JSON.stringify(changes.slice(0, 500)));
-}
-
-export function loadPlaceUpdateHistory() {
-  return parseArray<PlaceUpdateHistoryEntry>(HISTORY_KEY);
-}
-
-export function appendPlaceUpdateHistory(entry: PlaceUpdateHistoryEntry) {
-  if (typeof window === "undefined") return;
-  const current = loadPlaceUpdateHistory();
-  localStorage.setItem(HISTORY_KEY, JSON.stringify([entry, ...current].slice(0, 200)));
-}
-
-export function removePlaceUpdateHistory(id: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(loadPlaceUpdateHistory().filter((entry) => entry.id !== id)));
+export async function loadPlaceUpdateHistory(): Promise<PlaceUpdateHistoryEntry[]> {
+  const user = await ensureCloudUser();
+  const { data, error } = await supabase.from("amd_place_history").select("id,place_id,place_name,changed_at,source,previous_data,new_data").eq("user_id", user.id).order("changed_at", { ascending: false }).limit(200);
+  if (error) throw error;
+  return (data || []).map((row: any) => ({ id: row.id, placeId: row.place_id, placeName: row.place_name, changedAt: row.changed_at, source: row.source, previousData: row.previous_data || {}, newData: row.new_data || {} }));
 }

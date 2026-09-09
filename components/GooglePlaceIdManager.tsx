@@ -16,7 +16,7 @@ import {
 } from "@/lib/google-place-id-manager";
 import { estimateGoogleTextSearchRequests, runGoogleTextSearchRequest } from "@/lib/google-request-manager";
 import type { GoogleDiscoveryCandidate } from "@/lib/google-live";
-import { loadMatchConfidenceThreshold, rejectedGooglePlaceIds, saveGooglePlaceMatchRecord, saveMatchConfidenceThreshold } from "@/lib/storage/google-place-matches";
+import { loadGooglePlaceMatchRecords, loadMatchConfidenceThreshold, rejectedGooglePlaceIds, saveGooglePlaceMatchRecord, saveMatchConfidenceThreshold } from "@/lib/storage/google-place-matches";
 import type { Place } from "@/types/place";
 import { getGoogleApiControlSettings } from "@/lib/google-api-control";
 
@@ -44,10 +44,11 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
   const [error, setError] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
   const [pendingLowConfidence, setPendingLowConfidence] = useState<CandidateAssessment | null>(null);
-  const [threshold, setThreshold] = useState(() => loadMatchConfidenceThreshold(DEFAULT_MATCH_CONFIDENCE_THRESHOLD));
+  const [threshold, setThreshold] = useState(DEFAULT_MATCH_CONFIDENCE_THRESHOLD);
   const [apiLocked, setApiLocked] = useState(() => getGoogleApiControlSettings().locked);
 
   useEffect(() => {
+    void loadGooglePlaceMatchRecords().then(() => setThreshold(loadMatchConfidenceThreshold(DEFAULT_MATCH_CONFIDENCE_THRESHOLD))).catch(() => undefined);
     const syncLock = () => setApiLocked(getGoogleApiControlSettings().locked);
     window.addEventListener("amd-google-api-control-change", syncLock);
     return () => window.removeEventListener("amd-google-api-control-change", syncLock);
@@ -96,9 +97,9 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
     }
   }
 
-  function recordDecision(item: CandidateAssessment, decision: "linked" | "rejected" | "review") {
+  async function recordDecision(item: CandidateAssessment, decision: "linked" | "rejected" | "review") {
     if (!matchingPlace) return;
-    saveGooglePlaceMatchRecord({
+    await saveGooglePlaceMatchRecord({
       localPlaceId: matchingPlace.id,
       googlePlaceId: item.candidate.googlePlaceId,
       candidateName: item.candidate.name,
@@ -109,9 +110,9 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
     });
   }
 
-  function performLink(item: CandidateAssessment) {
+  async function performLink(item: CandidateAssessment) {
     if (!matchingPlace || item.assessment.hardBlocked) return;
-    applyLocalPlacePatch(matchingPlace, {
+    await applyLocalPlacePatch(matchingPlace, {
       googlePlaceId: item.candidate.googlePlaceId,
       googleMaps: {
         placeId: item.candidate.googlePlaceId,
@@ -120,25 +121,25 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
         longitude: item.candidate.longitude,
       },
     }, "google_place_id_manual_link");
-    recordDecision(item, "linked");
+    await recordDecision(item, "linked");
     setPendingLowConfidence(null);
     setCandidates([]);
     setMatchingPlace(null);
     onReload();
   }
 
-  function requestLink(item: CandidateAssessment) {
+  async function requestLink(item: CandidateAssessment) {
     if (item.assessment.hardBlocked) return;
     if (item.assessment.confidence < threshold) {
-      recordDecision(item, "review");
+      await recordDecision(item, "review");
       setPendingLowConfidence(item);
       return;
     }
-    performLink(item);
+    await performLink(item);
   }
 
-  function rejectCandidate(item: CandidateAssessment) {
-    recordDecision(item, "rejected");
+  async function rejectCandidate(item: CandidateAssessment) {
+    await recordDecision(item, "rejected");
     setCandidates((current) => current.filter((candidate) => candidate.candidate.googlePlaceId !== item.candidate.googlePlaceId));
   }
 
@@ -177,7 +178,7 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
 
       <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-black/10 p-3">
         <div><p className="text-[9px] font-semibold">{language === "en" ? "Low-confidence link threshold" : "เกณฑ์ Low Confidence"}</p><p className="mt-1 text-[8px] text-white/32">{language === "en" ? "Below this score, explicit confirmation is required." : "ต่ำกว่าค่านี้ต้องยืนยันซ้ำก่อน Link"}</p></div>
-        <select value={threshold} onChange={(event) => { const value = Number(event.target.value); setThreshold(value); saveMatchConfidenceThreshold(value); }} className="amd-input h-10 rounded-xl bg-[#07111f] px-3 text-[9px]">{[60, 70, 75, 80, 90].map((value) => <option key={value} value={value}>{value}%</option>)}</select>
+        <select value={threshold} onChange={(event) => { const value = Number(event.target.value); setThreshold(value); void saveMatchConfidenceThreshold(value); }} className="amd-input h-10 rounded-xl bg-[#07111f] px-3 text-[9px]">{[60, 70, 75, 80, 90].map((value) => <option key={value} value={value}>{value}%</option>)}</select>
       </div>
 
       <button type="button" data-testid="audit-place-ids" onClick={() => setAuditOpen((value) => !value)} className="amd-chip mt-3 flex min-h-11 w-full items-center justify-center gap-2 px-4 text-[9px] font-bold text-[#8ecbff]"><ShieldCheck className="h-4 w-4" />{language === "en" ? "Audit Existing Place IDs — 0 Google Requests" : "Audit Place ID ที่มีอยู่ — 0 Google Requests"}</button>

@@ -1,76 +1,15 @@
 import { PLACES as EMBEDDED_PLACES } from "@/data/places";
+import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import type { Place } from "@/types/place";
 import { prepareProvenancePatch } from "@/lib/field-provenance";
 
 export type PlaceDatabaseSource = "supabase" | "embedded";
+export type PlaceDatabaseResult = { places: Place[]; source: PlaceDatabaseSource; loadedAt: string; warning: string | null };
+export type LocalPlaceHistory = { id: string; placeId: string; placeName: string; changedAt: string; source: string; previousData: Partial<Place>; newData: Partial<Place> };
+export type ApplyLocalPlacePatchResult = { appliedFields: string[]; blockedFields: string[] };
 
-export type PlaceDatabaseResult = {
-  places: Place[];
-  source: PlaceDatabaseSource;
-  loadedAt: string;
-  warning: string | null;
-};
-
-export type LocalPlaceOverride = {
-  placeId: string;
-  patch: Partial<Place>;
-  appliedAt: string;
-  source: string;
-};
-
-export type LocalPlaceHistory = {
-  id: string;
-  placeId: string;
-  placeName: string;
-  changedAt: string;
-  source: string;
-  previousData: Partial<Place>;
-  newData: Partial<Place>;
-};
-
-const CACHE_KEY = "around-dorm-place-database-cache-v1";
-const OVERRIDES_KEY = "around-dorm-place-database-overrides-v1";
-const ADDITIONS_KEY = "around-dorm-place-database-additions-v1";
-const HISTORY_KEY = "around-dorm-place-update-history-v1";
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-
-function parseLocal<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function readClientCache(): Place[] | null {
-  const parsed = parseLocal<{ savedAt: number; places: Place[] } | null>(CACHE_KEY, null);
-  if (!parsed || !Array.isArray(parsed.places) || Date.now() - parsed.savedAt > CACHE_TTL_MS) return null;
-  return parsed.places;
-}
-
-function writeClientCache(places: Place[]) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), places })); } catch {}
-}
-
-function applyLocalDatabaseLayer(places: Place[]) {
-  const overrides = parseLocal<Record<string, LocalPlaceOverride>>(OVERRIDES_KEY, {});
-  const additions = parseLocal<Place[]>(ADDITIONS_KEY, []);
-  const base = places.map((place) => {
-    const override = overrides[place.id];
-    if (!override) return place;
-    return {
-      ...place,
-      ...override.patch,
-      source: Array.from(new Set([...(place.source || []), override.source])),
-      lastUpdated: override.appliedAt,
-    };
-  });
-  const known = new Set(base.map((place) => place.id));
-  return [...base, ...additions.filter((place) => !known.has(place.id))];
-}
+let runtimeCanonicalCache: { at: number; places: Place[] } | null = null;
+const RUNTIME_CACHE_MS = 5 * 60 * 1000;
 
 function isPlaceRecord(value: unknown): value is Place {
   if (!value || typeof value !== "object") return false;
@@ -78,108 +17,100 @@ function isPlaceRecord(value: unknown): value is Place {
   return typeof record.id === "string" && typeof record.name === "string" && typeof record.slug === "string" && Array.isArray(record.categories);
 }
 
-async function loadFromSupabase(): Promise<Place[] | null> {
-  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "") ?? "";
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  if (!baseUrl || !anonKey) return null;
+async function loadCanonicalCloudPlaces(): Promise<Place[] | null> {
+  if (runtimeCanonicalCache && Date.now() - runtimeCanonicalCache.at < RUNTIME_CACHE_MS) return runtimeCanonicalCache.places;
+  const { data, error } = await supabase.from("amd_places").select("record").order("name", { ascending: true });
+  if (error) throw error;
+  const places = (data || []).map((row: any) => row.record).filter(isPlaceRecord);
+  if (!places.length) return null;
+  runtimeCanonicalCache = { at: Date.now(), places };
+  return places;
+}
 
-  // The persistent schema stores the complete normalized Place object in `record`.
-  // This prevents SQL naming conventions from leaking into the TypeScript domain model.
-  const response = await fetch(`${baseUrl}/rest/v1/places?select=record&order=name.asc`, {
-    headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, Accept: "application/json" },
-    cache: "no-store",
+async function applyCloudUserLayer(places: Place[]) {
+  const user = await ensureCloudUser();
+  const [overridesResult, additionsResult] = await Promise.all([
+    supabase.from("amd_place_overrides").select("place_id,patch,source,applied_at").eq("user_id", user.id),
+    supabase.from("amd_place_additions").select("record").eq("user_id", user.id).order("updated_at", { ascending: false }),
+  ]);
+  if (overridesResult.error) throw overridesResult.error;
+  if (additionsResult.error) throw additionsResult.error;
+  const overrides = new Map((overridesResult.data || []).map((row: any) => [row.place_id, row]));
+  const base = places.map((place) => {
+    const override: any = overrides.get(place.id);
+    if (!override) return place;
+    return { ...place, ...(override.patch || {}), source: Array.from(new Set([...(place.source || []), override.source])), lastUpdated: override.applied_at } as Place;
   });
-  if (!response.ok) throw new Error(`Place database request failed (${response.status})`);
-  const rows = (await response.json()) as Array<{ record?: unknown }>;
-  if (!Array.isArray(rows)) return null;
-  const places = rows.map((row) => row.record).filter(isPlaceRecord);
-  // An empty/unseeded table should not blank the app; use the embedded database until seeded.
-  return places.length ? places : null;
+  const known = new Set(base.map((place) => place.id));
+  const additions = (additionsResult.data || []).map((row: any) => row.record).filter(isPlaceRecord).filter((place) => !known.has(place.id));
+  return [...base, ...additions];
 }
 
-/** Primary runtime place loader. No external POI discovery is performed here. */
 export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
+  let canonical: Place[] | null = null;
+  let source: PlaceDatabaseSource = "embedded";
+  let warning: string | null = null;
   try {
-    const remote = await loadFromSupabase();
-    if (remote) {
-      writeClientCache(remote);
-      return { places: applyLocalDatabaseLayer(remote), source: "supabase", loadedAt: new Date().toISOString(), warning: null };
-    }
+    canonical = await loadCanonicalCloudPlaces();
+    if (canonical?.length) source = "supabase";
   } catch (error) {
-    const cached = readClientCache();
-    if (cached?.length) {
-      return {
-        places: applyLocalDatabaseLayer(cached),
-        source: "supabase",
-        loadedAt: new Date().toISOString(),
-        warning: error instanceof Error ? error.message : "Database unavailable; using cache",
-      };
-    }
+    warning = error instanceof Error ? error.message : "Cloud place database unavailable";
   }
-
-  return { places: applyLocalDatabaseLayer(EMBEDDED_PLACES), source: "embedded", loadedAt: new Date().toISOString(), warning: null };
+  const base = canonical?.length ? canonical : EMBEDDED_PLACES;
+  try {
+    return { places: await applyCloudUserLayer(base), source, loadedAt: new Date().toISOString(), warning };
+  } catch (error) {
+    return { places: base, source, loadedAt: new Date().toISOString(), warning: error instanceof Error ? error.message : "Cloud profile unavailable" };
+  }
 }
 
-export type ApplyLocalPlacePatchResult = { appliedFields: string[]; blockedFields: string[] };
-
-export function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source = "manual_review"): ApplyLocalPlacePatchResult {
-  if (typeof window === "undefined") return { appliedFields: [], blockedFields: [] };
-  const overrides = parseLocal<Record<string, LocalPlaceOverride>>(OVERRIDES_KEY, {});
+export async function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source = "manual_review"): Promise<ApplyLocalPlacePatchResult> {
+  const user = await ensureCloudUser();
   const appliedAt = new Date().toISOString();
   const prepared = prepareProvenancePatch(place, patch, source, appliedAt);
   if (!prepared.appliedFields.length) return { appliedFields: [], blockedFields: prepared.blockedFields };
-
-  const guardedPatch = prepared.patch;
+  const current = await supabase.from("amd_place_overrides").select("patch").eq("user_id", user.id).eq("place_id", place.id).maybeSingle();
+  if (current.error) throw current.error;
   const previousData: Partial<Place> = {};
-  for (const key of Object.keys(guardedPatch) as Array<keyof Place>) previousData[key] = place[key] as never;
-  overrides[place.id] = { placeId: place.id, patch: { ...(overrides[place.id]?.patch || {}), ...guardedPatch }, appliedAt, source };
-  localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
-
-  const history = parseLocal<LocalPlaceHistory[]>(HISTORY_KEY, []);
-  const entry: LocalPlaceHistory = { id: `${place.id}-${Date.now()}`, placeId: place.id, placeName: place.name, changedAt: appliedAt, source, previousData, newData: guardedPatch };
-  localStorage.setItem(HISTORY_KEY, JSON.stringify([entry, ...history].slice(0, 200)));
+  for (const key of Object.keys(prepared.patch) as Array<keyof Place>) previousData[key] = place[key] as never;
+  const upsert = await supabase.from("amd_place_overrides").upsert({ user_id: user.id, place_id: place.id, patch: { ...(current.data?.patch || {}), ...prepared.patch }, source, applied_at: appliedAt }, { onConflict: "user_id,place_id" });
+  if (upsert.error) throw upsert.error;
+  const history = await supabase.from("amd_place_history").insert({ user_id: user.id, place_id: place.id, place_name: place.name, source, previous_data: previousData, new_data: prepared.patch, changed_at: appliedAt });
+  if (history.error) throw history.error;
   return { appliedFields: prepared.appliedFields, blockedFields: prepared.blockedFields };
 }
 
-export function addReviewedLocalPlace(place: Place, source = "manual") {
-  if (typeof window === "undefined") return;
-  const additions = parseLocal<Place[]>(ADDITIONS_KEY, []);
-  if (additions.some((item) => item.id === place.id)) return;
+export async function addReviewedLocalPlace(place: Place, source = "manual") {
+  const user = await ensureCloudUser();
   const now = new Date().toISOString();
-  const next: Place = {
-    ...place,
-    source: Array.from(new Set([...(place.source || []), source])),
-    sourceId: place.sourceId ?? null,
-    sourceUrl: place.sourceUrl ?? null,
-    lastChecked: place.lastChecked ?? now,
-    lastUpdated: now,
-  };
-  localStorage.setItem(ADDITIONS_KEY, JSON.stringify([next, ...additions].slice(0, 500)));
-  const history = parseLocal<LocalPlaceHistory[]>(HISTORY_KEY, []);
-  const entry: LocalPlaceHistory = { id: `${place.id}-${Date.now()}`, placeId: place.id, placeName: place.name, changedAt: now, source, previousData: {}, newData: next };
-  localStorage.setItem(HISTORY_KEY, JSON.stringify([entry, ...history].slice(0, 200)));
+  const next: Place = { ...place, source: Array.from(new Set([...(place.source || []), source])), sourceId: place.sourceId ?? null, sourceUrl: place.sourceUrl ?? null, lastChecked: place.lastChecked ?? now, lastUpdated: now };
+  const upsert = await supabase.from("amd_place_additions").upsert({ user_id: user.id, place_id: place.id, record: next, source, updated_at: now }, { onConflict: "user_id,place_id" });
+  if (upsert.error) throw upsert.error;
+  const history = await supabase.from("amd_place_history").insert({ user_id: user.id, place_id: place.id, place_name: place.name, source, previous_data: {}, new_data: next, changed_at: now });
+  if (history.error) throw history.error;
 }
 
-export function loadLocalPlaceHistory() {
-  return parseLocal<LocalPlaceHistory[]>(HISTORY_KEY, []);
+export async function loadLocalPlaceHistory(): Promise<LocalPlaceHistory[]> {
+  const user = await ensureCloudUser();
+  const { data, error } = await supabase.from("amd_place_history").select("id,place_id,place_name,source,previous_data,new_data,changed_at").eq("user_id", user.id).order("changed_at", { ascending: false }).limit(200);
+  if (error) throw error;
+  return (data || []).map((row: any) => ({ id: row.id, placeId: row.place_id, placeName: row.place_name, changedAt: row.changed_at, source: row.source, previousData: row.previous_data || {}, newData: row.new_data || {} }));
 }
 
-export function rollbackLocalPlaceHistory(entry: LocalPlaceHistory) {
-  if (typeof window === "undefined") return;
+export async function rollbackLocalPlaceHistory(entry: LocalPlaceHistory) {
+  const user = await ensureCloudUser();
   if (Object.keys(entry.previousData).length === 0) {
-    const additions = parseLocal<Place[]>(ADDITIONS_KEY, []);
-    localStorage.setItem(ADDITIONS_KEY, JSON.stringify(additions.filter((place) => place.id !== entry.placeId)));
+    const removed = await supabase.from("amd_place_additions").delete().eq("user_id", user.id).eq("place_id", entry.placeId);
+    if (removed.error) throw removed.error;
   } else {
-    const overrides = parseLocal<Record<string, LocalPlaceOverride>>(OVERRIDES_KEY, {});
-    const current = overrides[entry.placeId];
-    if (current) {
-      overrides[entry.placeId] = { ...current, patch: { ...current.patch, ...entry.previousData }, appliedAt: new Date().toISOString(), source: "rollback" };
-      localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
-    }
+    const current = await supabase.from("amd_place_overrides").select("patch").eq("user_id", user.id).eq("place_id", entry.placeId).maybeSingle();
+    if (current.error) throw current.error;
+    const nextPatch = { ...(current.data?.patch || {}), ...entry.previousData };
+    const updated = await supabase.from("amd_place_overrides").upsert({ user_id: user.id, place_id: entry.placeId, patch: nextPatch, source: "rollback", applied_at: new Date().toISOString() }, { onConflict: "user_id,place_id" });
+    if (updated.error) throw updated.error;
   }
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(loadLocalPlaceHistory().filter((item) => item.id !== entry.id)));
+  const removedHistory = await supabase.from("amd_place_history").delete().eq("user_id", user.id).eq("id", entry.id);
+  if (removedHistory.error) throw removedHistory.error;
 }
 
-export function embeddedPlaces(): Place[] {
-  return EMBEDDED_PLACES;
-}
+export function embeddedPlaces(): Place[] { return EMBEDDED_PLACES; }
