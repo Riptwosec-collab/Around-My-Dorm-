@@ -1,0 +1,18 @@
+{
+  "schema": "amd_places-v1",
+  "places": 91,
+  "batches": [
+    "batch-01.sql",
+    "batch-02.sql",
+    "batch-03.sql",
+    "batch-04.sql",
+    "batch-05.sql",
+    "batch-06.sql",
+    "batch-07.sql",
+    "batch-08.sql",
+    "batch-09.sql",
+    "batch-10.sql"
+  ],
+  "sha256": "1c247d6079f452f942f84952391da11f52b2e06689ec65c7f22968f376e6f296",
+  "generatedAt": "2026-09-09T21:30:32.925Z"
+}
