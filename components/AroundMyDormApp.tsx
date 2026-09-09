@@ -78,6 +78,7 @@ import {
 } from "@/lib/place-utils";
 import type { CategoryId, Place, SortMode } from "@/types/place";
 import { PageHeader, Toggle, SettingRow, MiniMapArtwork, LoadingCards } from "@/components/AppShellPrimitives";
+import { SmartCapabilityHub } from "@/components/SmartCapabilityHub";
 import {
   DEFAULT_COLLECTIONS,
   DEFAULT_SETTINGS,
@@ -535,6 +536,17 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 {RADII.slice(0, 4).map((radius) => <button key={radius.value} type="button" onClick={() => { setRadiusMeters(radius.value); setSettings((current) => ({ ...current, defaultRadius: radius.value })); }} className={`amd-chip shrink-0 px-4 text-[10px] font-semibold ${radiusMeters === radius.value ? "amd-chip-active" : ""}`}>{radius.label}</button>)}
                 <button type="button" onClick={() => setFilterOpen(true)} className="amd-chip shrink-0 px-4 text-[10px] font-semibold">{copy.moreFilters}</button>
               </div>
+
+              <SmartCapabilityHub
+                places={allPlaces}
+                origin={origin}
+                language={settings.language}
+                recommendationContext={recommendationContext}
+                query={query}
+                onQuery={setQuery}
+                onOpenPlace={openDetail}
+                onMapPlace={openMap}
+              />
 
               <div className="mt-7 flex items-center justify-between">
                 <div className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[20px] font-semibold">{copy.localPick}</h2></div>
