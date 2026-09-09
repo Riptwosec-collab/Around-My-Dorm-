@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - scripts/apply-cloud-only-google-control.py
+      - e2e/p0-google-api-lock.spec.ts
       - .github/workflows/cloud-only-google-control.yml
   workflow_dispatch:
 
