@@ -10,6 +10,21 @@ export type CloudAppState = {
   collections: SavedCollection[];
 };
 
+export type CloudTripPlan = {
+  id: string;
+  clientId: string;
+  title: string;
+  placeIds: string[];
+  mode: string;
+  updatedAt: string;
+};
+
+export type CloudCheckin = {
+  placeId: string;
+  crowdLevel: "quiet" | "normal" | "busy";
+  checkedInAt: string;
+};
+
 function isPlace(value: unknown): value is Place {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<Place>;
@@ -125,6 +140,62 @@ export async function recordRecentViewCloud(view: RecentView) {
 export async function submitPlaceReportCloud(input: { placeId: string; reportType: string; message?: string | null }) {
   const user = await ensureCloudUser();
   const { error } = await supabase.from("amd_reports").insert({ user_id: user.id, place_id: input.placeId, report_type: input.reportType, message: input.message || null });
+  if (error) throw error;
+}
+
+export async function saveTripPlanCloud(input: { clientId: string; title: string; placeIds: string[]; mode?: string }) {
+  const user = await ensureCloudUser();
+  const { error } = await supabase.from("amd_trip_plans").upsert({
+    user_id: user.id,
+    client_id: input.clientId,
+    title: input.title,
+    place_ids: input.placeIds.slice(0, 5),
+    mode: input.mode || "mixed",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "user_id,client_id" });
+  if (error) throw error;
+}
+
+export async function loadTripPlansCloud(): Promise<CloudTripPlan[]> {
+  const user = await ensureCloudUser();
+  const { data, error } = await supabase.from("amd_trip_plans").select("id,client_id,title,place_ids,mode,updated_at").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(20);
+  if (error) throw error;
+  return (data || []).map((row: any) => ({ id: row.id, clientId: row.client_id, title: row.title, placeIds: Array.isArray(row.place_ids) ? row.place_ids : [], mode: row.mode || "mixed", updatedAt: row.updated_at }));
+}
+
+export async function recordCrowdCheckinCloud(input: { placeId: string; crowdLevel: "quiet" | "normal" | "busy" }) {
+  const user = await ensureCloudUser();
+  const { error } = await supabase.from("amd_checkins").insert({ user_id: user.id, place_id: input.placeId, crowd_level: input.crowdLevel, checked_in_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+export async function loadMyRecentCheckinsCloud(placeIds: string[]): Promise<CloudCheckin[]> {
+  if (!placeIds.length) return [];
+  const user = await ensureCloudUser();
+  const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase.from("amd_checkins").select("place_id,crowd_level,checked_in_at").eq("user_id", user.id).in("place_id", placeIds.slice(0, 50)).gte("checked_in_at", cutoff).order("checked_in_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((row: any) => ({ placeId: row.place_id, crowdLevel: row.crowd_level, checkedInAt: row.checked_in_at }));
+}
+
+export async function saveNotificationRulesCloud(rules: Record<string, unknown>) {
+  const user = await ensureCloudUser();
+  const { error } = await supabase.from("amd_notification_rules").upsert({ user_id: user.id, rules, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) throw error;
+}
+
+export async function savePushSubscriptionCloud(subscription: PushSubscriptionJSON) {
+  const user = await ensureCloudUser();
+  const endpoint = subscription.endpoint || "";
+  if (!endpoint) throw new Error("Push subscription endpoint is missing");
+  const row = {
+    user_id: user.id,
+    endpoint,
+    p256dh: subscription.keys?.p256dh || "",
+    auth: subscription.keys?.auth || "",
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from("amd_push_subscriptions").upsert(row, { onConflict: "user_id,endpoint" });
   if (error) throw error;
 }
 
