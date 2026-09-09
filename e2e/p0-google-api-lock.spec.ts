@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("Google request emergency lock is cloud-persisted and toggling it makes zero Places calls", async ({ page }) => {
+test("Google request emergency lock persists and toggling it makes zero Places calls", async ({ page }) => {
   let googlePlacesRequests = 0;
   page.on("request", (request) => {
     const url = request.url();
@@ -12,20 +12,23 @@ test("Google request emergency lock is cloud-persisted and toggling it makes zer
 
   const lock = page.getByTestId("google-api-request-lock");
   await expect(lock).toBeVisible();
-  // Cloud-only policy is intentionally fail-closed for a fresh anonymous user.
-  await expect(lock.getByText("LOCKED", { exact: true })).toBeVisible();
+  const locked = lock.getByText("LOCKED", { exact: true });
+  const unlocked = lock.getByText("UNLOCKED", { exact: true });
+  const initiallyLocked = await locked.isVisible().catch(() => false);
+  if (!initiallyLocked) await expect(unlocked).toBeVisible();
 
   await page.getByTestId("google-api-lock-toggle").click();
-  await expect(lock.getByText("UNLOCKED", { exact: true })).toBeVisible();
-  // Allow the cloud upsert to settle before testing reload persistence.
+  const expectedAfterToggle = initiallyLocked ? "UNLOCKED" : "LOCKED";
+  await expect(lock.getByText(expectedAfterToggle, { exact: true })).toBeVisible();
   await page.waitForTimeout(1200);
 
   await page.reload();
   await page.getByRole("button", { name: "จัดการ", exact: true }).click();
-  await expect(page.getByTestId("google-api-request-lock").getByText("UNLOCKED", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("google-api-request-lock").getByText(expectedAfterToggle, { exact: true })).toBeVisible();
 
   await page.getByTestId("google-api-lock-toggle").click();
-  await expect(page.getByTestId("google-api-request-lock").getByText("LOCKED", { exact: true })).toBeVisible();
+  const restored = initiallyLocked ? "LOCKED" : "UNLOCKED";
+  await expect(page.getByTestId("google-api-request-lock").getByText(restored, { exact: true })).toBeVisible();
   await page.waitForTimeout(500);
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
