@@ -1,6 +1,8 @@
 import { discoverGooglePlaces, fetchGoogleLiveDetails, type GoogleDiscoveryCandidate, type GoogleLiveDetails } from "@/lib/google-live";
 import type { Place } from "@/types/place";
-import { assertGoogleNetworkRequestsUnlocked } from "@/lib/google-api-control";
+import { assertGoogleNetworkRequestsUnlocked, hydrateGoogleApiControlSettings } from "@/lib/google-api-control";
+import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
+import { readGoogleMemoryCache } from "@/lib/google-memory-cache";
 
 export const GOOGLE_REQUEST_MODE = "manual" as const;
 export const DEFAULT_GOOGLE_BATCH_LIMIT = 50;
@@ -8,9 +10,6 @@ export const DEFAULT_GOOGLE_DAILY_LIMIT = 300;
 export const DEFAULT_GOOGLE_MONTHLY_WARNING = 5000;
 export const GOOGLE_BATCH_LIMIT_OPTIONS = [10, 25, 50, 100] as const;
 
-const LIVE_CACHE_PREFIX = "amd-google-live-v1:";
-const LOG_KEY = "around-dorm-google-request-log-v1";
-const SESSION_ATTEMPTS_KEY = "around-dorm-google-session-attempts-v1";
 
 export type GoogleRequestType = "place_details" | "text_search" | "other";
 export type GoogleRequestStatus = "success" | "failed" | "cancelled";
@@ -101,80 +100,48 @@ function nowMs() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
-function safeReadLogs(): GoogleRequestLog[] {
-  if (typeof localStorage === "undefined") return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(LOG_KEY) || "[]") as GoogleRequestLog[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+let requestLogs: GoogleRequestLog[] = [];
+let sessionAttempts = 0;
+let logsHydrated = false;
+let logsHydratePromise: Promise<GoogleRequestLog[]> | null = null;
 
-function writeLogs(logs: GoogleRequestLog[]) {
-  if (typeof localStorage === "undefined") return;
-  try { localStorage.setItem(LOG_KEY, JSON.stringify(logs.slice(-800))); } catch {}
-}
+function safeReadLogs() { return requestLogs; }
+function writeLogs(logs: GoogleRequestLog[]) { requestLogs = logs.slice(-800); }
+function incrementSessionAttempts(amount: number) { if (amount > 0) sessionAttempts += amount; }
 
-function incrementSessionAttempts(amount: number) {
-  if (typeof sessionStorage === "undefined" || amount <= 0) return;
-  try {
-    const previous = Number(sessionStorage.getItem(SESSION_ATTEMPTS_KEY) || "0") || 0;
-    sessionStorage.setItem(SESSION_ATTEMPTS_KEY, String(previous + amount));
-  } catch {}
+export async function hydrateGoogleRequestLogs(force = false) {
+  if (process.env.NODE_ENV === "test") { logsHydrated = true; return requestLogs; }
+  if (logsHydrated && !force) return requestLogs;
+  if (logsHydratePromise && !force) return logsHydratePromise;
+  logsHydratePromise = (async () => {
+    const user = await ensureCloudUser();
+    const { data, error } = await supabase.from("amd_google_request_logs").select("id,occurred_at,request_type,place_id,place_name,google_place_id,query,status,attempted,retry_count,duration_ms,candidate_count").eq("user_id", user.id).order("occurred_at", { ascending: false }).limit(800);
+    if (error) throw error;
+    requestLogs = (data || []).map((row: any) => ({ id: row.id, timestamp: row.occurred_at, requestType: row.request_type, placeId: row.place_id || undefined, placeName: row.place_name || undefined, googlePlaceId: row.google_place_id || undefined, query: row.query || undefined, status: row.status, attempted: row.attempted || 0, retryCount: row.retry_count || 0, durationMs: row.duration_ms ?? undefined, candidateCount: row.candidate_count ?? undefined }));
+    logsHydrated = true;
+    return requestLogs;
+  })().finally(() => { logsHydratePromise = null; });
+  return logsHydratePromise;
 }
 
 export function logGoogleRequest(entry: Omit<GoogleRequestLog, "id" | "timestamp">) {
-  const log: GoogleRequestLog = {
-    ...entry,
-    id: `greq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    timestamp: new Date().toISOString(),
-  };
-  const logs = safeReadLogs();
-  logs.push(log);
-  writeLogs(logs);
-  incrementSessionAttempts(log.attempted);
+  const log: GoogleRequestLog = { ...entry, id: `greq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, timestamp: new Date().toISOString() };
+  writeLogs([...requestLogs, log]); incrementSessionAttempts(log.attempted);
+  if (process.env.NODE_ENV !== "test") void (async () => {
+    const user = await ensureCloudUser();
+    await supabase.from("amd_google_request_logs").insert({ id: log.id, user_id: user.id, occurred_at: log.timestamp, request_type: log.requestType, place_id: log.placeId || null, place_name: log.placeName || null, google_place_id: log.googlePlaceId || null, query: log.query || null, status: log.status, attempted: log.attempted, retry_count: log.retryCount, duration_ms: log.durationMs ?? null, candidate_count: log.candidateCount ?? null });
+  })().catch(() => undefined);
   return log;
 }
-
-export function getGoogleRequestLogs() {
-  return safeReadLogs().sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-}
-
+export function getGoogleRequestLogs() { return [...requestLogs].sort((a, b) => b.timestamp.localeCompare(a.timestamp)); }
 export function getGoogleRequestUsage(): GoogleRequestUsage {
-  const logs = safeReadLogs();
-  const now = new Date();
-  const today = dateKey(now);
-  const month = monthKey(now);
+  const logs = safeReadLogs(); const now = new Date(); const today = dateKey(now); const month = monthKey(now);
   const attempts = (items: GoogleRequestLog[]) => items.reduce((sum, item) => sum + (item.attempted || 0), 0);
   const byType = (type: GoogleRequestType) => attempts(logs.filter((item) => item.requestType === type));
-  let session = 0;
-  if (typeof sessionStorage !== "undefined") {
-    try { session = Number(sessionStorage.getItem(SESSION_ATTEMPTS_KEY) || "0") || 0; } catch {}
-  }
-  return {
-    session,
-    today: attempts(logs.filter((item) => item.timestamp.startsWith(today))),
-    month: attempts(logs.filter((item) => item.timestamp.startsWith(month))),
-    placeDetails: byType("place_details"),
-    textSearch: byType("text_search"),
-    other: byType("other"),
-    failedRequests: logs.filter((item) => item.status === "failed").length,
-    retries: logs.reduce((sum, item) => sum + (item.retryCount || 0), 0),
-    networkAttempts: attempts(logs),
-  };
+  return { session: sessionAttempts, today: attempts(logs.filter((item) => item.timestamp.startsWith(today))), month: attempts(logs.filter((item) => item.timestamp.startsWith(month))), placeDetails: byType("place_details"), textSearch: byType("text_search"), other: byType("other"), failedRequests: logs.filter((item) => item.status === "failed").length, retries: logs.reduce((sum, item) => sum + (item.retryCount || 0), 0), networkAttempts: attempts(logs) };
 }
-
-function readCacheEntry<T>(key: string): T | null {
-  if (typeof sessionStorage === "undefined") return null;
-  try {
-    const entry = JSON.parse(sessionStorage.getItem(LIVE_CACHE_PREFIX + key) || "null") as { expiresAt?: number; value?: T } | null;
-    if (!entry || typeof entry.expiresAt !== "number" || Date.now() > entry.expiresAt) return null;
-    return entry.value ?? null;
-  } catch {
-    return null;
-  }
-}
+function readCacheEntry<T>(key: string): T | null { return readGoogleMemoryCache<T>(key); }
+export function resetGoogleRequestMemoryForTests() { requestLogs = []; sessionAttempts = 0; logsHydrated = false; logsHydratePromise = null; }
 
 export function getCachedGooglePlaceDetails(googlePlaceId: string) {
   return readCacheEntry<GoogleLiveDetails>(`detail:${googlePlaceId}`);
@@ -269,6 +236,7 @@ export async function runGoogleRequestBatch(input: {
   onProgress?: (progress: GoogleRequestProgress) => void;
 }): Promise<GoogleRequestBatchResult> {
   if (GOOGLE_REQUEST_MODE !== "manual") throw new Error("Google request policy is not manual");
+  await Promise.all([hydrateGoogleApiControlSettings(), hydrateGoogleRequestLogs()]);
   const safetyLimit = input.safetyLimit ?? DEFAULT_GOOGLE_BATCH_LIMIT;
   const dailyLimit = input.dailyLimit ?? DEFAULT_GOOGLE_DAILY_LIMIT;
   const usage = getGoogleRequestUsage();
@@ -332,6 +300,7 @@ export async function retryFailedGoogleRequests(input: {
   onProgress?: (progress: GoogleRequestProgress) => void;
 }): Promise<GoogleRequestBatchResult> {
   if (GOOGLE_REQUEST_MODE !== "manual") throw new Error("Google request policy is not manual");
+  await Promise.all([hydrateGoogleApiControlSettings(), hydrateGoogleRequestLogs()]);
   const safetyLimit = input.safetyLimit ?? DEFAULT_GOOGLE_BATCH_LIMIT;
   const dailyLimit = input.dailyLimit ?? DEFAULT_GOOGLE_DAILY_LIMIT;
   const remainingDaily = Math.max(0, dailyLimit - getGoogleRequestUsage().today);
@@ -381,6 +350,7 @@ export async function runGoogleTextSearchRequest(input: {
   dailyLimit?: number;
 }): Promise<GoogleTextSearchResult> {
   if (GOOGLE_REQUEST_MODE !== "manual") throw new Error("Google request policy is not manual");
+  await Promise.all([hydrateGoogleApiControlSettings(), hydrateGoogleRequestLogs()]);
   const requestInput = { query: input.query, center: input.center, radiusMeters: input.radiusMeters, language: input.language };
   const fromCache = hasGoogleTextSearchCache(requestInput);
   const usage = getGoogleRequestUsage();

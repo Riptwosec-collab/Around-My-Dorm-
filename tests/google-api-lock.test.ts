@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getGoogleApiControlSettings, saveGoogleApiControlSettings } from "@/lib/google-api-control";
-import { runGoogleRequestBatch, runGoogleTextSearchRequest } from "@/lib/google-request-manager";
+import { getGoogleApiControlSettings, resetGoogleApiControlMemoryForTests, saveGoogleApiControlSettings } from "@/lib/google-api-control";
+import { resetGoogleRequestMemoryForTests, runGoogleRequestBatch, runGoogleTextSearchRequest } from "@/lib/google-request-manager";
 import type { Place } from "@/types/place";
 
 function linkedPlace(): Place {
@@ -17,8 +17,8 @@ function linkedPlace(): Place {
 
 describe("Google API hard request lock", () => {
   beforeEach(() => {
-    localStorage.clear();
-    sessionStorage.clear();
+    resetGoogleApiControlMemoryForTests();
+    resetGoogleRequestMemoryForTests();
     vi.restoreAllMocks();
   });
 

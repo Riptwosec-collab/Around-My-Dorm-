@@ -18,7 +18,7 @@ import { estimateGoogleTextSearchRequests, runGoogleTextSearchRequest } from "@/
 import type { GoogleDiscoveryCandidate } from "@/lib/google-live";
 import { loadGooglePlaceMatchRecords, loadMatchConfidenceThreshold, rejectedGooglePlaceIds, saveGooglePlaceMatchRecord, saveMatchConfidenceThreshold } from "@/lib/storage/google-place-matches";
 import type { Place } from "@/types/place";
-import { getGoogleApiControlSettings } from "@/lib/google-api-control";
+import { getGoogleApiControlSettings, hydrateGoogleApiControlSettings } from "@/lib/google-api-control";
 
 type Filter = "all" | "linked" | "missing" | "needs_review" | "possible_wrong_match" | "chain";
 type CandidateAssessment = { candidate: GoogleDiscoveryCandidate; assessment: GooglePlaceMatchAssessment };
@@ -48,7 +48,7 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
   const [apiLocked, setApiLocked] = useState(() => getGoogleApiControlSettings().locked);
 
   useEffect(() => {
-    void loadGooglePlaceMatchRecords().then(() => setThreshold(loadMatchConfidenceThreshold(DEFAULT_MATCH_CONFIDENCE_THRESHOLD))).catch(() => undefined);
+    void Promise.all([loadGooglePlaceMatchRecords(), hydrateGoogleApiControlSettings()]).then(([, control]) => { setThreshold(loadMatchConfidenceThreshold(DEFAULT_MATCH_CONFIDENCE_THRESHOLD)); setApiLocked(control.locked); }).catch(() => undefined);
     const syncLock = () => setApiLocked(getGoogleApiControlSettings().locked);
     window.addEventListener("amd-google-api-control-change", syncLock);
     return () => window.removeEventListener("amd-google-api-control-change", syncLock);

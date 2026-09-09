@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_GOOGLE_API_CONTROL, getGoogleApiControlSettings, requestUsageWarning, saveGoogleApiControlSettings, sanitizeGoogleApiControlSettings } from "@/lib/google-api-control";
-import { getGoogleRequestUsage } from "@/lib/google-request-manager";
+import { DEFAULT_GOOGLE_API_CONTROL, getGoogleApiControlSettings, requestUsageWarning, resetGoogleApiControlMemoryForTests, saveGoogleApiControlSettings, sanitizeGoogleApiControlSettings } from "@/lib/google-api-control";
+import { getGoogleRequestUsage, logGoogleRequest, resetGoogleRequestMemoryForTests } from "@/lib/google-request-manager";
 
 describe("Google API Control Center policy", () => {
   beforeEach(() => {
-    localStorage.clear();
-    sessionStorage.clear();
+    resetGoogleApiControlMemoryForTests();
+    resetGoogleRequestMemoryForTests();
   });
 
   it("defaults to bounded request controls", () => {
@@ -18,7 +18,7 @@ describe("Google API Control Center policy", () => {
   it("accepts only supported batch sizes and persists controls", () => {
     expect(sanitizeGoogleApiControlSettings({ batchLimit: 999 }).batchLimit).toBe(50);
     saveGoogleApiControlSettings({ batchLimit: 25, dailyWarningLimit: 150, monthlyWarningLimit: 1500 });
-    expect(getGoogleApiControlSettings()).toEqual({ locked: false, batchLimit: 25, dailyWarningLimit: 150, monthlyWarningLimit: 1500 });
+    expect(getGoogleApiControlSettings()).toEqual({ locked: true, batchLimit: 25, dailyWarningLimit: 150, monthlyWarningLimit: 1500 });
   });
 
   it("reports 75, 90 and 100 percent warning bands", () => {
@@ -28,13 +28,10 @@ describe("Google API Control Center policy", () => {
     expect(requestUsageWarning(100, 100).level).toBe(100);
   });
 
-  it("derives failed, retry and network counters from local logs", () => {
-    const now = new Date().toISOString();
-    localStorage.setItem("around-dorm-google-request-log-v1", JSON.stringify([
-      { id: "a", timestamp: now, requestType: "place_details", status: "success", attempted: 1, retryCount: 0 },
-      { id: "b", timestamp: now, requestType: "text_search", status: "failed", attempted: 1, retryCount: 0 },
-      { id: "c", timestamp: now, requestType: "place_details", status: "failed", attempted: 1, retryCount: 1 },
-    ]));
+  it("derives failed, retry and network counters from cloud-log memory", () => {
+    logGoogleRequest({ requestType: "place_details", status: "success", attempted: 1, retryCount: 0 });
+    logGoogleRequest({ requestType: "text_search", status: "failed", attempted: 1, retryCount: 0 });
+    logGoogleRequest({ requestType: "place_details", status: "failed", attempted: 1, retryCount: 1 });
     const usage = getGoogleRequestUsage();
     expect(usage.failedRequests).toBe(2);
     expect(usage.retries).toBe(1);

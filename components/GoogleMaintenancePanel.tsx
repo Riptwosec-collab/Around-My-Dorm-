@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, Eye, History, LoaderCircle, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { freshnessState } from "@/lib/data-governance";
 import {
@@ -9,6 +9,7 @@ import {
   GOOGLE_REQUEST_MODE,
   estimatePlaceDetailRequests,
   getGoogleRequestLogs,
+  hydrateGoogleRequestLogs,
   getGoogleRequestUsage,
   previewGoogleRequestBatch,
   retryFailedGoogleRequests,
@@ -21,7 +22,7 @@ import type { GoogleLiveDetails } from "@/lib/google-live";
 import { normalizeText } from "@/lib/place-utils";
 import type { CategoryId, Place } from "@/types/place";
 import { CATEGORIES } from "@/data/categories";
-import { getGoogleApiControlSettings, requestUsageWarning, saveGoogleApiControlSettings } from "@/lib/google-api-control";
+import { getGoogleApiControlSettings, hydrateGoogleApiControlSettings, requestUsageWarning, saveGoogleApiControlSettings } from "@/lib/google-api-control";
 import { buildRefreshQueue, recommendedRefreshPlaces } from "@/lib/refresh-priority";
 
 type ReviewField = { label: string; existing: unknown; live: unknown; risk: "review" | "high" };
@@ -97,6 +98,10 @@ export function GoogleMaintenancePanel({ places, language }: { places: Place[]; 
   const [usageVersion, setUsageVersion] = useState(0);
   const cancelRef = useRef(false);
   const runningRef = useRef(false);
+
+  useEffect(() => {
+    void Promise.all([hydrateGoogleApiControlSettings(), hydrateGoogleRequestLogs()]).then(([control]) => { setApiControl(control); setUsageVersion((value) => value + 1); }).catch(() => undefined);
+  }, []);
 
   const refreshQueue = useMemo(() => buildRefreshQueue(places), [places]);
   const recommendedPlaces = useMemo(() => recommendedRefreshPlaces(places, safetyLimit), [places, safetyLimit]);

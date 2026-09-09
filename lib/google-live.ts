@@ -1,4 +1,5 @@
 import { loadGoogleMaps } from "@/lib/google-maps";
+import { readGoogleMemoryCache, writeGoogleMemoryCache } from "@/lib/google-memory-cache";
 
 export type GoogleLiveDetails = {
   googlePlaceId: string;
@@ -34,31 +35,8 @@ export type GoogleDiscoveryCandidate = {
   fetchedAt: string;
 };
 
-type CacheEnvelope<T> = { expiresAt: number; value: T };
-
-const LIVE_CACHE_PREFIX = "amd-google-live-v1:";
-
-function readCache<T>(key: string): T | null {
-  if (typeof sessionStorage === "undefined") return null;
-  try {
-    const entry = JSON.parse(sessionStorage.getItem(LIVE_CACHE_PREFIX + key) || "null") as CacheEnvelope<T> | null;
-    if (!entry || Date.now() > entry.expiresAt) {
-      sessionStorage.removeItem(LIVE_CACHE_PREFIX + key);
-      return null;
-    }
-    return entry.value;
-  } catch {
-    return null;
-  }
-}
-
-function writeCache<T>(key: string, value: T, ttlMs: number) {
-  if (typeof sessionStorage === "undefined") return;
-  try {
-    const entry: CacheEnvelope<T> = { expiresAt: Date.now() + ttlMs, value };
-    sessionStorage.setItem(LIVE_CACHE_PREFIX + key, JSON.stringify(entry));
-  } catch {}
-}
+function readCache<T>(key: string): T | null { return readGoogleMemoryCache<T>(key); }
+function writeCache<T>(key: string, value: T, ttlMs: number) { writeGoogleMemoryCache(key, value, ttlMs); }
 
 function literalLocation(location: any) {
   if (!location) return { latitude: null, longitude: null };
