@@ -1,0 +1,61 @@
+name: Cloud Only Google Control
+
+on:
+  push:
+    paths:
+      - scripts/apply-cloud-only-google-control.py
+      - .github/workflows/cloud-only-google-control.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cloud-only-google-control
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply cloud-only Google control migration
+        run: python3 scripts/apply-cloud-only-google-control.py
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit and architecture tests
+        run: npm test
+      - name: Validate place dataset
+        run: npm run validate:data
+      - name: Production build
+        run: npm run build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Mobile and zero-accidental-Google-call E2E
+        run: npm run test:e2e
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated cloud Google control
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components lib tests
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Move Google API safety controls and logs to Supabase"
+          git push
