@@ -4,4 +4,4 @@ test("settings route persists through refresh", async ({ page }) => { await page
 test("legacy favorites redirects to saved", async ({ page }) => { await page.goto("/favorites/"); await page.waitForURL(/\/saved\/?$/); });
 test("deep-linked place route renders and survives refresh", async ({ page }) => { await page.goto("/place/rung-mah-pah/"); await expect(page.getByText("Rung-Mah-Pah").first()).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/place\/rung-mah-pah\/$/); });
 test("saved route is real", async ({ page }) => { await page.goto("/saved/"); await expect(page.getByRole("heading", { name: "บันทึก", exact: true })).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/saved\/$/); });
-test("map route is real", async ({ page }) => { await page.goto("/map/"); await expect(page.getByRole("heading", { name: "แผนที่" })).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/map\/$/); });
+test("map route is real", async ({ page }) => { await page.goto("/map/"); await expect(page.getByRole("heading", { name: "แผนที่", exact: true })).toBeVisible(); await page.reload(); await expect(page).toHaveURL(/\/map\/$/); });
