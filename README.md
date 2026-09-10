@@ -129,3 +129,14 @@ Node.js: 20 or 22
 Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and `NEXT_PUBLIC_GOOGLE_MAP_ID` in Cloudflare **Build Variables and Secrets** because `NEXT_PUBLIC_*` values are embedded during the Next.js build.
 
 If Google Maps cannot load, stored Around My Dorm place lists remain available; Google Places failures do not prevent stored place browsing.
+
+
+## Strict manual Google Maps / cost control
+
+Around My Dorm does **not** download or initialize Google Maps JavaScript API during application startup, home/explore browsing, tab changes, map-page opening, component mount, PWA resume, scrolling, or state restoration. The Map screen starts at `Google Maps Status: NOT LOADED`; only the explicit **Load Google Map** action may mount the map loader. The map screen remains mounted after the first approved load so bottom-tab changes reuse the same `google.maps.Map` instance instead of creating a new one.
+
+The app-side usage dashboard separates estimated Dynamic Map loads from explicit manual Google requests. These counters are operational estimates stored through the app request log and are **not** Google Cloud billing figures. Official usage must be checked with the **Open Google Cloud Usage** link. The local target is 10,000 Dynamic Map loads/month with warnings at 8,000, 9,000 and 9,500; `NEXT_PUBLIC_GOOGLE_MAPS_MONTHLY_SOFT_LIMIT` defaults to 9,500 and requires an explicit admin override once reached.
+
+Google Places discovery, Place Details, Place ID matching and retries remain manual-only. Every new external Places operation must show its estimated request scope and a Cancel / Send Request confirmation before execution. Normal Home, Explore, Recent, Saved/Favorites, Place Details, filters, categories and map marker interaction use Around My Dorm's stored database and must not trigger Places requests.
+
+Google Cloud configuration should restrict `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` by HTTP referrer to production/preview domains and restrict enabled APIs to the minimum required. Maps JavaScript API is the default required API. Places, Geocoding, Routes or Street View should only be enabled when their corresponding explicitly initiated admin flow is actually needed. Never hard-code browser or server API keys in source control.

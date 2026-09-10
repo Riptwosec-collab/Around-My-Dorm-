@@ -49,7 +49,7 @@ function literalLocation(location: any) {
 }
 
 async function placesLibrary(apiKey: string) {
-  await loadGoogleMaps(apiKey);
+  await loadGoogleMaps(apiKey, "manual_places_request");
   const google = window.google;
   if (!google?.maps) throw new Error("Google Maps is unavailable");
   if (google.maps.importLibrary) return google.maps.importLibrary("places");

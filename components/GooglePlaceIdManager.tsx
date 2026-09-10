@@ -46,6 +46,7 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
   const [pendingLowConfidence, setPendingLowConfidence] = useState<CandidateAssessment | null>(null);
   const [threshold, setThreshold] = useState(DEFAULT_MATCH_CONFIDENCE_THRESHOLD);
   const [apiLocked, setApiLocked] = useState(() => getGoogleApiControlSettings().locked);
+  const [searchConfirmOpen, setSearchConfirmOpen] = useState(false);
 
   useEffect(() => {
     void Promise.all([loadGooglePlaceMatchRecords(), hydrateGoogleApiControlSettings()]).then(([, control]) => { setThreshold(loadMatchConfidenceThreshold(DEFAULT_MATCH_CONFIDENCE_THRESHOLD)); setApiLocked(control.locked); }).catch(() => undefined);
@@ -76,8 +77,9 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
     setError(null);
   }
 
-  async function runMatchSearch() {
+  async function runMatchSearch(confirmed = false) {
     if (!matchingPlace || !matchCenter || !matchQuery || !apiKey || searching) return;
+    if ((estimate?.newRequests ?? 0) > 0 && !confirmed) { setSearchConfirmOpen(true); return; }
     setSearching(true);
     setError(null);
     setSearched(true);
@@ -195,7 +197,7 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
               <div className="flex items-center justify-between gap-3"><div><p className="text-[8px] font-bold text-[#8ecbff]">MATCH REQUEST ESTIMATE</p><p className="mt-1 text-[8px] text-white/35">{matchQuery}</p></div><button type="button" onClick={() => { setMatchingPlace(null); setCandidates([]); }} className="grid h-8 w-8 place-items-center rounded-full bg-white/[0.05]"><X className="h-3.5 w-3.5" /></button></div>
               <div className="mt-3 flex items-end justify-between"><div><p className="text-[8px] text-white/32">{language === "en" ? "Estimated requests" : "Estimated Requests"}</p><p className="mt-1 text-[20px] font-bold text-[#19E6FF]">{estimate?.newRequests ?? 0}</p></div><p className="text-[8px] text-white/28">{estimate?.cacheHits ? "Cache hit available" : "No request has been sent"}</p></div>
               {!matchCenter && <p className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-2 text-[8px] text-amber-100">Coordinates are required before Place ID matching.</p>}
-              <button type="button" disabled={!apiKey || apiLocked || !matchCenter || searching} onClick={() => void runMatchSearch()} className="amd-btn amd-btn-primary mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-[9px] font-bold disabled:opacity-40"><Search className="h-3.5 w-3.5" />{apiLocked ? (language === "en" ? "Google Requests Locked" : "Google Requests Locked") : searching ? (language === "en" ? "Searching…" : "กำลังค้นหา…") : estimate?.newRequests === 0 && estimate?.cacheHits ? (language === "en" ? "Use Cached Search — 0 New" : "ใช้ Cache — 0 Request ใหม่") : (language === "en" ? "Run 1 Google Search Request" : "Run 1 Google Search Request")}</button>
+              <button type="button" disabled={!apiKey || apiLocked || !matchCenter || searching} onClick={() => void runMatchSearch(false)} className="amd-btn amd-btn-primary mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-[9px] font-bold disabled:opacity-40"><Search className="h-3.5 w-3.5" />{apiLocked ? (language === "en" ? "Google Requests Locked" : "Google Requests Locked") : searching ? (language === "en" ? "Searching…" : "กำลังค้นหา…") : estimate?.newRequests === 0 && estimate?.cacheHits ? (language === "en" ? "Use Cached Search — 0 New" : "ใช้ Cache — 0 Request ใหม่") : (language === "en" ? "Run 1 Google Search Request" : "Run 1 Google Search Request")}</button>
               {error && <p className="mt-2 rounded-xl border border-rose-300/10 bg-rose-300/[0.04] p-2 text-[8px] text-rose-100">{error}</p>}
               {searched && !searching && !candidates.length && !error && <p className="mt-3 text-[8px] text-white/35">{language === "en" ? "No acceptable candidates returned." : "ไม่พบ Candidate ที่ใช้ได้"}</p>}
               <div className="mt-3 space-y-2">{candidates.map((item) => <div key={item.candidate.googlePlaceId} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3">
@@ -211,6 +213,7 @@ export function GooglePlaceIdManager({ places, language, onReload }: { places: P
         })}
       </div>
 
+      {searchConfirmOpen && matchingPlace && <div className="amd-sheet-backdrop z-[150]"><button type="button" aria-label="Close" className="absolute inset-0" onClick={() => setSearchConfirmOpen(false)} /><section className="amd-sheet amd-glass-strong relative w-full max-w-[460px] rounded-t-[30px] p-5"><p className="text-[9px] font-bold text-[#00D9FF]">MANUAL GOOGLE REQUEST</p><h3 className="mt-2 text-[18px] font-bold">Search Google Match?</h3><p className="mt-2 text-[9px] leading-5 text-white/48">Google Places Text Search will be sent for “{matchQuery}”. Estimated new requests: {estimate?.newRequests ?? 0}. This may consume Google Maps Platform quota.</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => setSearchConfirmOpen(false)} className="amd-chip min-h-11 flex-1 text-[9px]">Cancel</button><button data-testid="confirm-google-place-id-search" type="button" onClick={() => { setSearchConfirmOpen(false); void runMatchSearch(true); }} className="amd-btn amd-btn-primary flex-1 rounded-xl text-[9px] font-bold">Send Request</button></div></section></div>}
       {pendingLowConfidence && matchingPlace && <div className="amd-sheet-backdrop z-[145]"><button type="button" aria-label="Close" className="absolute inset-0" onClick={() => setPendingLowConfidence(null)} /><section className="amd-sheet amd-glass-strong relative w-full max-w-[440px] rounded-t-[30px] p-5"><div className="flex items-center gap-2 text-amber-100"><AlertTriangle className="h-5 w-5" /><p className="text-[10px] font-bold">LOW CONFIDENCE MATCH</p></div><h3 className="mt-2 text-[18px] font-bold">{pendingLowConfidence.candidate.name}</h3><p className="mt-2 text-[10px] leading-5 text-white/52">Internal confidence {pendingLowConfidence.assessment.confidence}% is below the configured {threshold}% threshold. Confirm only after manually verifying branch identity, coordinates and address.</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => setPendingLowConfidence(null)} className="amd-chip flex-1 min-h-11 text-[9px]">Cancel</button><button type="button" onClick={() => performLink(pendingLowConfidence)} className="amd-btn amd-btn-primary flex-1 rounded-xl text-[9px] font-bold">Explicitly Link</button></div></section></div>}
     </section>
   );

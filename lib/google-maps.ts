@@ -19,13 +19,23 @@ declare global {
   }
 }
 
-export function loadGoogleMaps(apiKey: string) {
+export type GoogleMapsLoadIntent = "embedded_map_user_click" | "manual_places_request";
+
+export function loadGoogleMaps(apiKey: string, intent: GoogleMapsLoadIntent) {
+  if (intent !== "embedded_map_user_click" && intent !== "manual_places_request") return Promise.reject(new Error("Explicit Google Maps load intent is required"));
   if (typeof window === "undefined") return Promise.reject(new Error("Browser only"));
   if (window.google?.maps) return Promise.resolve();
   if (window.__aroundDormMapsPromise) return window.__aroundDormMapsPromise;
 
   window.__aroundDormMapsPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-amd-google-maps-loader="true"]');
+    if (existing) {
+      existing.addEventListener("load", () => window.google?.maps ? resolve() : reject(new Error("Google Maps script loaded without maps library")), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Google Maps load failed")), { once: true });
+      return;
+    }
     const script = document.createElement("script");
+    script.dataset.amdGoogleMapsLoader = "true";
     script.async = true;
     script.defer = true;
     script.src =

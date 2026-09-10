@@ -34,6 +34,7 @@ export function GoogleDiscoverySheet({
   const [error, setError] = useState<string | null>(null);
   const [lastSummary, setLastSummary] = useState<{ networkAttempts: number; fromCache: boolean; candidates: number } | null>(null);
   const [usageVersion, setUsageVersion] = useState(0);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const estimateInput = useMemo(() => ({ query, center, radiusMeters, language }), [query, center, radiusMeters, language]);
   const estimate = useMemo(() => estimateGoogleTextSearchRequests(estimateInput), [estimateInput, usageVersion]);
@@ -45,8 +46,9 @@ export function GoogleDiscoverySheet({
     return da - db;
   }), [results, center]);
 
-  async function searchGoogle() {
+  async function searchGoogle(confirmed = false) {
     if (!query.trim() || !apiKey || loading) return;
+    if (estimate.newRequests > 0 && !confirmed) { setConfirmOpen(true); return; }
     setLoading(true);
     setError(null);
     setSearched(true);
@@ -100,13 +102,14 @@ export function GoogleDiscoverySheet({
             <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-[8px] text-white/30">Cache hits</p><p className="mt-1 text-[15px] font-bold">{estimate.cacheHits}</p></div>
           </div>
           <p className="mt-3 text-[8px] leading-4 text-white/32">{language === "en" ? "The estimate is calculated locally. No Google call occurs while you type." : "ตัวเลขนี้คำนวณในเครื่อง การพิมพ์คำค้นหาไม่เรียก Google"}</p>
-          <button type="button" disabled={loading || !query.trim() || !apiKey || (estimate.newRequests > 0 && usage.today >= DEFAULT_GOOGLE_DAILY_LIMIT)} onClick={() => void searchGoogle()} className="amd-btn amd-btn-primary mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-[10px] font-bold disabled:opacity-45">
+          <button type="button" disabled={loading || !query.trim() || !apiKey || (estimate.newRequests > 0 && usage.today >= DEFAULT_GOOGLE_DAILY_LIMIT)} onClick={() => void searchGoogle(false)} className="amd-btn amd-btn-primary mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-[10px] font-bold disabled:opacity-45">
             {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             {estimate.newRequests === 0 && estimate.cacheHits > 0 ? (language === "en" ? "Use cached result — 0 new requests" : "ใช้ Cache — 0 Request ใหม่") : (language === "en" ? "Run 1 Google Search Request" : "ส่ง 1 Google Search Request")}
           </button>
           <p className="mt-2 text-center text-[8px] text-white/28">Local usage today: {usage.today} / {DEFAULT_GOOGLE_DAILY_LIMIT}</p>
         </div>
 
+        {confirmOpen && <div className="amd-sheet-backdrop z-[165]"><button type="button" aria-label="Close" className="absolute inset-0" onClick={() => setConfirmOpen(false)} /><section className="amd-sheet amd-glass-strong relative w-full max-w-[460px] rounded-t-[30px] p-5"><p className="text-[9px] font-bold text-[#00D9FF]">MANUAL GOOGLE REQUEST</p><h3 className="mt-2 text-[18px] font-bold">Send 1 Google Places Search?</h3><p className="mt-2 text-[9px] leading-5 text-white/48">Google Places API request will be sent for “{query.trim()}” within approximately {radiusMeters} m. This operation may consume Google Maps Platform quota.</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => setConfirmOpen(false)} className="amd-chip min-h-11 flex-1 text-[9px]">Cancel</button><button data-testid="confirm-google-nearby-search" type="button" onClick={() => { setConfirmOpen(false); void searchGoogle(true); }} className="amd-btn amd-btn-primary flex-1 rounded-xl text-[9px] font-bold">Send Request</button></div></section></div>}
         {lastSummary && <div className="mt-3 rounded-xl border border-emerald-300/10 bg-emerald-300/[0.04] px-3 py-2 text-[8px] text-emerald-100">REQUEST SUMMARY • Network attempts: {lastSummary.networkAttempts} • {lastSummary.fromCache ? "cache hit" : "external request sent"} • {lastSummary.candidates} candidates returned</div>}
         {error && <p className="mt-3 rounded-xl border border-rose-300/10 bg-rose-300/[0.05] px-3 py-2 text-[9px] text-rose-100">{error}</p>}
 

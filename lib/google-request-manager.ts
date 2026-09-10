@@ -11,7 +11,7 @@ export const DEFAULT_GOOGLE_MONTHLY_WARNING = 5000;
 export const GOOGLE_BATCH_LIMIT_OPTIONS = [10, 25, 50, 100] as const;
 
 
-export type GoogleRequestType = "place_details" | "text_search" | "other";
+export type GoogleRequestType = "dynamic_map" | "place_details" | "text_search" | "geocoding" | "routes" | "street_view" | "other";
 export type GoogleRequestStatus = "success" | "failed" | "cancelled";
 
 export type GoogleRequestEstimate = {
@@ -47,12 +47,21 @@ export type GoogleRequestUsage = {
   session: number;
   today: number;
   month: number;
+  manualToday: number;
+  manualMonth: number;
+  dynamicMapToday: number;
+  dynamicMapMonth: number;
   placeDetails: number;
   textSearch: number;
+  geocoding: number;
+  routes: number;
+  streetView: number;
   other: number;
   failedRequests: number;
   retries: number;
   networkAttempts: number;
+  lastGoogleRequest: string | null;
+  lastManualDataUpdate: string | null;
 };
 
 export type GoogleRequestProgress = {
@@ -125,12 +134,15 @@ export async function hydrateGoogleRequestLogs(force = false) {
 }
 
 export function logGoogleRequest(entry: Omit<GoogleRequestLog, "id" | "timestamp">) {
-  const log: GoogleRequestLog = { ...entry, id: `greq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, timestamp: new Date().toISOString() };
-  writeLogs([...requestLogs, log]); incrementSessionAttempts(log.attempted);
+  const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : "00000000-0000-4000-8000-" + Math.random().toString(16).slice(2).padEnd(12, "0").slice(0, 12);
+  const log: GoogleRequestLog = { ...entry, id, timestamp: new Date().toISOString() };
+  writeLogs([...requestLogs, log]);
+  if (log.requestType !== "dynamic_map") incrementSessionAttempts(log.attempted);
   if (process.env.NODE_ENV !== "test") void (async () => {
     const user = await ensureCloudUser();
     await supabase.from("amd_google_request_logs").insert({ id: log.id, user_id: user.id, occurred_at: log.timestamp, request_type: log.requestType, place_id: log.placeId || null, place_name: log.placeName || null, google_place_id: log.googlePlaceId || null, query: log.query || null, status: log.status, attempted: log.attempted, retry_count: log.retryCount, duration_ms: log.durationMs ?? null, candidate_count: log.candidateCount ?? null });
   })().catch(() => undefined);
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("amd-google-usage-change", { detail: log }));
   return log;
 }
 export function getGoogleRequestLogs() { return [...requestLogs].sort((a, b) => b.timestamp.localeCompare(a.timestamp)); }
@@ -138,8 +150,38 @@ export function getGoogleRequestUsage(): GoogleRequestUsage {
   const logs = safeReadLogs(); const now = new Date(); const today = dateKey(now); const month = monthKey(now);
   const attempts = (items: GoogleRequestLog[]) => items.reduce((sum, item) => sum + (item.attempted || 0), 0);
   const byType = (type: GoogleRequestType) => attempts(logs.filter((item) => item.requestType === type));
-  return { session: sessionAttempts, today: attempts(logs.filter((item) => item.timestamp.startsWith(today))), month: attempts(logs.filter((item) => item.timestamp.startsWith(month))), placeDetails: byType("place_details"), textSearch: byType("text_search"), other: byType("other"), failedRequests: logs.filter((item) => item.status === "failed").length, retries: logs.reduce((sum, item) => sum + (item.retryCount || 0), 0), networkAttempts: attempts(logs) };
+  const dynamicLogs = logs.filter((item) => item.requestType === "dynamic_map");
+  const manualLogs = logs.filter((item) => item.requestType !== "dynamic_map");
+  const manualToday = attempts(manualLogs.filter((item) => item.timestamp.startsWith(today)));
+  const manualMonth = attempts(manualLogs.filter((item) => item.timestamp.startsWith(month)));
+  const lastGoogleRequest = [...logs].sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0]?.timestamp || null;
+  const lastManualDataUpdate = [...logs].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).find((item) => item.requestType === "place_details" || item.requestType === "text_search")?.timestamp || null;
+  return {
+    session: sessionAttempts,
+    today: manualToday,
+    month: manualMonth,
+    manualToday,
+    manualMonth,
+    dynamicMapToday: attempts(dynamicLogs.filter((item) => item.timestamp.startsWith(today))),
+    dynamicMapMonth: attempts(dynamicLogs.filter((item) => item.timestamp.startsWith(month))),
+    placeDetails: byType("place_details"),
+    textSearch: byType("text_search"),
+    geocoding: byType("geocoding"),
+    routes: byType("routes"),
+    streetView: byType("street_view"),
+    other: byType("other"),
+    failedRequests: manualLogs.filter((item) => item.status === "failed").length,
+    retries: manualLogs.reduce((sum, item) => sum + (item.retryCount || 0), 0),
+    networkAttempts: attempts(manualLogs),
+    lastGoogleRequest,
+    lastManualDataUpdate,
+  };
 }
+
+export function recordDynamicMapLoad() {
+  return logGoogleRequest({ requestType: "dynamic_map", status: "success", attempted: 1, retryCount: 0 });
+}
+
 function readCacheEntry<T>(key: string): T | null { return readGoogleMemoryCache<T>(key); }
 export function resetGoogleRequestMemoryForTests() { requestLogs = []; sessionAttempts = 0; logsHydrated = false; logsHydratePromise = null; }
 

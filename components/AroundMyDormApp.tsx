@@ -55,11 +55,10 @@ import { FoodNowSheet, type FoodNowOptions } from "@/components/FoodNowSheet";
 import { HomeLocationSheet } from "@/components/HomeLocationSheet";
 import { InfoSheet } from "@/components/InfoSheet";
 import { MapBottomSheet } from "@/components/MapBottomSheet";
-import { GoogleMapsMap } from "@/components/GoogleMapsMap";
+import { ManualGoogleMap } from "@/components/ManualGoogleMap";
 import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
 import { DataManagement } from "@/components/DataManagement";
 import { loadPlacesFromDatabase } from "@/lib/database/places";
-import { loadGoogleMaps } from "@/lib/google-maps";
 import { Toast, type ToastTone } from "@/components/Toast";
 import { getCopy } from "@/locales";
 import { addRecentView, getTodayRecentStats, resolveRecentPlaces } from "@/lib/storage/recent";
@@ -161,16 +160,6 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [pendingMapCenter, setPendingMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [showSearchArea, setShowSearchArea] = useState(false);
   const copy = getCopy(settings.language);
-
-  // Warm the Maps JavaScript bundle after first paint so opening Map does not
-  // compete with the initial UI render. This does not create a map instance.
-  useEffect(() => {
-    if (!googleMapsApiKey || typeof window === "undefined" || window.google?.maps) return;
-    const timer = window.setTimeout(() => {
-      void loadGoogleMaps(googleMapsApiKey).catch(() => {});
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [googleMapsApiKey]);
 
   // Keep bottom-tab navigation inside the mounted app. router.push here used to
   // remount the full shell, reload the database, and replay page entry animation.
@@ -571,8 +560,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
             </div>
           )}
 
-          {tab === "map" && (
-            <div className="amd-page amd-page-enter">
+          <div className={`amd-page amd-page-enter ${tab === "map" ? "" : "hidden"}`} aria-hidden={tab !== "map"}>
               <PageHeader
                 title={copy.map}
                 subtitle={copy.mapSubtitle}
@@ -590,33 +578,24 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 <button type="button" onClick={() => setFilterOpen(true)} className="amd-chip px-4 text-[18px]">•••</button>
               </div></div>
 
-              <div className="amd-map-frame relative mt-4 h-[58dvh] min-h-[450px] max-h-[720px] overflow-hidden rounded-[28px] border border-[rgba(0,140,255,.28)] bg-[#030812] shadow-[0_0_28px_rgba(0,122,255,.12)]">
-                {googleMapsApiKey ? (
-                  <>
-                    <GoogleMapsMap
-                      apiKey={googleMapsApiKey}
-                      mapId={googleMapId}
-                      places={mapVisiblePlaces}
-                      origin={origin}
-                      radiusMeters={radiusMeters}
-                      selectedPlace={selectedPlace}
-                      center={mapSearchCenter}
-                      onSelectPlace={(place) => { addRecent(place); setSelectedPlace(place); }}
-                      onMoveEnd={(next) => {
-                        const moved = Math.abs(next.lat - mapSearchCenter.lat) > 0.0008 || Math.abs(next.lng - mapSearchCenter.lng) > 0.0008;
-                        if (moved) { setPendingMapCenter(next); setShowSearchArea(true); }
-                      }}
-                      onStateChange={(state) => setMapLoadState(state)}
-                    />
-                    {mapLoadState === "loading" && <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#02060D]/55 backdrop-blur-[2px]"><div className="amd-glass flex items-center gap-2 rounded-full px-4 py-2 text-[10px] text-[var(--amd-text-2)]"><LoaderCircle className="h-4 w-4 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Loading Google Maps" : "กำลังโหลด Google Maps"}</div></div>}
-                    {mapLoadState === "error" && <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><p className="text-[12px] font-semibold">{settings.language === "en" ? "Google Maps could not load" : "โหลด Google Maps ไม่สำเร็จ"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">{settings.language === "en" ? "Stored place data remains available from the Around My Dorm database." : "ข้อมูลร้านที่บันทึกไว้ยังใช้งานได้จากฐานข้อมูล Around My Dorm"}</p></div></div>}
-                  </>
-                ) : (
-                  <div className="amd-hero-map amd-map-fallback rounded-none border-0">
-                    <MiniMapArtwork />
-                    <div className="absolute bottom-5 left-4 right-4 z-10"><div className="amd-glass-strong amd-card max-w-[320px] p-4 text-left"><div className="flex items-start gap-3"><MapIcon className="mt-0.5 h-6 w-6 shrink-0 text-[#00D9FF]" /><div><p className="text-[12px] font-semibold">{settings.language === "en" ? "Google Maps is not configured" : "ยังไม่ได้ตั้งค่า Google Maps"}</p><p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-2)]">Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY and NEXT_PUBLIC_GOOGLE_MAP_ID to Cloudflare build variables.</p></div></div></div></div>
-                  </div>
-                )}
+              <div data-google-map-state={mapLoadState} className="amd-map-frame relative mt-4 h-[58dvh] min-h-[450px] max-h-[720px] overflow-hidden rounded-[28px] border border-[rgba(0,140,255,.28)] bg-[#030812] shadow-[0_0_28px_rgba(0,122,255,.12)]">
+                <ManualGoogleMap
+                  apiKey={googleMapsApiKey}
+                  mapId={googleMapId}
+                  active={tab === "map"}
+                  places={mapVisiblePlaces}
+                  origin={origin}
+                  radiusMeters={radiusMeters}
+                  selectedPlace={selectedPlace}
+                  center={mapSearchCenter}
+                  language={settings.language}
+                  onSelectPlace={(place) => { addRecent(place); setSelectedPlace(place); }}
+                  onMoveEnd={(next) => {
+                    const moved = Math.abs(next.lat - mapSearchCenter.lat) > 0.0008 || Math.abs(next.lng - mapSearchCenter.lng) > 0.0008;
+                    if (moved) { setPendingMapCenter(next); setShowSearchArea(true); }
+                  }}
+                  onStateChange={(state) => setMapLoadState(state)}
+                />
 
                 <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2"><select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-map-control amd-map-radius-control amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none"><option value={250}>250 ม.</option><option value={500}>500 ม.</option><option value={1000}>1 กม.</option><option value={2000}>2 กม.</option><option value={3000}>3 กม.</option><option value={5000}>5 กม.</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" /></div>{showSearchArea && pendingMapCenter && <button type="button" onClick={() => { setMapSearchCenter(pendingMapCenter); setPendingMapCenter(null); setSelectedPlace(null); setShowSearchArea(false); }} className="amd-map-control amd-map-search-area amd-btn amd-btn-primary absolute left-1/2 top-[64px] z-20 min-h-11 -translate-x-1/2 rounded-full px-4 py-2 text-[10px] font-bold shadow-xl">{copy.searchThisArea}</button>}{showSearchArea && <button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="amd-map-control amd-map-discovery-control amd-btn amd-btn-glass absolute left-1/2 top-[112px] z-20 min-h-11 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-[9px] font-semibold text-[#8ecbff]">{settings.language === "en" ? "Search Google for more places" : "ค้นหา Google เพิ่มเติม"}</button>}
                 <button type="button" aria-label={settings.language === "en" ? "Use current location" : "ใช้ตำแหน่งปัจจุบัน"} onClick={handleMapLocate} className={`amd-map-control amd-location-control amd-btn amd-icon-btn absolute right-4 z-20 grid h-12 w-12 place-items-center rounded-full text-[#149CFF] transition-[bottom,transform,background-color,border-color,box-shadow] duration-[var(--motion-normal)] ${selectedPlace ? "bottom-[340px]" : "bottom-5"}`}><LocateFixed className="h-5 w-5" /></button>
@@ -625,7 +604,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 {selectedPlace && <MapBottomSheet place={selectedPlace} language={settings.language} onDetails={() => openDetail(selectedPlace)} />}
               </div>
             </div>
-          )}
+
 
           {tab === "favorites" && (
             <div className="amd-page amd-page-enter">

@@ -10,6 +10,8 @@ type Point = { lat: number; lng: number };
 type Props = {
   apiKey: string;
   mapId: string;
+  active: boolean;
+  manualLoadConfirmed: boolean;
   places: Place[];
   origin: Point;
   radiusMeters: number;
@@ -17,7 +19,8 @@ type Props = {
   center: Point;
   onSelectPlace: (place: Place) => void;
   onMoveEnd: (center: Point) => void;
-  onStateChange?: (state: "loading" | "ready" | "error") => void;
+  onStateChange?: (state: "loading" | "ready" | "error" | "idle" | "missing") => void;
+  onInitialized?: () => void;
 };
 
 type Cluster = {
@@ -164,6 +167,8 @@ function clusterPlaces(places: Place[], zoom: number, selectedId: string | null)
 export function GoogleMapsMap({
   apiKey,
   mapId,
+  active,
+  manualLoadConfirmed,
   places,
   origin,
   radiusMeters,
@@ -172,6 +177,7 @@ export function GoogleMapsMap({
   onSelectPlace,
   onMoveEnd,
   onStateChange,
+  onInitialized,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -273,12 +279,12 @@ export function GoogleMapsMap({
   }, [clearBusinessMarkers]);
 
   useEffect(() => {
-    if (!apiKey || !containerRef.current) return;
+    if (!apiKey || !containerRef.current || !manualLoadConfirmed) return;
     let cancelled = false;
     const mapsAlreadyLoaded = Boolean(window.google?.maps);
     if (!mapsAlreadyLoaded) onStateChange?.("loading");
 
-    void loadGoogleMaps(apiKey)
+    void loadGoogleMaps(apiKey, "embedded_map_user_click")
       .then(async () => {
         if (cancelled || !containerRef.current || !window.google?.maps) return;
         const google = window.google;
@@ -353,6 +359,7 @@ export function GoogleMapsMap({
           }),
         );
         onStateChange?.("ready");
+        onInitialized?.();
       })
       .catch(() => onStateChange?.("error"));
 
@@ -371,7 +378,7 @@ export function GoogleMapsMap({
       radiusRef.current = null;
       mapRef.current = null;
     };
-  }, [apiKey, mapId]);
+  }, [apiKey, mapId, manualLoadConfirmed]);
 
   useEffect(() => {
     if (!readyRef.current) return;
@@ -406,6 +413,16 @@ export function GoogleMapsMap({
     suppressIdleRef.current = true;
     map.panTo(center);
   }, [center, selectedPlace]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!active || !map || !readyRef.current || !window.google?.maps) return;
+    const frame = window.requestAnimationFrame(() => {
+      try { window.google.maps.event?.trigger?.(map, "resize"); } catch {}
+      if (!selectedRef.current) map.panTo?.(center);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, center]);
 
   return <div ref={containerRef} className="amd-google-map-canvas absolute inset-0 bg-[#02060D]" aria-label="Around My Dorm Google map" />;
 }
