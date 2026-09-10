@@ -21,6 +21,7 @@ on:
       - tests/google-manual-request-architecture.test.ts
       - e2e/manual-google-maps.spec.ts
       - e2e/map-functional.spec.ts
+      - e2e/routing.spec.ts
       - .env.example
       - README.md
   workflow_dispatch:
@@ -78,7 +79,7 @@ jobs:
             lib/google-map-cost-control.ts lib/google-maps.ts lib/google-live.ts \
             lib/google-request-manager.ts tests/google-map-cost-control.test.ts \
             tests/google-manual-request-architecture.test.ts \
-            e2e/manual-google-maps.spec.ts e2e/map-functional.spec.ts
+            e2e/manual-google-maps.spec.ts e2e/map-functional.spec.ts e2e/routing.spec.ts
           if git diff --cached --quiet; then
             echo "No migration diff"
             exit 0
