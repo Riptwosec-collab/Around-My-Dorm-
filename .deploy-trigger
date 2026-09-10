@@ -1,3 +1,3 @@
 Cloudflare deploy trigger
-2026-09-08
-Navigation performance fix: no-remount tabs, reduced mobile blur, warmed Google Maps
+2026-09-10
+Strict manual Google Maps: zero auto-load, manual Places confirmation, usage dashboard, monthly soft limit 9500
