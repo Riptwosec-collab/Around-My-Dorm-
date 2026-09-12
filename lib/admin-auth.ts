@@ -35,6 +35,32 @@ export async function requireAdminSessionToken(): Promise<string> {
   return session.access_token;
 }
 
+export async function signInAdminWithPassword(email: string, password: string): Promise<AdminAccessState> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail || !normalizedEmail.includes("@")) throw new Error("Select a valid admin email address");
+  if (!password) throw new Error("Enter the admin password");
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: normalizedEmail,
+    password,
+  });
+  if (error) throw error;
+
+  if (!isAuthorizedAdmin(data.user)) {
+    await supabase.auth.signOut();
+    resetCloudUserPromise();
+    throw new Error("This Supabase account is not authorized as an Around My Dorm admin");
+  }
+
+  resetCloudUserPromise();
+  return {
+    authenticated: true,
+    admin: true,
+    anonymous: false,
+    email: data.user.email ?? normalizedEmail,
+  };
+}
+
 export async function requestAdminMagicLink(email: string): Promise<void> {
   const normalized = email.trim();
   if (!normalized || !normalized.includes("@")) throw new Error("Enter a valid admin email address");
