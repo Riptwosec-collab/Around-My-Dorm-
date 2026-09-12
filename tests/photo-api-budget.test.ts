@@ -94,13 +94,12 @@ describe("app-tracked Google API monthly budget", () => {
     expect(dashboard).toContain("budget.breakdown.placeDetails");
   });
 
-  it("refreshes the project-wide counter only after the request log is persisted", () => {
-    const manager = read("lib/google-request-manager.ts");
+  it("keeps local cards immediate while repeatedly reconciling persisted project usage", () => {
     const dashboard = read("components/GoogleMapsUsageDashboard.tsx");
-    expect(manager).toContain("persisted: false");
-    expect(manager).toContain("persisted: true");
-    expect(dashboard).toContain("detail?.persisted !== false");
+    expect(dashboard).toContain("hydrateGoogleRequestLogs(true)");
     expect(dashboard).toContain("hydrateGoogleApiBudgetSummary(true)");
+    expect(dashboard).toContain("window.setTimeout");
+    expect(dashboard).toContain("window.setInterval");
   });
 
   it("marks dedicated photo accounting events as already persisted", () => {
