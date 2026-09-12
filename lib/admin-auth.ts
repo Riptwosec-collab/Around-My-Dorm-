@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/cloud/supabase";
+import { resetCloudUserPromise, supabase } from "@/lib/cloud/supabase";
 
 export type AdminAccessState = {
   authenticated: boolean;
@@ -51,4 +51,5 @@ export async function requestAdminMagicLink(email: string): Promise<void> {
 export async function signOutAdmin(): Promise<void> {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+  resetCloudUserPromise();
 }
