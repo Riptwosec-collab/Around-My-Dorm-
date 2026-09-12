@@ -29,15 +29,38 @@ jobs:
           node <<'NODE'
           const { chromium } = require('@playwright/test');
 
+          function redact(url) {
+            return url
+              .replace(/([?&]key=)[^&]+/ig, '$1[REDACTED]')
+              .replace(/(apikey=)[^&]+/ig, '$1[REDACTED]');
+          }
+
           (async () => {
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage();
             const googleRequests = [];
+            const supabaseEvents = [];
+            const consoleEvents = [];
+
+            page.on('console', (msg) => {
+              if (['error', 'warning'].includes(msg.type())) consoleEvents.push(`${msg.type()}: ${msg.text()}`);
+            });
+            page.on('pageerror', (error) => consoleEvents.push(`pageerror: ${error.message}`));
             page.on('request', (request) => {
               const url = request.url();
               if (url.includes('maps.googleapis.com') || url.includes('places.googleapis.com')) {
-                googleRequests.push(url.replace(/([?&]key=)[^&]+/i, '$1[REDACTED]'));
+                googleRequests.push(`${request.method()} ${redact(url)}`);
               }
+            });
+            page.on('response', async (response) => {
+              const url = response.url();
+              if (!url.includes('supabase.co/rest/v1/')) return;
+              if (!/amd_google_(enrichment_diagnostics|public_links|public_cache)/.test(url)) return;
+              let body = '';
+              if (response.status() >= 400) {
+                try { body = (await response.text()).slice(0, 2000); } catch {}
+              }
+              supabaseEvents.push(`${response.status()} ${response.request().method()} ${redact(url)}${body ? ` BODY=${body}` : ''}`);
             });
 
             await page.goto(`${process.env.TARGET_URL}/settings/`, { waitUntil: 'networkidle', timeout: 60000 });
@@ -46,17 +69,22 @@ jobs:
             await page.getByTestId('google-cloud-enrich-all').click();
             await page.getByTestId('confirm-google-cloud-enrich-all').click();
 
-            // The production component only exposes cancellation while running.
-            // Click it as soon as it appears so this probe processes at most the
-            // current shop/request path rather than the full 91-shop batch.
             const cancel = page.getByRole('button', { name: /ยกเลิกหลัง Request ปัจจุบัน|Cancel after current request/ });
             await cancel.waitFor({ state: 'visible', timeout: 15000 });
-            await cancel.click();
 
-            await page.waitForFunction(() => {
-              const el = document.querySelector('[data-testid="google-cloud-auto-enrichment"]');
-              return el && /ล้มเหลว|failed|ยกเลิกแล้ว|Cancelled|Systemic Google error/i.test(el.textContent || '');
-            }, { timeout: 60000 }).catch(() => {});
+            // Allow the confirmed flow to cross the diagnostics/shared-row boundary
+            // and enter the first shop. This is still a bounded one-shop probe.
+            await Promise.race([
+              page.waitForFunction(() => {
+                const el = document.querySelector('[data-testid="google-cloud-auto-enrichment"]');
+                const text = el?.textContent || '';
+                return /1\s*\/\s*91|Latest error:|Systemic Google error|ร้าน • Google/.test(text);
+              }, { timeout: 12000 }).catch(() => null),
+              page.waitForTimeout(8000),
+            ]);
+
+            await cancel.click().catch(() => {});
+            await page.waitForTimeout(4000);
 
             const text = await page.getByTestId('google-cloud-auto-enrichment').innerText();
             console.log('=== COMPONENT OUTPUT ===');
@@ -64,7 +92,11 @@ jobs:
             console.log('=== GOOGLE REQUEST COUNT ===');
             console.log(googleRequests.length);
             console.log('=== GOOGLE REQUEST URLS (KEY REDACTED) ===');
-            for (const url of googleRequests.slice(0, 10)) console.log(url);
+            for (const value of googleRequests.slice(0, 20)) console.log(value);
+            console.log('=== SUPABASE GOOGLE TABLE RESPONSES ===');
+            for (const value of supabaseEvents.slice(0, 50)) console.log(value);
+            console.log('=== BROWSER ERRORS/WARNINGS ===');
+            for (const value of consoleEvents.slice(0, 50)) console.log(value.replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED_GOOGLE_API_KEY]'));
 
             await browser.close();
           })().catch((error) => {
