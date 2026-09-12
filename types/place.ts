@@ -295,6 +295,20 @@ export type Place = {
   notes: string | null;
 };
 
+export type HomeOrigin = {
+  id: "baan-supha-apartment";
+  nameTh: "บ้านสุภาอพาร์ทเม้นต์";
+  nameEn: string | null;
+  googlePlaceId: string | null;
+  formattedAddress: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  googleMapsUrl: string | null;
+  resolvedAt: string | null;
+  verifiedAt: string | null;
+  source: "google_places" | "manual_verified" | "unresolved";
+};
+
 export type SortMode =
   | "recommended"
   | "distanceAsc"
