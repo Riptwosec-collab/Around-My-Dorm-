@@ -24,11 +24,9 @@ replace_once(
     '    const url = googleMapsPlaceUrl(place);',
     "share maps fallback",
 )
-replace_once(
-    'href={googleMapsDirectionsUrl(place)}',
-    'href={googleMapsDirectionsFallbackUrl(place)}',
-    "navigate maps fallback",
-)
+# Every remaining legacy directions helper in this detail must use the stronger
+# Place ID/coordinate/text fallback helper before the old import is removed.
+text = text.replace('googleMapsDirectionsUrl(place)', 'googleMapsDirectionsFallbackUrl(place)')
 replace_once(
     '            <GoogleLiveEnrichment place={place} language={language} />\n',
     '            <GoogleLiveEnrichment place={place} language={language} />\n\n            <PlaceGoogleDataPanel place={place} language={language} />\n',
