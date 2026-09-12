@@ -65,51 +65,21 @@ async function finalizeAdminUser(user: User | null, fallbackEmail: string): Prom
   if (!user || !isAuthorizedAdmin(user)) {
     await supabase.auth.signOut();
     resetCloudUserPromise();
-    if (user && isAllowlistedAdminEmail(user.email) && !hasConfirmedEmail(user)) {
-      throw new Error("ADMIN_EMAIL_CONFIRMATION_REQUIRED");
-    }
     throw new Error("This Supabase account is not authorized as an Around My Dorm admin");
   }
   resetCloudUserPromise();
   return accessState(user, fallbackEmail);
 }
 
-export async function signInOrCreateAdminWithPassword(email: string, password: string): Promise<AdminAccessState> {
+export async function signInAdminWithPassword(email: string, password: string): Promise<AdminAccessState> {
   const normalized = normalizedEmail(email);
   if (!normalized || !normalized.includes("@")) throw new Error("Select a valid admin email address");
   if (!isAllowlistedAdminEmail(normalized)) throw new Error("This email is not in the Around My Dorm admin allowlist");
   if (!password) throw new Error("Enter the admin password");
 
-  const signedIn = await supabase.auth.signInWithPassword({ email: normalized, password });
-  if (!signedIn.error && signedIn.data.user) {
-    return finalizeAdminUser(signedIn.data.user, normalized);
-  }
-
-  const loginMessage = signedIn.error?.message || "Admin sign-in failed";
-  const canBootstrap = /invalid login credentials|invalid credentials|user not found/i.test(loginMessage);
-  if (!canBootstrap) throw signedIn.error || new Error(loginMessage);
-
-  const created = await supabase.auth.signUp({
-    email: normalized,
-    password,
-    options: {
-      emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-    },
-  });
-  if (created.error) {
-    throw new Error(`Admin sign-in failed: ${loginMessage}. First-time account setup also failed: ${created.error.message}`);
-  }
-
-  if (!created.data.session || !created.data.user) {
-    resetCloudUserPromise();
-    throw new Error("ADMIN_EMAIL_CONFIRMATION_REQUIRED");
-  }
-
-  return finalizeAdminUser(created.data.user, normalized);
-}
-
-export async function signInAdminWithPassword(email: string, password: string): Promise<AdminAccessState> {
-  return signInOrCreateAdminWithPassword(email, password);
+  const { data, error } = await supabase.auth.signInWithPassword({ email: normalized, password });
+  if (error) throw error;
+  return finalizeAdminUser(data.user, normalized);
 }
 
 export async function requestAdminMagicLink(email: string): Promise<void> {
@@ -119,7 +89,7 @@ export async function requestAdminMagicLink(email: string): Promise<void> {
   const { error } = await supabase.auth.signInWithOtp({
     email: normalized,
     options: {
-      shouldCreateUser: true,
+      shouldCreateUser: false,
       emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
     },
   });
