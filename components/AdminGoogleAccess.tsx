@@ -7,7 +7,7 @@ import { supabase } from "@/lib/cloud/supabase";
 import {
   ADMIN_EMAIL_ALLOWLIST,
   getAdminAccessState,
-  signInOrCreateAdminWithPassword,
+  signInAdminWithPassword,
   signOutAdmin,
   type AdminAccessState,
 } from "@/lib/admin-auth";
@@ -17,13 +17,11 @@ const EMPTY: AdminAccessState = { authenticated: false, admin: false, anonymous:
 
 function friendlyAuthMessage(error: unknown, language: "th" | "en") {
   const message = error instanceof Error ? error.message : "Admin login failed";
-  if (message === "ADMIN_EMAIL_CONFIRMATION_REQUIRED") {
-    return language === "en"
-      ? "First-time admin account created. Confirm the email from Supabase, then return and sign in again. If this account already existed, verify the password."
-      : "สร้างบัญชี Admin ครั้งแรกแล้ว ให้เปิดอีเมลจาก Supabase เพื่อยืนยันบัญชี จากนั้นกลับมาเข้าสู่ระบบอีกครั้ง หากบัญชีมีอยู่แล้วให้ตรวจรหัสผ่าน";
-  }
   if (/invalid login credentials|invalid credentials/i.test(message)) {
     return language === "en" ? "Invalid admin password." : "รหัสผ่าน Admin ไม่ถูกต้อง";
+  }
+  if (/email not confirmed/i.test(message)) {
+    return language === "en" ? "This admin email has not been confirmed yet." : "อีเมล Admin นี้ยังไม่ได้ยืนยัน";
   }
   return message;
 }
@@ -74,7 +72,7 @@ export function AdminGoogleAccess({
     setBusy(true);
     setMessage(null);
     try {
-      const next = await signInOrCreateAdminWithPassword(email, password);
+      const next = await signInAdminWithPassword(email, password);
       setState(next);
       onStateChange?.(next);
       setPassword("");
@@ -92,6 +90,7 @@ export function AdminGoogleAccess({
       await signOutAdmin();
       await refresh();
       setPassword("");
+      setMessage(null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Sign out failed");
     } finally {
@@ -109,7 +108,7 @@ export function AdminGoogleAccess({
             <p className="mt-1 text-[9px] leading-5 text-white/48">
               {state.admin
                 ? language === "en" ? `Authorized admin${state.email ? ` • ${state.email}` : ""}` : `ยืนยันสิทธิ์ Admin แล้ว${state.email ? ` • ${state.email}` : ""}`
-                : language === "en" ? "Choose the admin account and enter its Supabase Auth password. The first successful setup can create the account automatically." : "เลือกบัญชี Admin แล้วกรอกรหัสผ่าน Supabase Auth หากยังไม่มีบัญชี ระบบจะสร้างบัญชีครั้งแรกให้อัตโนมัติ"}
+                : language === "en" ? "Choose the admin account and enter its Supabase Auth password." : "เลือกบัญชี Admin และกรอกรหัสผ่าน Supabase Auth"}
             </p>
           </div>
         </div>
@@ -134,7 +133,7 @@ export function AdminGoogleAccess({
               className="amd-input h-11 w-full rounded-xl px-3 text-[10px]"
             />
             <button type="button" disabled={busy || !password} onClick={() => void login()} className="amd-btn amd-btn-primary min-h-11 rounded-xl px-4 text-[9px] font-bold disabled:opacity-50">
-              <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />{busy ? (language === "en" ? "Signing in…" : "กำลังเข้า…") : (language === "en" ? "Login / Activate" : "เข้าสู่ระบบ / เปิดใช้")}</span>
+              <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />{busy ? (language === "en" ? "Signing in…" : "กำลังเข้าสู่ระบบ…") : (language === "en" ? "Login" : "เข้าสู่ระบบ")}</span>
             </button>
           </div>
         )}
