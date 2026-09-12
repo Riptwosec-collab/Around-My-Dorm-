@@ -44,7 +44,7 @@ async function applyCloudUserLayer(places: Place[]) {
   });
   const known = new Set(base.map((place) => place.id));
   const additions = (additionsResult.data || []).map((row: any) => row.record).filter(isPlaceRecord).filter((place) => !known.has(place.id));
-  return [...base, ...additions];
+  return applyGoogleCloudPlaceLayer([...base, ...additions]);
 }
 
 export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
