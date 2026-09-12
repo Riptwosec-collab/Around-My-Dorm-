@@ -23,6 +23,17 @@ export function GoogleMapsUsageDashboard({ language }: { language: "th" | "en" }
 
   useEffect(() => {
     let active = true;
+    let reconcileTimer: number | null = null;
+
+    const refreshPersistedUsage = () => {
+      void hydrateGoogleRequestLogs(true)
+        .then(() => { if (active) setVersion((value) => value + 1); })
+        .catch(() => undefined);
+      void hydrateGoogleApiBudgetSummary(true)
+        .then((next) => { if (active) setBudget(next); })
+        .catch(() => undefined);
+    };
+
     void hydrateGoogleRequestLogs().finally(() => {
       if (active) setVersion((value) => value + 1);
     });
@@ -31,14 +42,20 @@ export function GoogleMapsUsageDashboard({ language }: { language: "th" | "en" }
       .catch(() => undefined);
 
     const sync = () => {
+      // In-memory request logs update immediately, so browser-today cards can repaint now.
       setVersion((value) => value + 1);
-      void hydrateGoogleApiBudgetSummary(true)
-        .then((next) => { if (active) setBudget(next); })
-        .catch(() => undefined);
+      // Some request paths emit before their Supabase insert settles. Reconcile shortly
+      // afterwards, then keep a light foreground fallback for project-wide/cross-tab usage.
+      if (reconcileTimer !== null) window.clearTimeout(reconcileTimer);
+      reconcileTimer = window.setTimeout(refreshPersistedUsage, 350);
     };
+
+    const liveInterval = window.setInterval(refreshPersistedUsage, 3000);
     window.addEventListener("amd-google-usage-change", sync);
     return () => {
       active = false;
+      if (reconcileTimer !== null) window.clearTimeout(reconcileTimer);
+      window.clearInterval(liveInterval);
       window.removeEventListener("amd-google-usage-change", sync);
     };
   }, []);
@@ -60,7 +77,7 @@ export function GoogleMapsUsageDashboard({ language }: { language: "th" | "en" }
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2"><Gauge className="h-5 w-5 text-[#00D9FF]" /><p className="text-[11px] font-bold">GOOGLE MAPS USAGE</p></div>
-          <p className="mt-1 text-[8px] leading-4 text-white/38">{language === "en" ? "Admin project-wide app estimate — not the official Google billing counter." : "ตัวนับโดยประมาณทั้งโปรเจกต์สำหรับ Admin — ไม่ใช่ตัวเลข Billing อย่างเป็นทางการของ Google"}</p>
+          <p className="mt-1 text-[8px] leading-4 text-white/38">{language === "en" ? "Admin project-wide app estimate — live sync, not the official Google billing counter." : "ตัวนับโดยประมาณทั้งโปรเจกต์สำหรับ Admin — ซิงก์สด ไม่ใช่ตัวเลข Billing อย่างเป็นทางการของ Google"}</p>
         </div>
         <ShieldCheck className="h-5 w-5 text-[#00E5C3]" />
       </div>
@@ -79,7 +96,7 @@ export function GoogleMapsUsageDashboard({ language }: { language: "th" | "en" }
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full bg-white/55 transition-[width]" style={{ width: `${Math.min(100, budgetState.percent)}%` }} /></div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[8px] leading-4 text-white/35">
-          <span>App-tracked estimate</span>
+          <span>App-tracked estimate • live sync ≤ 3s</span>
           <span>{language === "en" ? "Project-wide monthly cycle • Asia/Bangkok" : "รอบรายเดือนทั้งโปรเจกต์ • Asia/Bangkok"}</span>
         </div>
       </div>

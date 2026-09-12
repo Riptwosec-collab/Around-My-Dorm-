@@ -16,6 +16,14 @@ export type GoogleTransientPhoto = {
   fetchedAt: string;
 };
 
+function googlePhotoFailureText(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error || "Unknown Google photo error");
+  if (/REQUEST_DENIED|ApiNotActivatedMapError|not authorized|has not been used|disabled|permission|referer|referrer/i.test(raw)) {
+    return `${raw} — Enable Places API (New), then allow it in this browser key's API restrictions and allow the deployed site in Website/HTTP referrer restrictions.`;
+  }
+  return `${raw} — Verify Places API (New) is enabled and this browser key's API restrictions / Website referrer restrictions allow the deployed site.`;
+}
+
 /**
  * Pure mapper. The returned URI is display-only and must not be persisted.
  * Google photo URIs are intentionally excluded from Supabase/local storage.
@@ -54,14 +62,22 @@ export function mapGooglePhoto(photo: any): GoogleTransientPhoto | null {
 export async function fetchGoogleTransientPhoto(apiKey: string, googlePlaceId: string): Promise<GoogleTransientPhoto | null> {
   if (!apiKey) throw new Error("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing");
   if (!googlePlaceId) return null;
-  await loadGoogleMaps(apiKey, "manual_places_request");
-  const maps = window.google?.maps;
-  if (!maps) throw new Error("Google Maps is unavailable");
-  const library: any = maps.importLibrary ? await maps.importLibrary("places") : maps.places;
-  const PlaceCtor = library?.Place || maps.places?.Place;
-  if (!PlaceCtor) throw new Error("Google Place Photos is unavailable");
-  const place = new PlaceCtor({ id: googlePlaceId });
-  await place.fetchFields({ fields: ["photos"] });
-  const photo = Array.isArray(place.photos) ? place.photos[0] : null;
-  return mapGooglePhoto(photo);
+
+  try {
+    await loadGoogleMaps(apiKey, "manual_places_request");
+    const maps = window.google?.maps;
+    if (!maps) throw new Error("Google Maps is unavailable");
+    const library: any = maps.importLibrary ? await maps.importLibrary("places") : maps.places;
+    const PlaceCtor = library?.Place || maps.places?.Place;
+    if (!PlaceCtor) throw new Error("Google Place Photos is unavailable");
+    const place = new PlaceCtor({ id: googlePlaceId, requestedLanguage: "th", requestedRegion: "TH" });
+    await place.fetchFields({ fields: ["photos"] });
+    const photo = Array.isArray(place.photos) ? place.photos[0] : null;
+    if (!photo) return null;
+    const mapped = mapGooglePhoto(photo);
+    if (!mapped) throw new Error("Google returned photo metadata without a usable display URI");
+    return mapped;
+  } catch (error) {
+    throw new Error(`Google Place Photos failed: ${googlePhotoFailureText(error)}`);
+  }
 }

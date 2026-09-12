@@ -27,6 +27,33 @@ describe("manual Google photo runtime publishing", () => {
     expect(card).not.toContain("fallbackLabel={copy.unknownData}");
     expect(detail).not.toContain("fallbackLabel={copy.unknownData}");
   });
+
+  it("tracks every bulk photo request and preserves the first useful Google error", () => {
+    const bulk = read("components/GoogleBulkPhotoRuntimeControl.tsx");
+    expect(bulk).toContain("recordTrackedGoogleRequest");
+    expect(bulk).toContain('requestType: "place_photo"');
+    expect(bulk).toContain('let requestStatus: "success" | "failed" = "success"');
+    expect(bulk).toContain('requestStatus = "failed"');
+    expect(bulk).toContain("status: requestStatus");
+    expect(bulk).toContain("firstError");
+  });
+
+  it("uses every shared Google Place ID for manual photo preview without auto-verifying review candidates", () => {
+    const bulk = read("components/GoogleBulkPhotoRuntimeControl.tsx");
+    expect(bulk).toContain('from("amd_google_public_links")');
+    expect(bulk).toContain('select("place_id,google_place_id,status,confidence")');
+    expect(bulk).toContain('status: "linked" | "review"');
+    expect(bulk).toContain("photoGooglePlaceId");
+    expect(bulk).toContain("reviewPhotoCandidates");
+    expect(bulk).not.toContain('.update({ status: "linked" })');
+  });
+
+  it("turns raw photo failures into actionable Places API diagnostics", () => {
+    const photo = read("lib/google-transient-photo.ts");
+    expect(photo).toContain("Google Place Photos failed:");
+    expect(photo).toContain("Places API (New)");
+    expect(photo).toContain("API restrictions");
+  });
 });
 
 describe("app-tracked Google API monthly budget", () => {
@@ -76,5 +103,18 @@ describe("app-tracked Google API monthly budget", () => {
     expect(dashboard).not.toContain("Math.max(usage.routes");
     expect(dashboard).toContain("budget.breakdown.textSearch");
     expect(dashboard).toContain("budget.breakdown.placeDetails");
+  });
+
+  it("keeps local cards immediate while repeatedly reconciling persisted project usage", () => {
+    const dashboard = read("components/GoogleMapsUsageDashboard.tsx");
+    expect(dashboard).toContain("hydrateGoogleRequestLogs(true)");
+    expect(dashboard).toContain("hydrateGoogleApiBudgetSummary(true)");
+    expect(dashboard).toContain("window.setTimeout");
+    expect(dashboard).toContain("window.setInterval");
+  });
+
+  it("marks dedicated photo accounting events as already persisted", () => {
+    const budget = read("lib/google-api-budget.ts");
+    expect(budget).toContain("persisted: true");
   });
 });

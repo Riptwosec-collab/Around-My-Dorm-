@@ -172,7 +172,15 @@ export async function recordTrackedGoogleRequest(input: TrackedGoogleRequestInpu
   if (error) throw error;
   currentSummary = null;
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("amd-google-usage-change", { detail: { requestType: input.requestType, occurredAt } }));
+    window.dispatchEvent(new CustomEvent("amd-google-usage-change", {
+      detail: {
+        requestType: input.requestType,
+        occurredAt,
+        persisted: true,
+        placeId: input.placeId || null,
+        status: input.status,
+      },
+    }));
   }
 }
 
