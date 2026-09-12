@@ -3,6 +3,7 @@ import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import type { Place } from "@/types/place";
 import { prepareProvenancePatch } from "@/lib/field-provenance";
 import { applyGoogleCloudPlaceLayer } from "@/lib/google-cloud-enrichment";
+import { loadRouteCache, mergeRouteCacheIntoPlaces } from "@/lib/route-cache";
 
 export type PlaceDatabaseSource = "supabase" | "embedded";
 export type PlaceDatabaseResult = { places: Place[]; source: PlaceDatabaseSource; loadedAt: string; warning: string | null };
@@ -44,7 +45,14 @@ async function applyCloudUserLayer(places: Place[]) {
   });
   const known = new Set(base.map((place) => place.id));
   const additions = (additionsResult.data || []).map((row: any) => row.record).filter(isPlaceRecord).filter((place) => !known.has(place.id));
+  // Additions may also have Google cache rows. This function performs Supabase
+  // reads only; normal browsing still never calls Google network APIs.
   return applyGoogleCloudPlaceLayer([...base, ...additions]);
+}
+
+async function applySharedRouteLayer(places: Place[]) {
+  const rows = await loadRouteCache();
+  return mergeRouteCacheIntoPlaces(places, rows);
 }
 
 export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
@@ -60,10 +68,6 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
 
   const base = canonical?.length ? canonical : EMBEDDED_PLACES;
 
-  // Shared Google enrichment is app-owned cloud data and MUST NOT depend on a
-  // Supabase Auth session. Apply it first so every browser can see discovered
-  // coordinates/details and the map can render shop pins even when anonymous
-  // sign-in is disabled or unavailable.
   let sharedPlaces = base;
   try {
     sharedPlaces = await applyGoogleCloudPlaceLayer(base);
@@ -72,15 +76,22 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
     warning = warning ? `${warning} • ${message}` : message;
   }
 
-  // User-specific overrides/additions are optional. If Auth is unavailable,
-  // keep the shared Google-enriched dataset instead of falling all the way back
-  // to the un-enriched seed.
+  let personalizedPlaces = sharedPlaces;
   try {
-    return { places: await applyCloudUserLayer(sharedPlaces), source, loadedAt: new Date().toISOString(), warning };
+    personalizedPlaces = await applyCloudUserLayer(sharedPlaces);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Cloud profile unavailable";
-    return { places: sharedPlaces, source, loadedAt: new Date().toISOString(), warning: warning ? `${warning} • ${message}` : message };
+    warning = warning ? `${warning} • ${message}` : message;
   }
+
+  try {
+    personalizedPlaces = await applySharedRouteLayer(personalizedPlaces);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Route cache unavailable";
+    warning = warning ? `${warning} • ${message}` : message;
+  }
+
+  return { places: personalizedPlaces, source, loadedAt: new Date().toISOString(), warning };
 }
 
 export async function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source = "manual_review"): Promise<ApplyLocalPlacePatchResult> {
