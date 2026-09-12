@@ -49,7 +49,9 @@ new_visibility = '''  const visiblePlaces = useMemo(() => {\n    const base = al
 app = replace_once(app, old_visibility, new_visibility, "single visiblePlaces")
 
 app = app.replace('RADII.slice(0, 4).map((radius) =>', 'RADII.map((radius) =>', 1)
-app = app.replace('places={mapVisiblePlaces}', 'places={visiblePlaces}', 1)
+# Once the separate map collection is removed, every existing reference must use
+# the same source array as the list. This includes map pins and coverage text.
+app = app.replace('mapVisiblePlaces', 'visiblePlaces')
 
 old_radius = '<select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-map-control amd-map-radius-control amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none"><option value={250}>250 ม.</option><option value={500}>500 ม.</option><option value={1000}>1 กม.</option><option value={2000}>2 กม.</option><option value={3000}>3 กม.</option><option value={5000}>5 กม.</option></select>'
 new_radius = '<select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-map-control amd-map-radius-control amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none">{RADII.map((radius) => <option key={radius.value} value={radius.value}>{radius.label}</option>)}</select>'
