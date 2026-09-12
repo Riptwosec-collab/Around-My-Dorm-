@@ -27,13 +27,13 @@ describe("Data Management admin login gate", () => {
     expect(adminAccess).toContain('supabase.auth.onAuthStateChange');
   });
 
-  it("uses a preset admin-email dropdown plus first-time password activation without hard-coding a password", () => {
+  it("uses the preset admin-email dropdown with direct password login and no client-side signup fallback", () => {
     expect(adminAccess).toContain('ADMIN_EMAIL_ALLOWLIST');
     expect(adminAccess).toContain('<select');
     expect(adminAccess).toContain('type="password"');
-    expect(adminAccess).toContain('signInOrCreateAdminWithPassword');
+    expect(adminAccess).toContain('signInAdminWithPassword');
     expect(adminAuth).toContain('supabase.auth.signInWithPassword');
-    expect(adminAuth).toContain('supabase.auth.signUp');
+    expect(adminAuth).not.toContain('supabase.auth.signUp');
     expect(adminAccess).not.toContain('112233');
     expect(adminAuth).not.toContain('112233');
   });
