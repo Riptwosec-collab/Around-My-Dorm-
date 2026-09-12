@@ -1,3 +1,3 @@
 Cloudflare deploy trigger
-2026-09-12
-Final Google data visibility fix: shared Google cache is applied before optional Supabase Auth; discovered Google coordinates render Around My Dorm shop pins and shop details after the explicit bulk request
+2026-09-13
+Deploy 91-place Google Photos coverage and live request counter fix: manual photo loader now reads all shared Google Place IDs (47 linked + 44 review-only photo candidates), records place_photo attempts, and exposes actionable photo errors without enabling background Google requests.
