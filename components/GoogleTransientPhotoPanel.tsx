@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { ExternalLink, Flag, Image as ImageIcon, LoaderCircle } from "lucide-react";
+import { recordTrackedGoogleRequest } from "@/lib/google-api-budget";
+import { setGoogleRuntimePhoto } from "@/lib/google-photo-runtime";
 import { fetchGoogleTransientPhoto, type GoogleTransientPhoto } from "@/lib/google-transient-photo";
 import type { Place } from "@/types/place";
 
@@ -16,12 +18,38 @@ export function GoogleTransientPhotoPanel({ place, language }: { place: Place; l
     if (!apiKey || !googlePlaceId || loading) return;
     setLoading(true);
     setMessage(null);
-    // Never persist this result. It is intentionally component/runtime state only.
+    const started = Date.now();
+    // Never persist the Google photo URI itself. It remains runtime-only.
     try {
       const next = await fetchGoogleTransientPhoto(apiKey, googlePlaceId);
-      setPhoto(next);
-      if (!next) setMessage(language === "en" ? "No Google photo is available for this place." : "Google ยังไม่มีรูปที่ใช้ได้สำหรับสถานที่นี้");
+      if (next) {
+        setPhoto(next);
+        setGoogleRuntimePhoto(place.id, googlePlaceId, next);
+      } else {
+        setPhoto(null);
+        setMessage(language === "en" ? "No Google photo is available for this place." : "Google ยังไม่มีรูปที่ใช้ได้สำหรับสถานที่นี้");
+      }
+      void recordTrackedGoogleRequest({
+        requestType: "place_photo",
+        placeId: place.id,
+        placeName: place.name,
+        googlePlaceId,
+        status: "success",
+        attempted: 1,
+        retryCount: 0,
+        durationMs: Date.now() - started,
+      }).catch(() => undefined);
     } catch (error) {
+      void recordTrackedGoogleRequest({
+        requestType: "place_photo",
+        placeId: place.id,
+        placeName: place.name,
+        googlePlaceId,
+        status: "failed",
+        attempted: 1,
+        retryCount: 0,
+        durationMs: Date.now() - started,
+      }).catch(() => undefined);
       setMessage(error instanceof Error ? error.message : "Google photo request failed");
     } finally {
       setLoading(false);
@@ -58,7 +86,7 @@ export function GoogleTransientPhotoPanel({ place, language }: { place: Place; l
           <div className="mt-2 flex flex-wrap gap-2">
             {photo.googleMapsUrl && <a href={photo.googleMapsUrl} target="_blank" rel="noreferrer" className="amd-chip h-9 min-h-0 px-3 text-[8px]"><span className="inline-flex items-center gap-1"><ExternalLink className="h-3 w-3" />Google Maps</span></a>}
             {photo.flagContentUrl && <a href={photo.flagContentUrl} target="_blank" rel="noreferrer" className="amd-chip h-9 min-h-0 px-3 text-[8px]"><span className="inline-flex items-center gap-1"><Flag className="h-3 w-3" />{language === "en" ? "Report photo" : "รายงานรูป"}</span></a>}
-            <button type="button" disabled={loading} onClick={() => void loadPhoto()} className="amd-chip h-9 min-h-0 px-3 text-[8px]">{language === "en" ? "Refresh manually" : "โหลดใหม่เอง"}</button>
+            <button type="button" disabled={loading} onClick={() => void loadPhoto()} className="amd-chip h-9 min-h-0 px-3 text-[8px]">{loading ? (language === "en" ? "Loading…" : "กำลังโหลด…") : (language === "en" ? "Retry photo fetch" : "ลองดึงรูปอีกครั้ง")}</button>
           </div>
         </div>
       )}
