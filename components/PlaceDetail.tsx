@@ -75,7 +75,7 @@ export function PlaceDetail({
 }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [fallbackAdminAllowed, setFallbackAdminAllowed] = useState(false);
-  const [currentAdminNote, setCurrentAdminNote] = useState<string | null>(place.notes);
+  const [currentAdminNote, setCurrentAdminNote] = useState<string | null>(place.adminNote ?? null);
   const copy = getCopy(language);
   const category = CATEGORY_MAP[place.category];
   const status = getPlaceOpenStatus(place);
@@ -89,8 +89,8 @@ export function PlaceDetail({
   const effectiveAdminAllowed = adminAllowed ?? fallbackAdminAllowed;
 
   useEffect(() => {
-    setCurrentAdminNote(place.notes);
-  }, [place.notes]);
+    setCurrentAdminNote(place.adminNote ?? null);
+  }, [place.adminNote]);
 
   useEffect(() => {
     if (adminAllowed !== undefined) return;
@@ -280,6 +280,7 @@ export function PlaceDetail({
               </div>
               <p className="mt-2 text-[10px] leading-5 text-white/48">{copy.lastVerified}: {place.lastVerified || copy.unknownVerified}</p>
               <p className="text-[10px] leading-5 text-white/48">{copy.source}: {place.source.length ? place.source.join(" • ") : copy.unknownVerified}</p>
+              {place.notes && <p className="mt-1 text-[10px] leading-5 text-white/48">{copy.notes}: {place.notes}</p>}
             </div>
 
             <button type="button" onClick={() => setReportOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.045] text-[10px] font-bold text-amber-100"><AlertTriangle className="h-4 w-4" />{copy.reportWrong}</button>
