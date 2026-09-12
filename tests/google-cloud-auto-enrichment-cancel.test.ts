@@ -8,15 +8,6 @@ const { runGoogleCloudAutoEnrichment } = vi.hoisted(() => ({
   runGoogleCloudAutoEnrichment: vi.fn(),
 }));
 
-vi.mock("@/components/AdminGoogleAccess", () => ({
-  AdminGoogleAccess: ({ onStateChange }: { onStateChange?: (state: any) => void }) => {
-    React.useEffect(() => {
-      onStateChange?.({ authenticated: true, admin: true, anonymous: false, email: "admin@example.com" });
-    }, [onStateChange]);
-    return null;
-  },
-}));
-
 vi.mock("@/lib/google-cloud-enrichment", () => ({
   GOOGLE_BULK_RUN_REQUEST_LIMIT: 180,
   GOOGLE_CLOUD_CACHE_TTL_DAYS: 29,
@@ -66,7 +57,7 @@ describe("GoogleCloudAutoEnrichment cancel guard", () => {
   });
 
   it("does not cancel on the first click and requires an explicit confirmation", async () => {
-    render(React.createElement(GoogleCloudAutoEnrichment, { places: [place], language: "en", onReload: () => {} }));
+    render(React.createElement(GoogleCloudAutoEnrichment, { places: [place], language: "en", onReload: () => {}, adminAccess: { authenticated: true, admin: true, anonymous: false, email: "admin@example.com" } }));
 
     fireEvent.click(await screen.findByRole("button", { name: /enrich all 1 shops/i }));
     fireEvent.click(screen.getByRole("button", { name: /send google requests/i }));

@@ -8,6 +8,8 @@ import { GoogleMapsUsageDashboard } from "@/components/GoogleMapsUsageDashboard"
 import { GoogleCloudAutoEnrichment } from "@/components/GoogleCloudAutoEnrichment";
 import { GoogleRouteRefresh } from "@/components/GoogleRouteRefresh";
 import { AdminPlatformDiagnostics } from "@/components/AdminPlatformDiagnostics";
+import { AdminGoogleAccess } from "@/components/AdminGoogleAccess";
+import type { AdminAccessState } from "@/lib/admin-auth";
 import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
 import { DORM_CENTER } from "@/lib/place-utils";
 import { GooglePlaceIdManager } from "@/components/GooglePlaceIdManager";
@@ -20,6 +22,7 @@ import { loadPendingPlaceChanges, savePendingPlaceChanges } from "@/lib/storage/
 import type { CategoryId, Place } from "@/types/place";
 
 const EMPTY_HOURS = { monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null };
+const EMPTY_ADMIN_ACCESS: AdminAccessState = { authenticated: false, admin: false, anonymous: false, email: null };
 
 function slugify(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9ก-๙]+/g, "-").replace(/^-+|-+$/g, "") || `place-${Date.now()}`;
@@ -103,6 +106,7 @@ function makeReviewedPlace(input: { name: string; category: CategoryId; latitude
 }
 
 export function DataManagement({ places, databaseSource, language, onClose, onReload }: { places: Place[]; databaseSource: string; language: "th" | "en"; onClose: () => void; onReload: () => void }) {
+  const [adminAccess, setAdminAccess] = useState<AdminAccessState>(EMPTY_ADMIN_ACCESS);
   const [mode, setMode] = useState<UpdateMode>("older30");
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [cancelRequested, setCancelRequested] = useState(false);
@@ -111,8 +115,13 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   const [pending, setPending] = useState<Awaited<ReturnType<typeof loadPendingPlaceChanges>>>([]);
   const [history, setHistory] = useState<LocalPlaceHistory[]>([]);
   useEffect(() => {
+    if (!adminAccess.admin) {
+      setPending([]);
+      setHistory([]);
+      return;
+    }
     void Promise.all([loadPendingPlaceChanges(), loadLocalPlaceHistory()]).then(([nextPending, nextHistory]) => { setPending(nextPending); setHistory(nextHistory); }).catch((error) => setMessage(error instanceof Error ? error.message : "Cloud state unavailable"));
-  }, []);
+  }, [adminAccess.admin]);
   const [message, setMessage] = useState<string | null>(null);
   const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
@@ -283,6 +292,21 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
           <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]"><X className="h-4 w-4" /></button>
         </div>
 
+        <AdminGoogleAccess language={language} onStateChange={setAdminAccess} />
+
+        {!adminAccess.admin ? (
+          <section data-testid="data-management-admin-locked" className="amd-glass amd-card mt-4 border border-amber-300/15 p-5 text-center">
+            <ShieldCheck className="mx-auto h-7 w-7 text-amber-200" />
+            <p className="mt-3 text-[13px] font-bold">{language === "en" ? "Admin login required" : "ต้องเข้าสู่ระบบ Admin"}</p>
+            <p className="mt-2 text-[9px] leading-5 text-white/50">{language === "en" ? "Sign in above with the authorized Supabase admin account to connect maintenance tools to the database. Place browsing remains read-only." : "เข้าสู่ระบบด้วยบัญชี Supabase Admin ที่ได้รับสิทธิ์ด้านบน เพื่อเชื่อมเครื่องมือ Maintenance กับฐานข้อมูล • ก่อน Login ข้อมูลร้านจะเป็น Read-only"}</p>
+            <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/10 px-3 py-2 text-[9px] text-white/45">Supabase • {places.length} places • {databaseSource}</div>
+          </section>
+        ) : (
+          <>
+            <section data-testid="data-management-admin-ready" className="mt-4 rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.04] p-3 text-[9px] text-emerald-100">
+              <strong>{language === "en" ? "Supabase admin connected" : "เชื่อม Supabase Admin แล้ว"}</strong> • {places.length} {language === "en" ? "places" : "ร้าน"} • {databaseSource}
+            </section>
+
         <DataQualityDashboard places={places} language={language} />
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -321,9 +345,9 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
 
         <GoogleMapsUsageDashboard language={language} />
 
-        <GoogleCloudAutoEnrichment places={places} language={language} onReload={onReload} />
+        <GoogleCloudAutoEnrichment places={places} language={language} onReload={onReload} adminAccess={adminAccess} />
 
-        <GoogleRouteRefresh places={places} language={language} onReload={onReload} />
+        <GoogleRouteRefresh places={places} language={language} onReload={onReload} adminAllowed={adminAccess.admin} />
 
         <AdminPlatformDiagnostics places={places} language={language} />
 
@@ -345,6 +369,8 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
         <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><History className="h-5 w-5 text-[#00D9FF]" /><p className="text-[12px] font-semibold">{language === "en" ? "Update History" : "ประวัติการอัปเดต"}</p></div>{!history.length ? <p className="mt-3 text-[10px] text-[var(--amd-text-3)]">{language === "en" ? "No approved updates applied yet." : "ยังไม่มีการ Apply ข้อมูลที่ผ่านการอนุมัติ"}</p> : history.slice(0, 12).map((entry) => <div key={entry.id} className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white/[0.035] p-3"><div className="min-w-0"><p className="truncate text-[10px] font-semibold">{entry.placeName}</p><p className="mt-1 text-[8px] text-[var(--amd-text-3)]">{new Date(entry.changedAt).toLocaleString()} • {entry.source}</p></div><button type="button" onClick={() => undo(entry)} className="amd-chip flex h-9 min-h-0 items-center gap-1 px-3 text-[9px]"><RotateCcw className="h-3.5 w-3.5" />{language === "en" ? "Undo" : "ย้อนกลับ"}</button></div>)}</section>
 
         <section className="mt-4 rounded-[20px] border border-white/[0.06] bg-black/10 p-4 text-[9px] leading-5 text-[var(--amd-text-3)]"><p>{language === "en" ? "Google Maps is used as the map engine only. Permanent business data stays in the Around My Dorm database. External discovery must be run intentionally through an approved maintenance importer." : "Google Maps ใช้เป็น Map Engine เท่านั้น ข้อมูลร้านถาวรอยู่ในฐานข้อมูล Around My Dorm และ External Discovery ต้องเรียกแบบตั้งใจผ่าน Approved Maintenance Importer เท่านั้น"}</p><p className="mt-2">{language === "en" ? `Refresh candidates in current mode: ${selected.length}` : `จำนวนรายการตามโหมดปัจจุบัน: ${selected.length}`}</p><p className="mt-1">{language === "en" ? `Sample freshness: ${places[0] ? freshnessState(places[0]) : "n/a"}` : `ตัวอย่าง Freshness: ${places[0] ? freshnessState(places[0]) : "ไม่มี"}`}</p></section>
+          </>
+        )}
       </section>
     </div>
   );

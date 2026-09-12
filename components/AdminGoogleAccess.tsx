@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { KeyRound, LogOut, Mail, ShieldCheck } from "lucide-react";
 import { HomeOriginManager } from "@/components/HomeOriginManager";
+import { supabase } from "@/lib/cloud/supabase";
 import {
   getAdminAccessState,
   requestAdminMagicLink,
@@ -33,16 +34,23 @@ export function AdminGoogleAccess({
 
   useEffect(() => {
     let alive = true;
-    void getAdminAccessState()
-      .then((next) => {
-        if (!alive) return;
-        setState(next);
-        onStateChange?.(next);
-      })
-      .catch((error) => {
-        if (alive) setMessage(error instanceof Error ? error.message : "Admin access unavailable");
-      });
-    return () => { alive = false; };
+    const sync = () => {
+      void getAdminAccessState()
+        .then((next) => {
+          if (!alive) return;
+          setState(next);
+          onStateChange?.(next);
+        })
+        .catch((error) => {
+          if (alive) setMessage(error instanceof Error ? error.message : "Admin access unavailable");
+        });
+    };
+    sync();
+    const { data } = supabase.auth.onAuthStateChange(() => sync());
+    return () => {
+      alive = false;
+      data.subscription.unsubscribe();
+    };
   }, [onStateChange]);
 
   async function sendLink() {
@@ -76,11 +84,11 @@ export function AdminGoogleAccess({
         <div className="flex items-start gap-3">
           <ShieldCheck className={`mt-0.5 h-5 w-5 ${state.admin ? "text-emerald-300" : "text-amber-200"}`} />
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold">GOOGLE MAINTENANCE ADMIN</p>
+            <p className="text-[11px] font-bold">ADMIN DATABASE LOGIN</p>
             <p className="mt-1 text-[9px] leading-5 text-white/48">
               {state.admin
                 ? language === "en" ? `Authorized admin${state.email ? ` • ${state.email}` : ""}` : `ยืนยันสิทธิ์ Admin แล้ว${state.email ? ` • ${state.email}` : ""}`
-                : language === "en" ? "Bulk Google enrichment and Routes refresh require a real authorized admin session." : "Bulk Google และ Routes ต้องใช้บัญชี Admin จริง • Anonymous session ใช้สิทธิ์นี้ไม่ได้"}
+                : language === "en" ? "Bulk Google enrichment and Routes refresh require a real authorized admin session." : "เข้าสู่ระบบ Admin เพื่อเชื่อม Supabase Database และเปิดเครื่องมือแก้ข้อมูล / Google / Routes • Anonymous session ใช้สิทธิ์นี้ไม่ได้"}
             </p>
           </div>
         </div>
@@ -98,7 +106,7 @@ export function AdminGoogleAccess({
               />
             </label>
             <button type="button" disabled={busy} onClick={() => void sendLink()} className="amd-btn amd-btn-primary min-h-11 rounded-xl px-4 text-[9px] font-bold disabled:opacity-50">
-              <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />{language === "en" ? "Send sign-in link" : "ส่งลิงก์เข้าสู่ระบบ"}</span>
+              <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />{language === "en" ? "Login Admin" : "เข้าสู่ระบบ Admin"}</span>
             </button>
           </div>
         )}

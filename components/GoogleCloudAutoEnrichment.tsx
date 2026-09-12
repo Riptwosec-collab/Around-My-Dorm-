@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, CloudDownload, Database, LockKeyhole, RefreshCw, X } from "lucide-react";
-import { AdminGoogleAccess } from "@/components/AdminGoogleAccess";
 import type { AdminAccessState } from "@/lib/admin-auth";
 import {
   GOOGLE_BULK_RUN_REQUEST_LIMIT,
@@ -27,24 +26,19 @@ const EMPTY_PROGRESS: GoogleCloudEnrichmentProgress = {
   lastError: null,
 };
 
-const EMPTY_ADMIN: AdminAccessState = {
-  authenticated: false,
-  admin: false,
-  anonymous: false,
-  email: null,
-};
-
 export function GoogleCloudAutoEnrichment({
   places,
   language,
   onReload,
+  adminAccess,
 }: {
   places: Place[];
   language: "th" | "en";
   onReload: () => void;
+  adminAccess: AdminAccessState;
 }) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
-  const [admin, setAdmin] = useState<AdminAccessState>(EMPTY_ADMIN);
+  const admin = adminAccess;
   const [status, setStatus] = useState<GoogleCloudEnrichmentStatus | null>(null);
   const [progress, setProgress] = useState<GoogleCloudEnrichmentProgress>(EMPTY_PROGRESS);
   const [result, setResult] = useState<GoogleCloudEnrichmentResult | null>(null);
@@ -150,8 +144,6 @@ export function GoogleCloudAutoEnrichment({
 
   return (
     <>
-      <AdminGoogleAccess language={language} onStateChange={setAdmin} />
-
       <section data-testid="google-cloud-auto-enrichment" className="amd-glass amd-card mt-4 overflow-hidden p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
