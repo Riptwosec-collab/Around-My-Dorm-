@@ -2,7 +2,9 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const runGoogleCloudAutoEnrichment = vi.fn();
+const { runGoogleCloudAutoEnrichment } = vi.hoisted(() => ({
+  runGoogleCloudAutoEnrichment: vi.fn(),
+}));
 
 vi.mock("@/lib/google-cloud-enrichment", () => ({
   GOOGLE_BULK_RUN_REQUEST_LIMIT: 180,
