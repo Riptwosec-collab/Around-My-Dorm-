@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RADII } from "@/lib/app-shell-config";
 import { buildPlatformDiagnostics, filterPlacesInSearchArea } from "@/lib/hybrid-map-platform";
-import { googleMapsPlaceUrl } from "@/lib/place-utils";
+import { googleMapsPlaceUrl } from "@/lib/google-maps-links";
 import type { Place } from "@/types/place";
 
 function place(id: string, overrides: Partial<Place> = {}): Place {
