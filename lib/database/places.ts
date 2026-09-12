@@ -44,7 +44,7 @@ async function applyCloudUserLayer(places: Place[]) {
   });
   const known = new Set(base.map((place) => place.id));
   const additions = (additionsResult.data || []).map((row: any) => row.record).filter(isPlaceRecord).filter((place) => !known.has(place.id));
-  return applyGoogleCloudPlaceLayer([...base, ...additions]);
+  return [...base, ...additions];
 }
 
 export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
@@ -57,11 +57,29 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
   } catch (error) {
     warning = error instanceof Error ? error.message : "Cloud place database unavailable";
   }
+
   const base = canonical?.length ? canonical : EMBEDDED_PLACES;
+
+  // Shared Google enrichment is app-owned cloud data and MUST NOT depend on a
+  // Supabase Auth session. Apply it first so every browser can see discovered
+  // coordinates/details and the map can render shop pins even when anonymous
+  // sign-in is disabled or unavailable.
+  let sharedPlaces = base;
   try {
-    return { places: await applyCloudUserLayer(base), source, loadedAt: new Date().toISOString(), warning };
+    sharedPlaces = await applyGoogleCloudPlaceLayer(base);
   } catch (error) {
-    return { places: base, source, loadedAt: new Date().toISOString(), warning: error instanceof Error ? error.message : "Cloud profile unavailable" };
+    const message = error instanceof Error ? error.message : "Google cloud enrichment unavailable";
+    warning = warning ? `${warning} • ${message}` : message;
+  }
+
+  // User-specific overrides/additions are optional. If Auth is unavailable,
+  // keep the shared Google-enriched dataset instead of falling all the way back
+  // to the un-enriched seed.
+  try {
+    return { places: await applyCloudUserLayer(sharedPlaces), source, loadedAt: new Date().toISOString(), warning };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Cloud profile unavailable";
+    return { places: sharedPlaces, source, loadedAt: new Date().toISOString(), warning: warning ? `${warning} • ${message}` : message };
   }
 }
 
