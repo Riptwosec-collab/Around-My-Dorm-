@@ -1,0 +1,42 @@
+name: Apply Hybrid UI Integration
+
+on:
+  push:
+    branches: [feature/hybrid-google-platform]
+    paths:
+      - scripts/apply-hybrid-ui-integration.py
+      - .github/workflows/apply-hybrid-ui-integration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply integration patch
+        run: python3 scripts/apply-hybrid-ui-integration.py
+      - name: Install
+        run: npm install
+      - name: Unit tests
+        run: npm test -- tests/hybrid-map-platform.test.ts tests/google-cloud-enrichment.test.ts tests/google-cloud-auto-enrichment-cancel.test.ts
+      - name: Type check
+        run: npm run typecheck
+      - name: Commit generated UI integration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/AroundMyDormApp.tsx components/DataManagement.tsx
+          if git diff --cached --quiet; then
+            echo 'No changes.'
+            exit 0
+          fi
+          git commit -m 'feat: integrate hybrid map routes and diagnostics UI'
+          git push origin feature/hybrid-google-platform
