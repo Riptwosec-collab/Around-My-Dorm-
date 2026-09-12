@@ -2,6 +2,7 @@ import { supabase } from "@/lib/cloud/supabase";
 import type { HomeOrigin } from "@/types/place";
 
 const HOME_ID: HomeOrigin["id"] = "baan-supha-apartment";
+export const HOME_ORIGIN_CHANGED_EVENT = "amd-home-origin-changed";
 
 function validLatitude(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
@@ -20,6 +21,11 @@ export function isUsableHomeOrigin(
       validLongitude(value.longitude) &&
       value.verifiedAt,
   );
+}
+
+export function notifyHomeOriginChanged(origin: HomeOrigin | null): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<HomeOrigin | null>(HOME_ORIGIN_CHANGED_EVENT, { detail: origin }));
 }
 
 function fromRow(row: any): HomeOrigin {
