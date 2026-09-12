@@ -36,3 +36,5 @@ jobs:
           name: saved-cloud-map-production-diagnostic
           path: saved-cloud-map-production-*.png
           if-no-files-found: warn
+
+# Production verification trigger after SavedCloudMap full-height fix.
