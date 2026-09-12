@@ -50,7 +50,6 @@ export const DEFAULT_COLLECTIONS: SavedCollection[] = [
 ];
 
 export const RADII = [
-  { label: "250 ม.", value: 250 },
   { label: "500 ม.", value: 500 },
   { label: "1 กม.", value: 1000 },
   { label: "2 กม.", value: 2000 },
