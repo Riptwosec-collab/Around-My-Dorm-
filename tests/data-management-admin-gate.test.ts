@@ -6,6 +6,7 @@ describe("Data Management admin login gate", () => {
   const dataManagement = fs.readFileSync(path.join(process.cwd(), "components", "DataManagement.tsx"), "utf8");
   const googleBulk = fs.readFileSync(path.join(process.cwd(), "components", "GoogleCloudAutoEnrichment.tsx"), "utf8");
   const adminAccess = fs.readFileSync(path.join(process.cwd(), "components", "AdminGoogleAccess.tsx"), "utf8");
+  const adminAuth = fs.readFileSync(path.join(process.cwd(), "lib", "admin-auth.ts"), "utf8");
 
   it("owns one centralized Supabase admin login at the Data Management boundary", () => {
     expect(dataManagement).toContain('import { AdminGoogleAccess } from "@/components/AdminGoogleAccess";');
@@ -17,6 +18,16 @@ describe("Data Management admin login gate", () => {
 
   it("reacts to Supabase auth changes so the database gate opens immediately after login", () => {
     expect(adminAccess).toContain('supabase.auth.onAuthStateChange');
+  });
+
+  it("uses a preset admin-email dropdown plus a password field without hard-coding a password", () => {
+    expect(adminAccess).toContain('const ADMIN_EMAIL_OPTIONS = ["misuki2803@gmail.com"]');
+    expect(adminAccess).toContain('<select');
+    expect(adminAccess).toContain('type="password"');
+    expect(adminAccess).toContain('signInAdminWithPassword');
+    expect(adminAuth).toContain('supabase.auth.signInWithPassword');
+    expect(adminAccess).not.toContain('112233');
+    expect(adminAuth).not.toContain('112233');
   });
 
   it("passes the verified admin session to cost-bearing Google tools instead of rendering a second login", () => {
