@@ -5,6 +5,7 @@ import "./premium-liquid-glass-geometry.css";
 import "./premium-interactions.css";
 import "./premium-map-sheets.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
+import { GoogleBulkPhotoRuntimeControl } from "@/components/GoogleBulkPhotoRuntimeControl";
 
 export const metadata: Metadata = {
   title: "Around My Dorm",
@@ -28,7 +29,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="th" suppressHydrationWarning>
-      <body>{children}<PwaRuntime /></body>
+      <body>{children}<PwaRuntime /><GoogleBulkPhotoRuntimeControl /></body>
     </html>
   );
 }
