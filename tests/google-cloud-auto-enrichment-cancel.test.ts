@@ -34,6 +34,7 @@ const place = {
 describe("GoogleCloudAutoEnrichment cancel guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY = "test-google-api-key";
     runGoogleCloudAutoEnrichment.mockImplementation(async ({ isCancelled, onProgress }: any) => {
       onProgress?.({ current: 0, total: 1, currentName: "Test Place", networkRequests: 0, linked: 0, cached: 0, review: 0, failed: 0, lastError: null });
       await new Promise((resolve) => setTimeout(resolve, 100));
