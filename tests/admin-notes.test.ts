@@ -5,10 +5,14 @@ import { describe, expect, it } from "vitest";
 describe("shared Admin Notes", () => {
   const placeDetail = fs.readFileSync(path.join(process.cwd(), "components", "PlaceDetail.tsx"), "utf8");
   const placeRouteClient = fs.readFileSync(path.join(process.cwd(), "components", "PlaceRouteClient.tsx"), "utf8");
+  const placeTypes = fs.readFileSync(path.join(process.cwd(), "types", "place.ts"), "utf8");
   const workerIndex = fs.readFileSync(path.join(process.cwd(), "worker", "index.ts"), "utf8");
   const sqlPath = path.join(process.cwd(), "supabase", "admin-notes.sql");
 
-  it("renders the shared note publicly while keeping the edit affordance admin-gated", () => {
+  it("renders the shared admin note without relabeling legacy verification notes", () => {
+    expect(placeTypes).toContain("adminNote?: string | null");
+    expect(placeTypes).toContain("adminNoteUpdatedAt?: string | null");
+    expect(placeDetail).toContain("place.adminNote");
     expect(placeDetail).toContain("place.notes");
     expect(placeDetail).toContain("adminAllowed");
     expect(placeDetail).toContain("Edit Admin Note");
@@ -19,6 +23,7 @@ describe("shared Admin Notes", () => {
     expect(placeRouteClient).toContain("getAdminAccessState");
     expect(placeRouteClient).toContain("saveAdminPlaceNote");
     expect(placeRouteClient).toContain("adminAllowed={adminAccess.admin}");
+    expect(placeRouteClient).toContain("adminNote: result.note");
   });
 
   it("protects the write endpoint with the existing worker admin verifier", () => {
@@ -27,7 +32,7 @@ describe("shared Admin Notes", () => {
     expect(workerIndex).toContain("saveAdminNote");
   });
 
-  it("ships a least-privilege RPC that only authenticated callers can execute", () => {
+  it("ships a least-privilege RPC that writes only dedicated admin note fields", () => {
     expect(fs.existsSync(sqlPath)).toBe(true);
     if (!fs.existsSync(sqlPath)) return;
     const sql = fs.readFileSync(sqlPath, "utf8");
@@ -37,6 +42,8 @@ describe("shared Admin Notes", () => {
     expect(sql).toContain("grant execute");
     expect(sql).toContain("to authenticated");
     expect(sql).toContain("record");
-    expect(sql).toContain("notes");
+    expect(sql).toContain("adminNote");
+    expect(sql).toContain("adminNoteUpdatedAt");
+    expect(sql).not.toContain("'{notes}'");
   });
 });
