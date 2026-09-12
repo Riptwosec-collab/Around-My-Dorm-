@@ -27,6 +27,22 @@ describe("manual Google photo runtime publishing", () => {
     expect(card).not.toContain("fallbackLabel={copy.unknownData}");
     expect(detail).not.toContain("fallbackLabel={copy.unknownData}");
   });
+
+  it("tracks every bulk photo request and preserves the first useful Google error", () => {
+    const bulk = read("components/GoogleBulkPhotoRuntimeControl.tsx");
+    expect(bulk).toContain('recordTrackedGoogleRequest');
+    expect(bulk).toContain('requestType: "place_photo"');
+    expect(bulk).toContain('status: "success"');
+    expect(bulk).toContain('status: "failed"');
+    expect(bulk).toContain("firstError");
+  });
+
+  it("turns raw photo failures into actionable Places API diagnostics", () => {
+    const photo = read("lib/google-transient-photo.ts");
+    expect(photo).toContain("Google Place Photos failed:");
+    expect(photo).toContain("Places API (New)");
+    expect(photo).toContain("API restrictions");
+  });
 });
 
 describe("app-tracked Google API monthly budget", () => {
@@ -76,5 +92,19 @@ describe("app-tracked Google API monthly budget", () => {
     expect(dashboard).not.toContain("Math.max(usage.routes");
     expect(dashboard).toContain("budget.breakdown.textSearch");
     expect(dashboard).toContain("budget.breakdown.placeDetails");
+  });
+
+  it("refreshes the project-wide counter only after the request log is persisted", () => {
+    const manager = read("lib/google-request-manager.ts");
+    const dashboard = read("components/GoogleMapsUsageDashboard.tsx");
+    expect(manager).toContain("persisted: false");
+    expect(manager).toContain("persisted: true");
+    expect(dashboard).toContain("detail?.persisted !== false");
+    expect(dashboard).toContain("hydrateGoogleApiBudgetSummary(true)");
+  });
+
+  it("marks dedicated photo accounting events as already persisted", () => {
+    const budget = read("lib/google-api-budget.ts");
+    expect(budget).toContain("persisted: true");
   });
 });
