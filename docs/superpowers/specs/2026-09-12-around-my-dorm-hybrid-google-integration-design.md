@@ -1,72 +1,83 @@
 # Around My Dorm — Hybrid Google Maps / Places / Routes Integration Design
 
 Date: 2026-09-12
-Status: Approved design, pending implementation plan
+Status: Approved architecture direction; pending written-spec review before implementation planning
 Repository: `Riptwosec-collab/Around-My-Dorm-`
 
 ## 1. Objective
 
 Upgrade Around My Dorm into a curated local discovery application powered by Google Maps Platform while preserving all existing application data, manually curated classifications, URLs, categories, filters, UI behavior, and current functionality.
 
-The system must use `บ้านสุภาอพาร์ทเม้นต์` as the single authoritative HOME / origin for map centering, radius filtering, distance sorting, nearby search bias, and route calculations.
+`บ้านสุภาอพาร์ทเม้นต์` is the single authoritative HOME / origin for map centering, radius filtering, distance sorting, nearby-search bias, and route calculations.
 
-The implementation must not guess coordinates, phone numbers, opening hours, prices, parking, ratings, routes, or addresses. Unknown values remain explicitly unavailable in the UI.
+Never guess coordinates, phone numbers, opening hours, prices, parking, ratings, routes, or addresses. Unknown values display `ไม่มีข้อมูล` or the localized equivalent.
 
 ## 2. Existing System Constraints
 
-The current application already provides important foundations and these should be extended rather than replaced:
+Extend the current system rather than replacing it:
 
-- `Place` already contains Google Place ID, coordinates, rating, reviews, Google Maps URL, opening-hours fields, pricing, parking, images, distance fields, source metadata, and field-level provenance.
-- The current Google map already provides a distinct Home marker, radius circle, custom business markers, category coloring, marker clustering, and marker selection.
-- The application already contains manual Google → Supabase enrichment, short-lived shared Google cache, match/review state, diagnostics, and cost-control behavior.
-- The production dataset currently contains 91 canonical application places. Existing IDs, slugs, curated categories, custom LOCAL/CHAIN/Famous/Hidden Gem metadata, notes, pricing, and parking data must remain stable.
-- Ordinary application browsing must not issue Places, Search, Place Details, Nearby Search, or Routes requests. Google data requests remain explicit user/admin actions.
+- `Place` already contains Google Place ID, coordinates, rating/reviews, Maps URL, opening hours, pricing, parking, images, distance fields, source metadata, and field provenance.
+- The current Google map already provides a distinct Home marker, radius circle, custom business markers, clustering, and marker selection.
+- The app already has manual Google → Supabase enrichment, shared bounded cache, match/review state, diagnostics, and cost-control behavior.
+- Production currently contains 91 canonical places. Existing IDs, slugs, categories, LOCAL/CHAIN/Famous/Hidden Gem metadata, notes, pricing, parking, saved URLs, favorites, and related app features remain stable.
+- Ordinary browsing must not issue Places Search, Place Details, Nearby Search, Routes, or bulk photo requests.
 
-## 3. Architecture Decision
+## 3. Architecture Decision: Hybrid
 
-Use a Hybrid architecture.
-
-### Browser responsibilities
+### Browser
 
 The browser owns:
 
 - Google Maps JavaScript rendering.
-- Existing app markers and clusters.
-- Explicit manual Places enrichment actions that already use the browser-restricted Maps key.
-- `Search This Area` only after a direct user action.
-- Reading already cached Google-derived place data from Supabase.
-- Filtering, sorting, card/marker synchronization, radius interaction, and UI state.
+- Existing app markers and clustering.
+- Explicit manual Places enrichment using the browser-restricted Maps key.
+- `Search This Area` only after direct user action.
+- Reading already cached Google-derived data from Supabase.
+- Filters, sorting, radius state, card/marker synchronization, and UI.
 
-### Cloudflare/server responsibilities
+### Cloudflare/server
 
-Cloudflare owns privileged operations that should not expose credentials to the browser:
+Cloudflare owns privileged/cost-sensitive server operations:
 
 - Google Routes API calls.
-- Route-matrix batching.
-- Route refresh orchestration.
-- Server-side validation of request limits.
-- Server-side use of `GOOGLE_MAPS_SERVER_API_KEY`, stored as a Cloudflare secret and restricted to only required server APIs.
+- Route Matrix batching.
+- Route refresh orchestration and request caps.
+- Server-side use of `GOOGLE_MAPS_SERVER_API_KEY`, stored only as a Cloudflare secret and API-restricted to required server-side Maps products.
 
-The existing `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` remains the browser key and remains restricted by website referrer plus required browser-side APIs.
-
-### Supabase responsibilities
+### Supabase
 
 Supabase remains the source of truth for:
 
-- Canonical app records.
-- Curated/manual metadata.
-- Resolved HOME identity/configuration.
-- Durable Google Place IDs.
-- Bounded Google Places content cache.
-- Route cache.
-- Matching/review state.
-- Diagnostics and enrichment status.
+- canonical app records,
+- curated/manual metadata,
+- verified HOME configuration,
+- durable Google Place IDs,
+- bounded Google Places cache,
+- route cache,
+- matching/review state,
+- diagnostics and enrichment status.
 
-## 4. HOME / Origin Resolution
+Do not create a second canonical place database.
 
-Create one authoritative HOME configuration record for `บ้านสุภาอพาร์ทเม้นต์`.
+## 4. Authorization for Cost-Bearing Operations
 
-Proposed logical model:
+Bulk enrichment and server-side route refreshes must not be freely callable by arbitrary public visitors.
+
+Required design:
+
+- Data Management bulk actions require a real authenticated admin session.
+- Anonymous Supabase sessions are not sufficient authorization.
+- Admin authorization uses Supabase Auth plus an explicit server-controlled authorization source such as `app_metadata` or a dedicated admin allowlist table protected by RLS.
+- Never authorize from user-editable `user_metadata`.
+- Route endpoints verify admin authorization server-side before calling Google.
+- Add server-side rate limits and per-run safety caps even for authorized admins.
+- Public `Search This Area`, if retained for non-admin users, gets a small explicit per-session/request cap and relies on Google quota/budget protections; it cannot invoke bulk canonical refresh or Routes bulk refresh.
+
+This is necessary to keep the server key secret and prevent uncontrolled API spend.
+
+## 5. HOME / Origin Resolution
+
+Create one authoritative HOME record for `บ้านสุภาอพาร์ทเม้นต์`.
 
 ```ts
 HomeOrigin {
@@ -86,69 +97,75 @@ HomeOrigin {
 
 Resolution rules:
 
-1. Search exact app data first for an existing Google Place ID or independently verified coordinate/address.
-2. If unavailable, perform an explicit Google Places Text Search using the exact Thai name plus known neighborhood/address clues.
+1. Check existing app data for an independently verified Place ID/address/coordinate.
+2. Otherwise perform an explicit Places Text Search for the exact Thai name plus known neighborhood/address clues.
 3. Compare candidate name, address/area, and geographic consistency.
-4. Auto-accept only when the result is unambiguous and meets a strict confidence threshold.
-5. If candidates are ambiguous, show an admin confirmation UI. Do not guess.
-6. Once verified, all map/radius/sorting/routing systems read the HOME record rather than a scattered hard-coded coordinate constant.
-7. A fallback hard-coded HOME coordinate must not become authoritative unless independently verified and explicitly marked as manual-verified.
+4. Auto-accept only an unambiguous high-confidence candidate.
+5. Ambiguous candidates require admin confirmation. Do not guess.
+6. Once verified, map/radius/sorting/routing read this HOME record instead of scattered hard-coded coordinates.
+7. A hard-coded fallback coordinate may render a temporary map only if clearly marked non-authoritative; it cannot be persisted as verified HOME without independent verification.
 
-## 5. Place Identity and Matching
+## 6. Place Identity, Matching, and Duplicate Protection
 
-Each application place retains its existing internal `id` and `slug`. Google Place ID is an external identity, never a replacement primary key.
+Each place retains its internal `id` and `slug`. Google Place ID is an external identity, not the app primary key.
 
-Matching flow for every existing place:
+Matching flow:
 
-1. Read current name, Thai/English aliases, area, soi, address, phone/website if available, and coordinates if already verified.
-2. Query Google Places only during a user-confirmed enrichment run.
-3. Score candidates using normalized name, address/area agreement, coordinate proximity when available, and category/type compatibility.
-4. Check whether the Google Place ID is already linked to a different app place.
-5. Auto-link only high-confidence and unambiguous matches.
-6. Put ambiguous matches into Review instead of guessing.
-7. Never insert a duplicate canonical app shop as part of enrichment.
+1. Read current names, area, soi, address, verified coordinates, phone/website clues, and category.
+2. Search Google only during an explicit confirmed run.
+3. Score candidates using normalized name, address/area agreement, coordinate proximity when available, and type/category compatibility.
+4. Check whether the candidate Place ID already belongs to another app record.
+5. Auto-link only strong, unambiguous matches.
+6. Ambiguous matches become Review, never guessed links.
+7. Enrichment never inserts a duplicate canonical shop.
 
-Duplicate detection priority:
+Duplicate priority:
 
-1. Exact Google Place ID.
-2. Existing verified coordinate proximity.
+1. Google Place ID.
+2. Verified coordinate proximity.
 3. Normalized business name.
 4. Address agreement.
 
-If two canonical app records resolve to the same Google Place ID, diagnostics must flag them as a possible duplicate for manual merge review. Automatic destructive merging is out of scope for the first implementation phase.
+If two existing canonical records resolve to the same Google Place ID, create a duplicate group in diagnostics. The admin merge action must:
 
-## 6. Data Priority and Merge Rules
+- choose a surviving canonical record,
+- preserve the strongest/manual values from both records,
+- preserve aliases and useful source URLs,
+- prevent loss of favorites/collections by remapping references when necessary,
+- keep an old-slug/ID redirect or alias mapping where the app supports it,
+- perform the destructive removal only after explicit admin confirmation.
 
-The merge priority is:
+No duplicate is silently deleted.
 
-1. Explicit manually curated / manual-verified app data.
-2. Official source data already marked stronger than Google.
-3. Google verified data.
-4. Computed routing data.
-5. Seed/unverified data.
-6. Unknown.
+## 7. Data Priority and Merge Rules
 
-Google enrichment may fill missing values but must not replace stronger curated values with null, less-specific values, or weaker information.
+Priority:
 
-Examples that must remain protected:
+1. explicit manual-verified/curated data,
+2. stronger official source data,
+3. Google verified data,
+4. computed routing data,
+5. seed/unverified data,
+6. unknown.
+
+Google fills missing/weaker fields but never replaces stronger curated data with null or less useful values.
+
+Protected examples:
 
 - custom price ranges,
-- LOCAL / CHAIN classification,
-- Famous classification,
-- Hidden Gem classification,
+- LOCAL / CHAIN,
+- Famous / Hidden Gem,
 - app categories,
 - personal notes,
-- parking notes and parking prices,
-- special recommendations,
+- parking notes/prices,
+- recommendations,
 - manually verified URLs.
 
-Every merged Google field must retain provenance and checked/updated timestamps.
+Every Google/route field records provenance and checked/updated timestamps.
 
-## 7. Google Places Data Model
+## 8. Google Places Data Layer
 
-Extend the current `Place` model rather than replacing it.
-
-The logical Google-derived layer should support, when Google actually provides the fields:
+Extend the existing model; do not replace `Place`.
 
 ```ts
 GooglePlaceData {
@@ -188,29 +205,25 @@ GooglePlaceData {
 }
 ```
 
-The implementation should map useful values back into existing top-level `Place` fields so existing UI remains compatible while preserving a structured Google layer for richer UI.
+Map useful values back into existing top-level fields so current UI remains compatible while preserving structured Google metadata for richer UI.
 
-## 8. Google Content Storage and Policy Guardrails
+`area` remains curated app data when present. Google addresses may supplement it but do not blindly rewrite a useful local area label.
 
-Google Place IDs may be retained as durable external identifiers.
+## 9. Storage / Google Policy Guardrails
 
-Other Google Maps Platform content must only be cached/stored within current Google Maps Platform policy allowances. The implementation must verify current product-specific policy before committing persistence behavior.
+- Google Place ID is a durable external identifier.
+- Other Google Maps Platform content is cached/stored only within current product-specific policy allowances.
+- Place Details remains a bounded shared cache with expiry rather than a permanent canonical overwrite.
+- Photos store only permitted reference/metadata/attribution; do not permanently copy Google photo binaries into app-owned storage unless current terms explicitly permit it.
+- Route results use a bounded configurable cache compliant with current Routes terms.
+- Independently/manual-verified app values can become canonical when explicitly approved; they are not treated as indefinitely cached Google content.
+- No Google Maps HTML scraping.
 
-Initial policy-safe design:
+Implementation planning must re-check current Google Places, Photos, and Routes policy before finalizing TTLs.
 
-- Place ID: durable.
-- Google Place Details content: bounded cache with expiry; use the existing short-lived shared cache model rather than permanent canonical overwrite.
-- Photos: store permitted reference/metadata and required attribution; do not copy/store full Google photo binaries as app-owned permanent assets.
-- Route results: use a bounded route cache whose TTL is configurable and compliant with current Routes terms.
-- Manual independently verified values may become canonical app data when explicitly approved, rather than being treated as permanently cached Google content.
+## 10. Routes Architecture
 
-No Google HTML scraping is permitted.
-
-## 9. Route Architecture
-
-All routes originate from the verified HOME record.
-
-Required travel data where supported:
+All routes originate from verified HOME.
 
 ```ts
 RouteData {
@@ -226,99 +239,139 @@ RouteData {
 }
 ```
 
-### Route computation strategy
+Prefer Google Routes Compute Route Matrix because the app has one origin and many destinations.
 
-Prefer Google Routes Compute Route Matrix because there is one origin and many destinations.
+Bulk route refresh:
 
-For a bulk route refresh:
+1. Load verified HOME.
+2. Load places with usable coordinates.
+3. Chunk destinations according to current Route Matrix limits.
+4. Compute WALK.
+5. Compute DRIVE.
+6. Compute TWO_WHEELER only when currently supported for Thailand/request type.
+7. Persist successful per-place results to bounded route cache.
+8. One failed destination does not fail the rest.
 
-1. Load the verified HOME origin.
-2. Load places with verified/usable coordinates.
-3. Chunk destinations according to current Routes API matrix limits.
-4. Calculate WALK matrix.
-5. Calculate DRIVE matrix.
-6. Calculate TWO_WHEELER only when currently supported by the API/region and request type.
-7. Persist successful per-place results in bounded route cache.
-8. A failed destination must not fail other destinations.
+Never fabricate motorcycle travel time. If unsupported/unavailable, display unavailable.
 
-Do not fabricate motorcycle time. If TWO_WHEELER is unavailable or rejected for a place/region, display unavailable.
+Straight-line distance remains available for fast sorting and clearly labeled fallback only.
 
-Straight-line distance remains available for fast local sorting and as a fallback display only when no route distance exists, with the UI distinguishing route vs straight-line data.
+Where Google requires route-mode warnings (for example walking/two-wheeler safety notices), the UI must display the required notice.
 
-## 10. Google Enrichment Pipeline
-
-Manual bulk flow:
+## 11. Google Enrichment Pipeline
 
 ```text
-Confirm bulk refresh
-  -> resolve HOME if needed
+Admin confirms bulk refresh
+  -> verify HOME if needed
   -> load canonical places
-  -> skip fresh/fully usable cache when appropriate
+  -> skip fresh usable cache when appropriate
   -> search unmatched place
-  -> candidate scoring/dedup check
-  -> link or mark review
-  -> fetch Place Details for usable candidate
-  -> save bounded Google cache
+  -> score/dedup candidates
+  -> link or mark Review
+  -> fetch Place Details for a usable candidate
+  -> persist bounded Google cache
   -> continue next place
-  -> optional manual Routes refresh phase
+  -> optional explicit Routes refresh
   -> reload app data from Supabase
 ```
 
-The pipeline must:
+The run shows:
 
-- show total places,
-- estimate Google operations before confirmation,
-- show progress,
-- show matched/review/skipped/failed counts,
-- persist progress continuously,
-- support an explicit confirmed cancellation,
-- stop on systemic API/configuration errors,
-- continue on individual place errors,
-- never run in the background during ordinary browsing,
-- never retry indefinitely.
+- total places,
+- estimated operations,
+- progress,
+- matched/review/skipped/failed counts,
+- latest safe diagnostic,
+- explicit confirmed cancellation.
 
-## 11. Map Requirements
+Persist progress incrementally. Continue on individual-place errors. Stop on systemic API/config/quota errors. Never retry indefinitely and never run during ordinary browsing.
 
-The map data source is the filtered application place array, not Google default POIs.
+## 12. Main Map and Marker Eligibility
+
+The app marker data source is the filtered application place array, not Google base-map POIs.
 
 Rules:
 
-- Every application place with usable coordinates produces an app marker.
-- HOME always has a distinct blue home marker and higher z-index.
-- Missing-coordinate places remain in the list but are absent from the map and appear in diagnostics.
-- Google base-map POIs are not considered app markers and must not be used for application marker counts.
-- Marker count diagnostics must compare against filtered app records with valid coordinates.
+- Every visible app place with usable coordinates gets an app marker.
+- HOME is a distinct blue home marker with pulse/radius treatment and highest z-index.
+- Missing-coordinate places stay in lists but appear in diagnostics as `Missing Map Location`.
+- Google default POIs are not counted as Around My Dorm markers.
+- Marker diagnostics equal the filtered app-place count with usable coordinates.
 
-Existing map initialization, clustering, radius circle, and custom marker system should be retained unless a focused defect requires modification.
+Retain current map initialization/clustering unless a focused defect requires change.
 
-## 12. Marker and Card Synchronization
+### Marker visual taxonomy
 
-There must be one shared selected-place state.
+Upgrade shop markers from generic dots to compact category-aware symbols while keeping clustering/performance:
+
+- restaurant / food: fork/food symbol,
+- cafe: coffee,
+- noodles: bowl,
+- mookata/BBQ: grill,
+- shabu/hotpot: pot,
+- parking: P,
+- 24H: 24H,
+- Hidden Gem: gem/star accent,
+- Famous: flame/popular accent,
+- chain: store/chain treatment,
+- local: local/store treatment.
+
+Selected marker receives a clear highlight without recreating the map instance.
+
+## 13. Marker Interaction / Place Preview
+
+Tapping/clicking an app marker opens a premium floating card or mobile bottom sheet containing available data:
+
+- photo,
+- name,
+- category,
+- LOCAL / CHAIN,
+- Famous / Hidden Gem,
+- rating + review count,
+- price,
+- open/closed state,
+- distance from HOME,
+- walking / motorcycle / driving time,
+- phone when available.
+
+Actions:
+
+- `ดูรายละเอียด`,
+- `เปิด Google Maps`,
+- `เส้นทาง`,
+- `โทร`,
+- `เว็บไซต์`.
+
+Buttons with unavailable data are disabled or hidden with a clear state; do not create fake values.
+
+## 14. Card / Marker Synchronization
+
+Use one shared selected-place state.
 
 Card -> map:
 
-1. Set selected place ID.
-2. Pan smoothly to marker.
-3. Adjust zoom only when needed.
-4. Open app place preview/bottom sheet.
-5. Highlight marker.
+1. set selected ID,
+2. smoothly pan to marker,
+3. adjust zoom only if needed,
+4. open preview/bottom sheet,
+5. highlight marker.
 
 Marker -> card:
 
-1. Set selected place ID.
-2. Open app place preview/bottom sheet.
-3. Highlight matching card.
-4. Scroll the list to the card when it is visible in the current UI context.
+1. set selected ID,
+2. open preview/bottom sheet,
+3. highlight matching card,
+4. scroll list to the matching card when appropriate.
 
 No full-page reload.
 
-## 13. Filter and Radius Synchronization
+## 15. Filters and Radius
 
-Cards and map markers must consume the same derived `visiblePlaces` collection.
+Cards and markers consume the same derived `visiblePlaces` collection.
 
-All existing filters must therefore affect both automatically, including open-now, price, walking time, category, late-night, 24h, LOCAL, CHAIN, Famous, Hidden Gem, and other current filters.
+All current filters therefore apply to both: open now, price, walking time, category, late-night, 24h, LOCAL, CHAIN, Famous, Hidden Gem, and existing filters.
 
-Radius values:
+Radius options centered on HOME:
 
 - 500 m
 - 1 km
@@ -326,35 +379,22 @@ Radius values:
 - 3 km
 - 5 km
 
-Radius is centered on verified HOME.
+Changing radius updates list, markers, result count, and radius circle without full reload and without automatically calling Google Search.
 
-Changing radius updates:
+## 16. Search This Area
 
-- visible place list,
-- app markers,
-- result count,
-- radius circle,
+Add explicit `ค้นหาในพื้นที่นี้ / Search This Area`.
 
-without reloading the page or automatically performing a Google Places search.
+- Never search automatically on pan/zoom.
+- User must press the action.
+- Show current area/radius and request estimate first.
+- Discovery results are candidates, not instant canonical records.
+- Match existing records first using Place ID/name/coordinates/address.
+- New discoveries require explicit approval before becoming canonical app places.
 
-## 14. Search This Area
+## 17. Place Detail
 
-Add an explicit `ค้นหาในพื้นที่นี้ / Search This Area` action.
-
-Rules:
-
-- Never call Nearby/Text Search automatically from pan/zoom.
-- The user must press the button.
-- Show estimated request count and current search area/radius before calling Google.
-- Discovery results are candidates, not automatically canonical app records.
-- Existing records are matched first using Place ID/name/coordinate/address dedup logic.
-- New discoveries require explicit approval before becoming app places.
-
-## 15. Place Detail UI
-
-Existing Place Detail remains the primary component.
-
-Populate the existing fields when reliable data exists:
+Keep the existing Place Detail component and populate reliable values:
 
 - พื้นที่
 - ที่อยู่
@@ -367,269 +407,256 @@ Populate the existing fields when reliable data exists:
 - อัปเดตข้อมูล
 - ที่จอดรถ
 
-Display rule:
+Display priority follows the merge rules. Route data is independent from Places cache; missing Places data must not incorrectly erase valid route data.
 
-- Manual curated value first.
-- Google verified value when no stronger manual value exists.
-- Route value for route-specific fields.
-- `ไม่มีข้อมูล` / localized unknown state when unavailable.
+## 18. Photos and Attribution
 
-The app must not claim route data is unavailable merely because Google Places data is missing; routes and Places are independent cache layers.
+- Load at most 3 Google photo references initially.
+- Lazy-load additional photos after interaction.
+- Preserve required attribution.
+- Avoid full-resolution images until needed.
+- Existing manual/official images keep priority where appropriate.
+- Missing Google photo never clears an existing app image.
+- Do not permanently copy Google photo binaries unless permitted by current terms.
 
-## 16. Photos
+## 19. Google Maps Link Fallback
 
-For a place with Google photos:
+Every place always gets a working Maps action using the first available source:
 
-- initial gallery loads up to 3 photo references,
-- lazy-load more only on interaction,
-- preserve required attribution,
-- avoid full-resolution images until needed,
-- keep manual/official app photos higher priority where appropriate,
-- do not permanently copy Google photo content into app-owned storage unless explicitly permitted by current terms.
+1. Google-provided Maps URI,
+2. verified Place ID destination URL,
+3. verified latitude/longitude,
+4. name + address/area search URL.
 
-A missing Google photo must not replace an existing manual image with an empty state.
+An expired Place Details cache must not break the Maps button.
 
-## 17. Google Maps Links
+## 20. Admin Diagnostics
 
-Every place must always have a functioning Maps action using the first available option:
+Data Management gets a dedicated Google/Map diagnostic section containing:
 
-1. Google-provided Maps URI for the verified Place ID.
-2. Place ID destination URL.
-3. Verified latitude/longitude.
-4. Place name + address/area search URL.
+- total canonical places,
+- linked Place IDs,
+- missing Place IDs,
+- Review candidates,
+- places with coordinates,
+- missing coordinates,
+- visible map markers under current filter/radius,
+- duplicate Place IDs/groups,
+- stale Google cache,
+- missing routes by mode,
+- missing photos,
+- latest API/systemic errors.
 
-The action must never become disabled merely because Place Details cache expired.
-
-## 18. Admin Diagnostics
-
-Extend Data Management with a dedicated Google/Map diagnostic view containing:
-
-- Total canonical places.
-- Google Place ID linked.
-- Missing Place ID.
-- Review candidates.
-- Places with coordinates.
-- Missing coordinates.
-- Places visible on current map/filter.
-- Duplicate Google Place IDs.
-- Stale Google cache.
-- Missing route data by mode.
-- Missing photos.
-- Latest API/systemic errors.
-
-For each missing-coordinate place provide explicit action:
+Per missing-coordinate place:
 
 `ค้นหาพิกัดจาก Google`
 
-For matched places provide:
+Per matched place:
 
 `อัปเดตข้อมูล Google`
 
-For bulk operations provide:
+Bulk:
 
 `อัปเดตทั้งหมด`
 
-with confirmation, estimated operation count, progress, success/skipped/failed counts, and safety cap.
+Bulk actions show operation estimate, confirmation, progress, success/skipped/failed counts, and safety cap.
 
-## 19. Error Handling
+## 21. Error Handling
 
-Explicitly classify and surface admin-safe errors for:
+Classify and surface admin-safe errors for:
 
-- ZERO_RESULTS
-- INVALID_REQUEST
-- REQUEST_DENIED
-- OVER_QUERY_LIMIT / quota exhausted
-- missing/invalid API configuration
-- network failure
-- invalid coordinates
-- missing Place ID
-- missing photo
-- missing route
-- temporary/permanent closure
-- Supabase persistence failure
+- ZERO_RESULTS,
+- INVALID_REQUEST,
+- REQUEST_DENIED,
+- OVER_QUERY_LIMIT/quota,
+- missing/invalid API config,
+- network failures,
+- invalid coordinates,
+- missing Place ID,
+- missing photo,
+- missing route,
+- temporary/permanent closure,
+- Supabase persistence failure.
 
-One failed place never crashes the map or cancels unrelated successful records.
+One failed place never crashes the map or cancels unrelated successful places. Systemic errors stop the bulk run to avoid repeated billable failures. Technical details remain in admin/development diagnostics rather than normal consumer UI.
 
-Systemic errors stop the current bulk run to avoid repeated billable failures.
-
-## 20. Performance
-
-Keep the existing principle of lazy Google loading.
-
-Requirements:
+## 22. Performance
 
 - one Maps JS loader singleton,
 - no duplicate scripts,
-- map instance not recreated for unrelated state changes,
-- app marker derivation memoized from visible places,
-- cluster rendering retained,
-- no Places calls inside marker rendering,
-- no Place Details call on card open,
+- map instance survives unrelated React state updates,
+- marker data memoized from `visiblePlaces`,
+- clustering retained,
+- no Places calls from marker render functions,
+- no Place Details request on card open,
 - photo details lazy-loaded,
-- Supabase cache read once per app refresh rather than per marker,
-- smooth card/marker/radius updates without full reload,
-- no automatic Google requests caused by React re-renders.
+- Supabase shared cache loaded per app refresh, not per marker,
+- no Google request caused by React re-render,
+- smooth marker/card/radius transitions without full reload or flicker.
 
-## 21. Mobile / PWA
+## 23. Mobile / PWA
 
-Primary mobile target is iPhone 16 Pro while retaining Android/desktop compatibility.
+Primary target: iPhone 16 Pro, while retaining Android/desktop support.
 
-Requirements:
-
-- touch/pinch gestures,
-- marker tap hit targets suitable for mobile,
-- place preview as viewport-safe bottom sheet,
-- safe-area inset support,
-- no controls under Home indicator,
-- marker/card selection without page reload,
+- touch and pinch zoom,
+- mobile-sized marker hit targets,
+- viewport-safe bottom sheet,
+- safe-area insets,
+- no controls hidden under the Home indicator,
+- marker/card selection without reload,
 - progressive image loading,
 - no popup outside viewport.
 
-## 22. Security and Key Separation
+## 24. Key Separation and Security
 
 Browser key:
 
-- environment: `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
-- website-referrer restricted
-- API-restricted to only browser-required Google Maps Platform APIs
+- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
+- website-referrer restricted,
+- API-restricted to browser-required Google Maps APIs.
 
 Server key:
 
-- environment/secret: `GOOGLE_MAPS_SERVER_API_KEY`
-- Cloudflare secret, never `NEXT_PUBLIC_`
-- API-restricted to Routes API and any future explicitly server-side Maps API
-- never logged
-- never returned to the browser
+- `GOOGLE_MAPS_SERVER_API_KEY`
+- Cloudflare secret only,
+- API-restricted to Routes and any explicitly approved server-side Maps API,
+- never logged,
+- never returned to browser.
 
-Supabase service-role credentials must not be exposed to the browser. Browser-writable shared tables must retain strict RLS and bounded schema/payload validation.
+Supabase service-role credentials never enter browser code. Exposed shared tables require RLS, least-privilege grants, payload limits, and indexes.
 
-## 23. Cost Control
+## 25. Cost Control
 
-No request occurs simply because a user opens Home, Map, a card, or a place detail page.
+No cost-bearing request occurs simply because a user opens Home, Map, a card, or Place Detail.
 
-Cost-bearing operations require explicit user/admin intent:
+Explicit actions only:
 
 - bulk Google enrichment,
 - selected-place Google refresh,
 - Search This Area,
 - bulk/selected route refresh.
 
-Every bulk action shows an estimate before confirmation.
+Every bulk action shows an estimate before confirmation. Keep per-run safety caps; Routes gets independent matrix-element/request caps. Persist completed work incrementally so later runs skip fresh data.
 
-The existing per-run safety cap remains unless implementation verifies a safer lower value. Routes receive an independent per-run matrix-element/request cap.
+Google Cloud quota/budget alerts remain a second line of defense rather than the only application-level control.
 
-Completed records are persisted incrementally so a later run can resume without repeating fresh work.
-
-## 24. Database Changes
+## 26. Database Changes
 
 Do not replace `amd_places`.
 
-Prefer additive tables/columns:
+Prefer additive schema:
 
-- HOME origin/config table.
-- Existing Google link table retained.
-- Existing bounded Google cache retained/extended if needed.
-- New route cache table keyed by place + HOME version/origin + travel mode.
-- Existing diagnostics retained/extended.
+- HOME origin/config table,
+- existing Google link table retained,
+- existing bounded Google cache retained/extended,
+- route cache keyed by place + HOME origin/version + travel mode,
+- existing diagnostics retained/extended,
+- duplicate group/alias metadata only if needed for safe canonical merges.
 
-Any schema migration must:
+Migrations must:
 
-- preserve all 91 existing canonical rows,
-- keep IDs/slugs stable,
+- preserve all 91 canonical rows,
+- keep IDs/slugs stable unless an explicitly confirmed duplicate merge creates an alias/redirect,
 - enable RLS on exposed tables,
 - grant only required operations,
-- avoid service-role exposure,
-- include indexes for place ID, expiry, route freshness, and diagnostics queries.
+- never expose service role,
+- index Place ID, expiry, route freshness, and diagnostics lookups.
 
-## 25. Testing Strategy
+## 27. Testing
 
-### Unit tests
+### Unit
 
-- name normalization and candidate scoring,
+- normalization/candidate scoring,
 - duplicate Place ID detection,
-- manual-over-Google merge priority,
-- Google-over-seed merge priority,
+- safe duplicate merge precedence,
+- manual-over-Google priority,
+- Google-over-seed priority,
 - null never overwrites curated value,
 - cache expiry,
 - route cache selection,
 - radius filtering,
 - marker eligibility count,
-- Google Maps fallback URL construction,
+- Maps fallback URL,
 - cancellation confirmation,
-- systemic error fail-fast.
+- systemic fail-fast.
 
-### Integration tests
+### Integration
 
 - canonical places + Google cache merge,
-- review candidate with coordinates appears on map data layer,
+- Review candidate with coordinates enters map data layer,
 - HOME config drives radius/distance origin,
-- selected card selects marker and vice versa,
-- filters produce matching card/marker collections,
-- route refresh persists walking/driving/two-wheeler independently,
-- expired Google cache does not trigger automatic network requests.
+- card selects marker and marker selects card,
+- filters produce identical card/marker collections,
+- route refresh persists modes independently,
+- expired cache does not trigger automatic network calls,
+- duplicate merge remaps affected references without losing curated data.
 
 ### Production verification
 
-Before completion claim:
+Before any completion claim:
 
 - full unit suite,
 - TypeScript,
-- production Next build,
+- production Next.js build,
 - Cloudflare Wrangler dry-run,
 - Supabase verification queries,
 - Cloudflare deployment success,
-- production diagnostic counts.
+- production diagnostic counts,
+- browser console check on critical flows,
+- mobile/PWA smoke test.
 
-## 26. Rollout Sequence
+## 28. Rollout Sequence
 
-Implementation should be staged to minimize risk:
+1. Add admin authorization guard for bulk/server-cost operations if not already present.
+2. Resolve and persist HOME.
+3. Add/verify data models and bounded caches.
+4. Complete Places enrichment and duplicate protection.
+5. Add server Routes + route cache.
+6. Unify `visiblePlaces` for cards/map/filter/radius.
+7. Add marker icons, selection sync, and marker preview.
+8. Add photos/attribution enhancements.
+9. Add Search This Area.
+10. Complete diagnostics, duplicate merge flow, and per-place recovery actions.
+11. Validate against the full canonical dataset and deploy.
 
-1. Resolve and persist HOME origin.
-2. Add/verify data models and caches.
-3. Complete Places enrichment fields and dedup behavior.
-4. Add server-side Routes + route cache.
-5. Unify visible place collection for cards/map/filter/radius.
-6. Add marker/card selection synchronization and place preview.
-7. Add photos/attribution enhancements.
-8. Add Search This Area.
-9. Complete diagnostics and per-place recovery actions.
-10. Run production validation against the full canonical dataset.
+No phase may delete or weaken curated data to make later phases easier.
 
-No phase may delete or rewrite curated data to make later phases easier.
+## 29. Acceptance Criteria
 
-## 27. Acceptance Criteria
+Complete only when:
 
-The work is complete only when all of the following are true:
-
-1. HOME is resolved to a verified Google Place ID and exact coordinate without guessing.
-2. HOME is the only source for map origin, radius, distance, and routes.
-3. Every canonical place with usable coordinates appears as an application marker when not filtered out.
-4. Marker diagnostics equal the number of filtered places with coordinates.
+1. HOME resolves to a verified Google Place ID and exact coordinate without guessing.
+2. HOME is the authoritative source for map origin, radius, distance, and routes.
+3. Every visible canonical place with usable coordinates appears as an app marker.
+4. Marker diagnostics equal filtered places with coordinates.
 5. Missing-coordinate places appear in diagnostics with a manual Google resolution action.
 6. Google matching does not create duplicate canonical records.
-7. Manual curated values survive all Google refreshes.
-8. Place Detail displays all reliable enriched values and explicit unknown states otherwise.
-9. Walking/driving/two-wheeler values are real Routes results or unavailable; none are fabricated.
-10. Cards, map markers, filters, and radius all use one synchronized visible-place collection.
-11. Search This Area is explicit/manual only.
-12. Place Details/Routes are not called during normal navigation/rendering.
-13. Google Maps links work for every canonical place through a safe fallback chain.
-14. Photos are lazy, attributed, and policy-compliant.
-15. API failures affect only the relevant operation/place unless systemic, in which case the run stops safely.
-16. Admin diagnostics expose place-match, coordinate, map, stale-cache, route, photo, duplicate, and API-error status.
-17. Existing categories, LOCAL/CHAIN/Famous/Hidden Gem, notes, pricing, parking, links, favorites, and other current app features remain intact.
-18. No TypeScript/build errors.
-19. Cloudflare production deployment succeeds.
-20. Mobile experience works on iPhone 16 Pro/PWA without hidden controls or broken marker sheets.
+7. Existing duplicates that resolve to one Place ID have a safe explicit merge path preserving curated data and references.
+8. Manual curated values survive every Google refresh.
+9. Place Detail displays reliable enriched data and explicit unknown states otherwise.
+10. WALK/DRIVE/TWO_WHEELER values are real route results or unavailable; none are fabricated.
+11. Cards, markers, filters, and radius share one synchronized visible-place collection.
+12. Search This Area is explicit/manual only.
+13. Place Details/Routes are not called during normal rendering/navigation.
+14. Google Maps links work through the defined fallback chain.
+15. Photos are lazy, correctly attributed, and policy-compliant.
+16. API failures affect only relevant operations unless systemic, in which case the run stops safely.
+17. Diagnostics expose match, coordinate, marker, stale-cache, route, photo, duplicate, and API-error states.
+18. Existing categories, LOCAL/CHAIN/Famous/Hidden Gem, notes, pricing, parking, links, favorites, and other current features remain intact.
+19. Google attribution requirements are respected wherever Google content is displayed.
+20. No TypeScript/build errors and no critical browser console errors on tested flows.
+21. Cloudflare production deployment succeeds.
+22. iPhone 16 Pro/PWA layout works without hidden controls or broken marker sheets.
+23. Cost-bearing server endpoints require real admin authorization and enforce rate/safety limits.
 
-## 28. Explicit Non-Goals / Guardrails
+## 30. Guardrails / Non-Goals
 
-- Do not scrape Google Maps HTML.
-- Do not auto-discover businesses while panning/zooming.
-- Do not guess missing values.
-- Do not make Google the canonical owner of curated app metadata.
-- Do not expose a server API key to the browser.
-- Do not permanently cache Google content beyond current product-policy allowances.
-- Do not create a second parallel canonical place database.
-- Do not rewrite the entire map subsystem when the existing marker/clustering engine can be extended.
-- Do not claim completion based only on frontend appearance; database, API, cache, route, diagnostics, build, and production verification are mandatory.
+- No Google Maps HTML scraping.
+- No automatic discovery on pan/zoom.
+- No guessed missing values.
+- No Google ownership of curated app metadata.
+- No server key in browser code.
+- No indefinite Google-content cache beyond current policy allowances.
+- No second canonical place database.
+- No wholesale map rewrite when the current engine can be extended.
+- No claim of completion based only on frontend appearance; API, database, cache, routes, diagnostics, tests, build, deployment, and production verification are required.
