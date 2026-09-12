@@ -1,9 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BriefcaseBusiness, Car, Coffee, Dumbbell, Pill, Scissors, ShoppingBag, Store, Utensils, WashingMachine } from "lucide-react";
 import { getPlaceImageCandidates } from "@/lib/place-images";
-import type { CategoryId, Place } from "@/types/place";
+import {
+  GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT,
+  getGoogleRuntimePhoto,
+} from "@/lib/google-photo-runtime";
+import type { CategoryId, Place, PlaceImage } from "@/types/place";
 
 function CategoryIcon({ category, className = "h-8 w-8 stroke-[1.7]" }: { category: CategoryId; className?: string }) {
   if (["food", "local_food", "noodle", "thai_food", "isan_food", "mookata", "japanese", "korean_food", "vietnamese_food", "hotpot", "bbq", "chinese_food", "night_food"].includes(category)) return <Utensils className={className} />;
@@ -18,6 +22,33 @@ function CategoryIcon({ category, className = "h-8 w-8 stroke-[1.7]" }: { catego
   return <Store className={className} />;
 }
 
+function useGoogleRuntimePhoto(placeId: string) {
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ placeId?: string | null }>).detail;
+      if (!detail?.placeId || detail.placeId === placeId) setVersion((value) => value + 1);
+    };
+    window.addEventListener(GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT, refresh);
+  }, [placeId]);
+  return useMemo(() => getGoogleRuntimePhoto(placeId), [placeId, version]);
+}
+
+function runtimeImage(photo: ReturnType<typeof getGoogleRuntimePhoto>): PlaceImage | null {
+  if (!photo?.url) return null;
+  const attribution = photo.authorAttributions.map((item) => item.displayName).filter(Boolean).join(", ") || null;
+  return {
+    url: photo.url,
+    source: "google_places",
+    attribution,
+    width: photo.width,
+    height: photo.height,
+    verified: true,
+    photoReference: null,
+  };
+}
+
 export function PlacePhoto({
   place,
   className = "h-full w-full object-cover",
@@ -29,7 +60,13 @@ export function PlacePhoto({
   eager?: boolean;
   fallbackLabel?: string;
 }) {
-  const candidates = useMemo(() => getPlaceImageCandidates(place), [place]);
+  const persistedCandidates = useMemo(() => getPlaceImageCandidates(place), [place]);
+  const transientPhoto = useGoogleRuntimePhoto(place.id);
+  const transientImage = useMemo(() => runtimeImage(transientPhoto), [transientPhoto]);
+  const candidates = useMemo(
+    () => persistedCandidates.length ? persistedCandidates : transientImage ? [transientImage] : [],
+    [persistedCandidates, transientImage],
+  );
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const active = candidates.find((image) => !failed.has(image.url)) ?? null;
@@ -48,6 +85,8 @@ export function PlacePhoto({
   }
 
   const loaded = loadedUrl === active.url;
+  const usingTransientGooglePhoto = persistedCandidates.length === 0 && transientPhoto?.url === active.url;
+  const transientCredit = transientPhoto?.authorAttributions.map((item) => item.displayName).filter(Boolean).join(", ") || "";
 
   return (
     <>
@@ -66,11 +105,19 @@ export function PlacePhoto({
           setFailed((current) => new Set(current).add(active.url));
         }}
       />
+      {usingTransientGooglePhoto && loaded && (
+        <span className="pointer-events-none absolute bottom-1 right-1 z-[3] max-w-[80%] truncate rounded-md bg-black/65 px-1.5 py-0.5 text-[7px] leading-3 text-white/80 backdrop-blur-sm">
+          Google Maps{transientCredit ? ` • ${transientCredit}` : ""}
+        </span>
+      )}
     </>
   );
 }
 
 export function PlacePhotoAttribution({ place }: { place: Place }) {
-  if (!place.imageAttribution) return null;
-  return <p className="text-[8px] leading-4 text-[var(--amd-text-3)]">Photo: {place.imageAttribution}</p>;
+  const transientPhoto = useGoogleRuntimePhoto(place.id);
+  const transientCredit = transientPhoto?.authorAttributions.map((item) => item.displayName).filter(Boolean).join(", ") || null;
+  const credit = place.imageAttribution || transientCredit;
+  if (!credit) return null;
+  return <p className="text-[8px] leading-4 text-[var(--amd-text-3)]">Photo: {credit}{!place.imageAttribution && transientPhoto ? " • Google Maps" : ""}</p>;
 }
