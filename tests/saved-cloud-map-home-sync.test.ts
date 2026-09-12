@@ -10,7 +10,7 @@ describe("Saved Cloud Map + HOME sync", () => {
   const homeOrigin = read("lib/home-origin.ts");
   const homeManager = read("components/HomeOriginManager.tsx");
   const routes = read("components/GoogleRouteRefresh.tsx");
-  const app = read("components/AroundMyDormApp.tsx");
+  const manualMap = read("components/ManualGoogleMap.tsx");
 
   it("notifies mounted consumers immediately after HOME is verified or refreshed", () => {
     expect(homeOrigin).toContain('HOME_ORIGIN_CHANGED_EVENT');
@@ -30,19 +30,19 @@ describe("Saved Cloud Map + HOME sync", () => {
     expect(savedMap).not.toContain('google.maps');
   });
 
-  it("uses the cloud map by default and only mounts Google map when explicitly selected", () => {
-    expect(app).toContain('import { SavedCloudMap } from "@/components/SavedCloudMap";');
-    expect(app).toContain('useState<"cloud" | "google">("cloud")');
-    expect(app).toContain('mapProvider === "cloud"');
-    expect(app).toContain('mapProvider === "google"');
-    expect(app).toContain('<SavedCloudMap');
-    expect(app).toContain('<ManualGoogleMap');
+  it("uses the saved cloud map by default and exposes Google only as an explicit manual choice", () => {
+    expect(manualMap).toContain('import { SavedCloudMap } from "@/components/SavedCloudMap";');
+    expect(manualMap).toContain('useState<"cloud" | "google">("cloud")');
+    expect(manualMap).toContain('mapProvider === "cloud"');
+    expect(manualMap).toContain('setMapProvider("google")');
+    expect(manualMap).toContain('<SavedCloudMap');
+    expect(manualMap).toContain('<GoogleMapsMap');
+    expect(manualMap).toContain('Saved Cloud Map ใช้ได้โดยไม่ยิง Google Request');
   });
 
-  it("loads the verified HOME from Supabase for the dorm origin without calling Google", () => {
-    expect(app).toContain('loadHomeOrigin');
-    expect(app).toContain('isUsableHomeOrigin');
-    expect(app).toContain('setOrigin(exactHome)');
-    expect(app).toContain('setMapSearchCenter(exactHome)');
+  it("keeps Google Maps loading behind the existing explicit request gate", () => {
+    expect(manualMap).toContain('data-testid="load-google-map"');
+    expect(manualMap).toContain('onClick={() => startLoad(false)}');
+    expect(manualMap).toContain('Confirm Dynamic Map Load');
   });
 });
