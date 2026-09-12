@@ -6,12 +6,8 @@ import {
   textSimilarity,
   type GooglePlaceMatchAssessment,
 } from "@/lib/google-place-id-manager";
-import {
-  discoverGooglePlaces,
-  fetchGoogleLiveDetails,
-  type GoogleDiscoveryCandidate,
-  type GoogleLiveDetails,
-} from "@/lib/google-live";
+import type { GoogleDiscoveryCandidate, GoogleLiveDetails } from "@/lib/google-live";
+import { runSharedGooglePlaceDetails, runSharedGoogleTextSearch } from "@/lib/google-request-manager";
 import { DORM_CENTER, haversineKm } from "@/lib/place-utils";
 import type { FieldProvenanceEntry, Place } from "@/types/place";
 
@@ -202,6 +198,23 @@ export function mergeGoogleCloudPayload(place: Place, googlePlaceId: string, pay
   return next;
 }
 
+function mergeGoogleReviewLocation(place: Place, payload: GoogleCloudPlacePayload): Place {
+  const next: Place = { ...place };
+  if (!next.address && payload.address) next.address = payload.address;
+  if (next.latitude == null && payload.latitude != null) next.latitude = payload.latitude;
+  if (next.longitude == null && payload.longitude != null) next.longitude = payload.longitude;
+  if (!next.googleMapsUrl && payload.googleMapsUrl) next.googleMapsUrl = payload.googleMapsUrl;
+  if (next.latitude != null && next.longitude != null && next.distanceKm == null) {
+    const km = haversineKm(DORM_CENTER, { lat: next.latitude, lng: next.longitude });
+    next.distanceKm = Number(km.toFixed(2));
+    next.straightLineDistanceKm = next.distanceKm;
+    if (next.distance) next.distance = { ...next.distance, straightLineMeters: Math.round(km * 1000) };
+  }
+  next.source = Array.from(new Set([...(place.source || []), "google_candidate_review"]));
+  next.lastChecked = payload.fetchedAt;
+  return next;
+}
+
 async function loadSharedRows() {
   const [linksResult, cacheResult] = await Promise.all([
     supabase
@@ -222,19 +235,22 @@ async function loadSharedRows() {
 export async function applyGoogleCloudPlaceLayer(places: Place[]): Promise<Place[]> {
   if (!places.length) return places;
   const { links, cache } = await loadSharedRows();
-  const linkedByPlace = new Map(
-    links.filter((row) => row.status === "linked" && row.google_place_id).map((row) => [row.place_id, row.google_place_id as string]),
-  );
+  const linkByPlace = new Map(links.map((row) => [row.place_id, row]));
   const freshCacheByPlace = new Map(
     cache.filter((row) => isFresh(row.expires_at)).map((row) => [row.place_id, row]),
   );
 
   return places.map((place) => {
-    const linkedId = place.googlePlaceId || linkedByPlace.get(place.id) || null;
-    if (!linkedId) return place;
+    const link = linkByPlace.get(place.id);
+    const linkedId = place.googlePlaceId || (link?.status === "linked" ? link.google_place_id : null);
+    const reviewId = !linkedId && link?.status === "review" && isFresh(link.candidate_expires_at) ? link.google_place_id : null;
+    const effectiveId = linkedId || reviewId;
+    if (!effectiveId) return place;
+
     const row = freshCacheByPlace.get(place.id);
-    const payload = row && row.google_place_id === linkedId ? safePayload(row.payload) : null;
+    const payload = row && row.google_place_id === effectiveId ? safePayload(row.payload) : null;
     if (!payload) {
+      if (!linkedId) return place;
       return {
         ...place,
         googlePlaceId: linkedId,
@@ -246,7 +262,9 @@ export async function applyGoogleCloudPlaceLayer(places: Place[]): Promise<Place
         },
       };
     }
-    return mergeGoogleCloudPayload(place, linkedId, payload);
+
+    if (linkedId) return mergeGoogleCloudPayload(place, linkedId, payload);
+    return mergeGoogleReviewLocation(place, payload);
   });
 }
 
@@ -269,7 +287,8 @@ export async function loadGoogleCloudEnrichmentStatus(places: Place[]): Promise<
     const linkedId = place.googlePlaceId || (link?.status === "linked" ? link.google_place_id : null);
     const freshReview = link?.status === "review" && isFresh(link.candidate_expires_at);
     const row = cacheByPlace.get(place.id);
-    const fresh = Boolean(row && isFresh(row.expires_at) && linkedId && row.google_place_id === linkedId);
+    const effectiveId = linkedId || (freshReview ? link?.google_place_id : null);
+    const fresh = Boolean(row && isFresh(row.expires_at) && effectiveId && row.google_place_id === effectiveId);
 
     if (linkedId) linked += 1;
     if (freshReview) review += 1;
@@ -368,6 +387,37 @@ async function persistLink(place: Place, candidate: CandidateAssessment | null, 
   if (error) throw error;
 }
 
+async function persistDiscoveryCandidate(placeId: string, candidate: GoogleDiscoveryCandidate) {
+  if (!candidate.googlePlaceId || candidate.latitude == null || candidate.longitude == null) return;
+  const fetchedAt = candidate.fetchedAt || new Date().toISOString();
+  const expiresAt = new Date(new Date(fetchedAt).getTime() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString();
+  const payload: GoogleCloudPlacePayload = {
+    address: candidate.address,
+    latitude: candidate.latitude,
+    longitude: candidate.longitude,
+    rating: candidate.rating,
+    reviewCount: candidate.reviewCount,
+    openNow: candidate.openNow,
+    openingHoursText: [],
+    phone: null,
+    website: null,
+    googleMapsUrl: candidate.googleMapsUrl,
+    priceLevel: null,
+    businessStatus: null,
+    fetchedAt,
+  };
+  const { error } = await supabase.from("amd_google_public_cache").upsert({
+    place_id: placeId,
+    google_place_id: candidate.googlePlaceId,
+    payload,
+    fetched_at: fetchedAt,
+    expires_at: expiresAt,
+    source: "google_discovery_candidate",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "place_id" });
+  if (error) throw error;
+}
+
 async function persistLiveDetails(placeId: string, googlePlaceId: string, live: GoogleLiveDetails) {
   const fetchedAt = live.fetchedAt || new Date().toISOString();
   const expiresAt = new Date(new Date(fetchedAt).getTime() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString();
@@ -442,7 +492,8 @@ export async function runGoogleCloudAutoEnrichment(input: {
         const query = [buildGoogleMatchQuery(place), "Bangkok Thailand"].filter(Boolean).join(" ");
         const center = place.latitude != null && place.longitude != null ? { lat: place.latitude, lng: place.longitude } : DORM_CENTER;
         const radiusMeters = place.latitude != null && place.longitude != null ? (isChainPlace(place) ? 1500 : 4000) : 20000;
-        const candidates = await discoverGooglePlaces(input.apiKey, {
+        const candidates = await runSharedGoogleTextSearch({
+          apiKey: input.apiKey,
           query,
           center,
           radiusMeters,
@@ -455,6 +506,10 @@ export async function runGoogleCloudAutoEnrichment(input: {
         const automatic = chooseAutomaticGoogleMatch(place, assessed);
         if (!automatic) {
           await persistLink(place, assessed[0] || null, "review");
+          if (assessed[0]) {
+            await persistDiscoveryCandidate(place.id, assessed[0].candidate);
+            cached += 1;
+          }
           linksByPlace.set(place.id, {
             place_id: place.id,
             google_place_id: assessed[0]?.candidate.googlePlaceId || null,
@@ -473,6 +528,9 @@ export async function runGoogleCloudAutoEnrichment(input: {
         googlePlaceId = automatic.candidate.googlePlaceId;
         usedGooglePlaceIds.add(googlePlaceId);
         await persistLink(place, automatic, "linked");
+        // Persist discovery coordinates immediately. If full Place Details is
+        // unavailable, the shop still has a real Google position for its map pin.
+        await persistDiscoveryCandidate(place.id, automatic.candidate);
         linksByPlace.set(place.id, {
           place_id: place.id,
           google_place_id: googlePlaceId,
@@ -499,7 +557,7 @@ export async function runGoogleCloudAutoEnrichment(input: {
         break;
       }
 
-      const live = await fetchGoogleLiveDetails(input.apiKey, googlePlaceId);
+      const live = await runSharedGooglePlaceDetails({ apiKey: input.apiKey, googlePlaceId });
       networkRequests += 1;
       await persistLiveDetails(place.id, googlePlaceId, live);
       cacheByPlace.set(place.id, {

@@ -409,3 +409,32 @@ export async function runGoogleTextSearchRequest(input: {
     throw error;
   }
 }
+
+/**
+ * Shared maintenance wrappers used by the explicit Google -> Supabase bulk
+ * action. These deliberately avoid Supabase Auth/control hydration because the
+ * shared cache is app-owned, but they remain behind this single request layer.
+ */
+export async function runSharedGoogleTextSearch(input: {
+  apiKey: string;
+  query: string;
+  center: { lat: number; lng: number };
+  radiusMeters: number;
+  language?: "th" | "en";
+  maxResults?: number;
+}) {
+  if (GOOGLE_REQUEST_MODE !== "manual") throw new Error("Google request policy is not manual");
+  return discoverGooglePlaces(input.apiKey, {
+    query: input.query,
+    center: input.center,
+    radiusMeters: input.radiusMeters,
+    language: input.language,
+    maxResults: input.maxResults,
+  });
+}
+
+export async function runSharedGooglePlaceDetails(input: { apiKey: string; googlePlaceId: string }) {
+  if (GOOGLE_REQUEST_MODE !== "manual") throw new Error("Google request policy is not manual");
+  return fetchGoogleLiveDetails(input.apiKey, input.googlePlaceId);
+}
+

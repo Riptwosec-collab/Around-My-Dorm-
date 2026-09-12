@@ -114,6 +114,10 @@ export function textSimilarity(a: string | null | undefined, b: string | null | 
   const right = normalizeText(b || "");
   if (!left || !right) return null;
   if (left === right) return 1;
+  // Google fallback queries often include the local name/area plus Bangkok.
+  // Treat normalized containment as a strong match instead of penalising the
+  // extra location tokens.
+  if (left.includes(right) || right.includes(left)) return 0.95;
   const maxLength = Math.max(left.length, right.length);
   const editScore = 1 - levenshtein(left, right) / maxLength;
   const leftTokens = new Set(left.split(/\s+/).filter(Boolean));
@@ -176,7 +180,7 @@ export function assessGooglePlaceMatch(place: Place, candidate: GoogleDiscoveryC
   const rawFactors: MatchFactor[] = [
     { key: "name", weight: 35, score: textSimilarity(place.name, candidate.name), label: "Unavailable" },
     { key: "coordinates", weight: 30, score: coordinateScore(distanceMeters), label: "Unavailable" },
-    { key: "address", weight: 15, score: textSimilarity(place.address || `${place.soi || ""} ${place.area || ""}`, candidate.address), label: "Unavailable" },
+    { key: "address", weight: 15, score: textSimilarity(place.address || place.soi || place.area, candidate.address), label: "Unavailable" },
     { key: "category", weight: 10, score: categoryScore(place, candidate), label: "Unavailable" },
     { key: "phone", weight: 5, score: null, label: "Unavailable" },
     { key: "website", weight: 5, score: null, label: "Unavailable" },
@@ -190,16 +194,21 @@ export function assessGooglePlaceMatch(place: Place, candidate: GoogleDiscoveryC
   const linkedElsewhere = places.some((item) => item.id !== place.id && item.googlePlaceId === candidate.googlePlaceId);
   const chain = isChainPlace(place);
   const chainAddressScore = factorMap.address.score;
+  const geocodeFallback = candidate.primaryType === "geocode_fallback";
+  // Existing records currently have no local coordinates. For normal Places
+  // candidates, keep the strict coordinate guard. For the explicit Google
+  // Geocoding fallback, require strong area/address agreement instead so chain
+  // branches can still be positioned on the map without inventing coordinates.
   const chainSafetyPassed = !chain || (
-    distanceMeters != null && distanceMeters <= 150 &&
-    chainAddressScore != null && chainAddressScore >= 0.45 &&
-    !linkedElsewhere
+    !linkedElsewhere &&
+    chainAddressScore != null && chainAddressScore >= (geocodeFallback ? 0.55 : 0.45) &&
+    (geocodeFallback || (distanceMeters != null && distanceMeters <= 150))
   );
   const blockReasons: string[] = [];
   if (linkedElsewhere) blockReasons.push("Google Place ID is already linked to another local record");
-  if (chain && distanceMeters == null) blockReasons.push("Chain location requires coordinate proximity");
-  if (chain && distanceMeters != null && distanceMeters > 150) blockReasons.push("Chain candidate is too far from this branch");
-  if (chain && (chainAddressScore == null || chainAddressScore < 0.45)) blockReasons.push("Chain candidate requires address agreement");
+  if (chain && !geocodeFallback && distanceMeters == null) blockReasons.push("Chain location requires coordinate proximity");
+  if (chain && !geocodeFallback && distanceMeters != null && distanceMeters > 150) blockReasons.push("Chain candidate is too far from this branch");
+  if (chain && (chainAddressScore == null || chainAddressScore < (geocodeFallback ? 0.55 : 0.45))) blockReasons.push("Chain candidate requires address agreement");
   return {
     confidence,
     factors: factorMap,

@@ -49,6 +49,16 @@ describe("Google Place ID integrity", () => {
     expect(result.hardBlocked).toBe(true);
   });
 
+  it("allows a geocoded chain branch with strong area agreement when local coordinates are missing", () => {
+    const local = place({ name: "7-Eleven ลาดพร้าว 35", placeType: "chain", area: "ลาดพร้าว 35", soi: "ลาดพร้าว 35", address: null, latitude: null, longitude: null });
+    const fallback = candidate({ name: "7-Eleven ลาดพร้าว 35 Bangkok Thailand", address: "ซอยลาดพร้าว 35 แขวงจันทรเกษม เขตจตุจักร กรุงเทพมหานคร", latitude: 13.81, longitude: 100.58, primaryType: "geocode_fallback" });
+    const result = assessGooglePlaceMatch(local, fallback, [local]);
+    expect(result.factors.name.score).toBeGreaterThanOrEqual(0.9);
+    expect(result.factors.address.score).toBeGreaterThanOrEqual(0.55);
+    expect(result.chainSafetyPassed).toBe(true);
+    expect(result.hardBlocked).toBe(false);
+  });
+
   it("blocks linking a Google Place ID already used by another local record", () => {
     const local = place();
     const other = place({ id: "p2", googlePlaceId: "g1" });
