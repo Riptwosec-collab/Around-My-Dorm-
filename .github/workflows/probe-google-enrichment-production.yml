@@ -1,0 +1,74 @@
+name: Probe Production Google Enrichment Once
+
+on:
+  push:
+    branches:
+      - debug/probe-google-enrichment-production
+    paths:
+      - .github/workflows/probe-google-enrichment-production.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Run one explicitly confirmed production probe
+        env:
+          TARGET_URL: https://around-my-dorm.aidsaras.workers.dev
+        run: |
+          node <<'NODE'
+          const { chromium } = require('@playwright/test');
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            const googleRequests = [];
+            page.on('request', (request) => {
+              const url = request.url();
+              if (url.includes('maps.googleapis.com') || url.includes('places.googleapis.com')) {
+                googleRequests.push(url.replace(/([?&]key=)[^&]+/i, '$1[REDACTED]'));
+              }
+            });
+
+            await page.goto(`${process.env.TARGET_URL}/settings/`, { waitUntil: 'networkidle', timeout: 60000 });
+            await page.getByRole('button', { name: 'จัดการ', exact: true }).click();
+            await page.getByTestId('google-cloud-auto-enrichment').waitFor({ state: 'visible', timeout: 30000 });
+            await page.getByTestId('google-cloud-enrich-all').click();
+            await page.getByTestId('confirm-google-cloud-enrich-all').click();
+
+            // The production component only exposes cancellation while running.
+            // Click it as soon as it appears so this probe processes at most the
+            // current shop/request path rather than the full 91-shop batch.
+            const cancel = page.getByRole('button', { name: /ยกเลิกหลัง Request ปัจจุบัน|Cancel after current request/ });
+            await cancel.waitFor({ state: 'visible', timeout: 15000 });
+            await cancel.click();
+
+            await page.waitForFunction(() => {
+              const el = document.querySelector('[data-testid="google-cloud-auto-enrichment"]');
+              return el && /ล้มเหลว|failed|ยกเลิกแล้ว|Cancelled|Systemic Google error/i.test(el.textContent || '');
+            }, { timeout: 60000 }).catch(() => {});
+
+            const text = await page.getByTestId('google-cloud-auto-enrichment').innerText();
+            console.log('=== COMPONENT OUTPUT ===');
+            console.log(text.slice(0, 12000));
+            console.log('=== GOOGLE REQUEST COUNT ===');
+            console.log(googleRequests.length);
+            console.log('=== GOOGLE REQUEST URLS (KEY REDACTED) ===');
+            for (const url of googleRequests.slice(0, 10)) console.log(url);
+
+            await browser.close();
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
