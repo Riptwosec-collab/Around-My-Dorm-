@@ -91,7 +91,13 @@ export function GoogleCloudAutoEnrichment({
       await refreshCloudStatus();
       onReload();
 
-      if (next.stoppedByLimit) {
+      if (next.stoppedBySystemicError) {
+        setMessage(
+          language === "en"
+            ? `Stopped after the first systemic Google error to avoid repeating failed requests. ${next.stoppedReason || next.lastError || "See diagnostics."}`
+            : `หยุดหลังพบ Google error ที่เป็นปัญหาระดับระบบครั้งแรก เพื่อไม่ยิงซ้ำทั้ง 91 ร้าน • ${next.stoppedReason || next.lastError || "ดู Diagnostics"}`,
+        );
+      } else if (next.stoppedByLimit) {
         setMessage(
           language === "en"
             ? `${next.stoppedReason || "Safety limit reached."} Completed shops are already saved. Press the button again to continue the remaining shops.`

@@ -3,6 +3,7 @@ import type { Place } from "@/types/place";
 import { assertGoogleNetworkRequestsUnlocked, hydrateGoogleApiControlSettings } from "@/lib/google-api-control";
 import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import { readGoogleMemoryCache } from "@/lib/google-memory-cache";
+import { classifyGoogleEnrichmentError, writeGoogleEnrichmentDiagnostic } from "@/lib/google-enrichment-diagnostics";
 
 export const GOOGLE_REQUEST_MODE = "manual" as const;
 export const DEFAULT_GOOGLE_BATCH_LIMIT = 50;
@@ -415,6 +416,12 @@ export async function runGoogleTextSearchRequest(input: {
  * action. These deliberately avoid Supabase Auth/control hydration because the
  * shared cache is app-owned, but they remain behind this single request layer.
  */
+type SharedGoogleDiagnosticContext = {
+  runId: string;
+  placeId?: string;
+  placeName?: string;
+};
+
 export async function runSharedGoogleTextSearch(input: {
   apiKey: string;
   query: string;
@@ -422,19 +429,65 @@ export async function runSharedGoogleTextSearch(input: {
   radiusMeters: number;
   language?: "th" | "en";
   maxResults?: number;
+  diagnostic?: SharedGoogleDiagnosticContext;
 }) {
   if (GOOGLE_REQUEST_MODE !== "manual") throw new Error("Google request policy is not manual");
-  return discoverGooglePlaces(input.apiKey, {
-    query: input.query,
-    center: input.center,
-    radiusMeters: input.radiusMeters,
-    language: input.language,
-    maxResults: input.maxResults,
-  });
+  const started = nowMs();
+  try {
+    return await discoverGooglePlaces(input.apiKey, {
+      query: input.query,
+      center: input.center,
+      radiusMeters: input.radiusMeters,
+      language: input.language,
+      maxResults: input.maxResults,
+    });
+  } catch (error) {
+    if (input.diagnostic) {
+      await writeGoogleEnrichmentDiagnostic({
+        runId: input.diagnostic.runId,
+        stage: "text_search_failed",
+        placeId: input.diagnostic.placeId,
+        placeName: input.diagnostic.placeName,
+        ok: false,
+        error,
+        meta: {
+          code: classifyGoogleEnrichmentError(error),
+          durationMs: Math.round(nowMs() - started),
+          radiusMeters: input.radiusMeters,
+          language: input.language || "th",
+        },
+      });
+    }
+    throw error;
+  }
 }
 
-export async function runSharedGooglePlaceDetails(input: { apiKey: string; googlePlaceId: string }) {
+export async function runSharedGooglePlaceDetails(input: {
+  apiKey: string;
+  googlePlaceId: string;
+  diagnostic?: SharedGoogleDiagnosticContext;
+}) {
   if (GOOGLE_REQUEST_MODE !== "manual") throw new Error("Google request policy is not manual");
-  return fetchGoogleLiveDetails(input.apiKey, input.googlePlaceId);
+  const started = nowMs();
+  try {
+    return await fetchGoogleLiveDetails(input.apiKey, input.googlePlaceId);
+  } catch (error) {
+    if (input.diagnostic) {
+      await writeGoogleEnrichmentDiagnostic({
+        runId: input.diagnostic.runId,
+        stage: "place_details_failed",
+        placeId: input.diagnostic.placeId,
+        placeName: input.diagnostic.placeName,
+        ok: false,
+        error,
+        meta: {
+          code: classifyGoogleEnrichmentError(error),
+          durationMs: Math.round(nowMs() - started),
+          googlePlaceId: input.googlePlaceId,
+        },
+      });
+    }
+    throw error;
+  }
 }
 

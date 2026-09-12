@@ -8,6 +8,13 @@ import {
 } from "@/lib/google-place-id-manager";
 import type { GoogleDiscoveryCandidate, GoogleLiveDetails } from "@/lib/google-live";
 import { runSharedGooglePlaceDetails, runSharedGoogleTextSearch } from "@/lib/google-request-manager";
+import {
+  classifyGoogleEnrichmentError,
+  createGoogleEnrichmentRunId,
+  isSystemicGoogleEnrichmentError,
+  sanitizeGoogleDiagnosticText,
+  writeGoogleEnrichmentDiagnostic,
+} from "@/lib/google-enrichment-diagnostics";
 import { DORM_CENTER, haversineKm } from "@/lib/place-utils";
 import type { FieldProvenanceEntry, Place } from "@/types/place";
 
@@ -78,6 +85,7 @@ export type GoogleCloudEnrichmentProgress = {
 export type GoogleCloudEnrichmentResult = GoogleCloudEnrichmentProgress & {
   cancelled: boolean;
   stoppedByLimit: boolean;
+  stoppedBySystemicError: boolean;
   stoppedReason: string | null;
 };
 
@@ -443,6 +451,14 @@ export async function runGoogleCloudAutoEnrichment(input: {
 }): Promise<GoogleCloudEnrichmentResult> {
   if (!input.apiKey) throw new Error("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing");
 
+  const runId = createGoogleEnrichmentRunId();
+  await writeGoogleEnrichmentDiagnostic({
+    runId,
+    stage: "bulk_started",
+    ok: true,
+    meta: { totalPlaces: input.places.length, language: input.language },
+  });
+
   const cloud = await loadSharedRows();
   const linksByPlace = new Map(cloud.links.map((row) => [row.place_id, row]));
   const cacheByPlace = new Map(cloud.cache.map((row) => [row.place_id, row]));
@@ -459,6 +475,7 @@ export async function runGoogleCloudAutoEnrichment(input: {
   let failed = 0;
   let cancelled = false;
   let stoppedByLimit = false;
+  let stoppedBySystemicError = false;
   let stoppedReason: string | null = null;
   let currentName: string | null = null;
   let lastError: string | null = null;
@@ -471,6 +488,7 @@ export async function runGoogleCloudAutoEnrichment(input: {
     currentName = place.name;
     publish();
 
+    let abortAfterCurrent = false;
     try {
       const existingLink = linksByPlace.get(place.id);
       let googlePlaceId = place.googlePlaceId || (existingLink?.status === "linked" ? existingLink.google_place_id : null);
@@ -499,6 +517,7 @@ export async function runGoogleCloudAutoEnrichment(input: {
           radiusMeters,
           language: input.language,
           maxResults: 8,
+          diagnostic: { runId, placeId: place.id, placeName: place.name },
         });
         networkRequests += 1;
 
@@ -557,7 +576,11 @@ export async function runGoogleCloudAutoEnrichment(input: {
         break;
       }
 
-      const live = await runSharedGooglePlaceDetails({ apiKey: input.apiKey, googlePlaceId });
+      const live = await runSharedGooglePlaceDetails({
+        apiKey: input.apiKey,
+        googlePlaceId,
+        diagnostic: { runId, placeId: place.id, placeName: place.name },
+      });
       networkRequests += 1;
       await persistLiveDetails(place.id, googlePlaceId, live);
       cacheByPlace.set(place.id, {
@@ -570,14 +593,49 @@ export async function runGoogleCloudAutoEnrichment(input: {
       cached += 1;
     } catch (error) {
       failed += 1;
-      lastError = error instanceof Error ? error.message : "Google enrichment failed";
+      const code = classifyGoogleEnrichmentError(error);
+      const safeError = sanitizeGoogleDiagnosticText(error);
+      lastError = `[${code}] ${safeError}`;
+      await writeGoogleEnrichmentDiagnostic({
+        runId,
+        stage: "place_failed",
+        placeId: place.id,
+        placeName: place.name,
+        ok: false,
+        error,
+        meta: { code, networkRequests, linked, cached, review, failed },
+      });
+      if (isSystemicGoogleEnrichmentError(code)) {
+        stoppedBySystemicError = true;
+        stoppedReason = `Systemic Google error (${code}): ${safeError}`;
+        abortAfterCurrent = true;
+      }
     }
 
     current += 1;
     publish();
+    if (abortAfterCurrent) break;
   }
 
   currentName = null;
   publish();
-  return { current, total: input.places.length, currentName, networkRequests, linked, cached, review, failed, lastError, cancelled, stoppedByLimit, stoppedReason };
+  await writeGoogleEnrichmentDiagnostic({
+    runId,
+    stage: "bulk_completed",
+    ok: !stoppedBySystemicError && failed === 0,
+    error: stoppedBySystemicError ? stoppedReason : null,
+    meta: {
+      current,
+      total: input.places.length,
+      networkRequests,
+      linked,
+      cached,
+      review,
+      failed,
+      cancelled,
+      stoppedByLimit,
+      stoppedBySystemicError,
+    },
+  });
+  return { current, total: input.places.length, currentName, networkRequests, linked, cached, review, failed, lastError, cancelled, stoppedByLimit, stoppedBySystemicError, stoppedReason };
 }
