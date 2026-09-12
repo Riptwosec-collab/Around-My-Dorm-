@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CheckCircle2, Home, MapPin, RefreshCw } from "lucide-react";
-import { isUsableHomeOrigin, loadHomeOrigin } from "@/lib/home-origin";
+import { isUsableHomeOrigin, loadHomeOrigin, notifyHomeOriginChanged } from "@/lib/home-origin";
 import {
   confirmHomeOrigin,
   searchHomeOriginCandidates,
@@ -27,6 +27,7 @@ export function HomeOriginManager({
   async function refreshOrigin() {
     const next = await loadHomeOrigin();
     setOrigin(next);
+    notifyHomeOriginChanged(next);
     return next;
   }
 
@@ -69,6 +70,7 @@ export function HomeOriginManager({
     try {
       const saved = await confirmHomeOrigin(item.candidate);
       setOrigin(saved);
+      notifyHomeOriginChanged(saved);
       setCandidates([]);
       setMessage(language === "en" ? "HOME origin verified and saved." : "ยืนยัน HOME และบันทึกพิกัด Google แล้ว");
     } catch (error) {
