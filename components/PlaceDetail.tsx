@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -21,6 +21,8 @@ import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
 import { PlaceGoogleDataPanel } from "@/components/PlaceGoogleDataPanel";
+import { getAdminAccessState } from "@/lib/admin-auth";
+import { saveAdminPlaceNote } from "@/lib/admin-notes";
 import {
   calculateLocalScore,
   formatDistance,
@@ -67,11 +69,13 @@ export function PlaceDetail({
   onClose: () => void;
   onSave: () => void;
   onMap: () => void;
-  adminAllowed: boolean;
-  onSaveAdminNote: (note: string) => Promise<void>;
+  adminAllowed?: boolean;
+  onSaveAdminNote?: (note: string) => Promise<void>;
   language?: "th" | "en";
 }) {
   const [reportOpen, setReportOpen] = useState(false);
+  const [fallbackAdminAllowed, setFallbackAdminAllowed] = useState(false);
+  const [currentAdminNote, setCurrentAdminNote] = useState<string | null>(place.notes);
   const copy = getCopy(language);
   const category = CATEGORY_MAP[place.category];
   const status = getPlaceOpenStatus(place);
@@ -82,6 +86,34 @@ export function PlaceDetail({
   const parkingStatus = getParkingStatus(place);
   const dataQuality = scorePlaceDataQuality(place);
   const dataFreshnessLabel = dataAgeLabel(place, language);
+  const effectiveAdminAllowed = adminAllowed ?? fallbackAdminAllowed;
+
+  useEffect(() => {
+    setCurrentAdminNote(place.notes);
+  }, [place.notes]);
+
+  useEffect(() => {
+    if (adminAllowed !== undefined) return;
+    let active = true;
+    void getAdminAccessState()
+      .then((state) => {
+        if (active) setFallbackAdminAllowed(state.admin);
+      })
+      .catch(() => {
+        if (active) setFallbackAdminAllowed(false);
+      });
+    return () => { active = false; };
+  }, [adminAllowed]);
+
+  async function handleSaveAdminNote(note: string) {
+    if (onSaveAdminNote) {
+      await onSaveAdminNote(note);
+      setCurrentAdminNote(note.trim() || null);
+      return;
+    }
+    const result = await saveAdminPlaceNote(place.id, note);
+    setCurrentAdminNote(result.note);
+  }
 
   async function share() {
     const url = googleMapsPlaceUrl(place);
@@ -184,12 +216,12 @@ export function PlaceDetail({
             </div>
 
             <AdminNotePanel
-              note={place.notes}
-              adminAllowed={adminAllowed}
+              note={currentAdminNote}
+              adminAllowed={effectiveAdminAllowed}
               language={language}
               publicTitle={language === "en" ? "Admin Note" : "โน้ตจากผู้ดูแล"}
               editLabel="Edit Admin Note"
-              onSave={onSaveAdminNote}
+              onSave={handleSaveAdminNote}
             />
 
             <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] px-4">
