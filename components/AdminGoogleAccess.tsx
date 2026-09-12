@@ -5,14 +5,28 @@ import { KeyRound, LogOut, ShieldCheck } from "lucide-react";
 import { HomeOriginManager } from "@/components/HomeOriginManager";
 import { supabase } from "@/lib/cloud/supabase";
 import {
+  ADMIN_EMAIL_ALLOWLIST,
   getAdminAccessState,
-  signInAdminWithPassword,
+  signInOrCreateAdminWithPassword,
   signOutAdmin,
   type AdminAccessState,
 } from "@/lib/admin-auth";
 
-const ADMIN_EMAIL_OPTIONS = ["misuki2803@gmail.com"] as const;
+const ADMIN_EMAIL_OPTIONS = ADMIN_EMAIL_ALLOWLIST;
 const EMPTY: AdminAccessState = { authenticated: false, admin: false, anonymous: false, email: null };
+
+function friendlyAuthMessage(error: unknown, language: "th" | "en") {
+  const message = error instanceof Error ? error.message : "Admin login failed";
+  if (message === "ADMIN_EMAIL_CONFIRMATION_REQUIRED") {
+    return language === "en"
+      ? "First-time admin account created. Confirm the email from Supabase, then return and sign in again. If this account already existed, verify the password."
+      : "สร้างบัญชี Admin ครั้งแรกแล้ว ให้เปิดอีเมลจาก Supabase เพื่อยืนยันบัญชี จากนั้นกลับมาเข้าสู่ระบบอีกครั้ง หากบัญชีมีอยู่แล้วให้ตรวจรหัสผ่าน";
+  }
+  if (/invalid login credentials|invalid credentials/i.test(message)) {
+    return language === "en" ? "Invalid admin password." : "รหัสผ่าน Admin ไม่ถูกต้อง";
+  }
+  return message;
+}
 
 export function AdminGoogleAccess({
   language,
@@ -60,13 +74,13 @@ export function AdminGoogleAccess({
     setBusy(true);
     setMessage(null);
     try {
-      const next = await signInAdminWithPassword(email, password);
+      const next = await signInOrCreateAdminWithPassword(email, password);
       setState(next);
       onStateChange?.(next);
       setPassword("");
       setMessage(language === "en" ? "Supabase admin connected." : "เชื่อม Supabase Admin แล้ว");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Admin login failed");
+      setMessage(friendlyAuthMessage(error, language));
     } finally {
       setBusy(false);
     }
@@ -95,7 +109,7 @@ export function AdminGoogleAccess({
             <p className="mt-1 text-[9px] leading-5 text-white/48">
               {state.admin
                 ? language === "en" ? `Authorized admin${state.email ? ` • ${state.email}` : ""}` : `ยืนยันสิทธิ์ Admin แล้ว${state.email ? ` • ${state.email}` : ""}`
-                : language === "en" ? "Choose the admin account and enter its Supabase Auth password." : "เลือกบัญชี Admin จากดรอปดาวน์ แล้วกรอกรหัสผ่าน Supabase Auth"}
+                : language === "en" ? "Choose the admin account and enter its Supabase Auth password. The first successful setup can create the account automatically." : "เลือกบัญชี Admin แล้วกรอกรหัสผ่าน Supabase Auth หากยังไม่มีบัญชี ระบบจะสร้างบัญชีครั้งแรกให้อัตโนมัติ"}
             </p>
           </div>
         </div>
@@ -120,12 +134,12 @@ export function AdminGoogleAccess({
               className="amd-input h-11 w-full rounded-xl px-3 text-[10px]"
             />
             <button type="button" disabled={busy || !password} onClick={() => void login()} className="amd-btn amd-btn-primary min-h-11 rounded-xl px-4 text-[9px] font-bold disabled:opacity-50">
-              <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />{busy ? (language === "en" ? "Signing in…" : "กำลังเข้า…") : (language === "en" ? "Login Admin" : "เข้าสู่ระบบ Admin")}</span>
+              <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />{busy ? (language === "en" ? "Signing in…" : "กำลังเข้า…") : (language === "en" ? "Login / Activate" : "เข้าสู่ระบบ / เปิดใช้")}</span>
             </button>
           </div>
         )}
 
-        {!state.admin && <p className="mt-2 text-[8px] leading-4 text-white/35">{language === "en" ? "The password is submitted directly to Supabase Auth and is not stored in this app or repository." : "รหัสผ่านจะส่งตรงไป Supabase Auth และไม่ถูกบันทึกไว้ในโค้ดหรือ Repository"}</p>}
+        {!state.admin && <p className="mt-2 text-[8px] leading-4 text-white/35">{language === "en" ? "Application data is stored in Supabase cloud only. The password is sent directly to Supabase Auth and is never stored in the app or repository." : "ข้อมูลแอปเก็บบน Supabase Cloud เท่านั้น รหัสผ่านส่งตรงไป Supabase Auth และไม่ถูกเก็บในแอปหรือ Repository"}</p>}
 
         {state.admin && (
           <button type="button" disabled={busy} onClick={() => void logout()} className="amd-chip mt-3 h-10 min-h-0 px-3 text-[9px]">
