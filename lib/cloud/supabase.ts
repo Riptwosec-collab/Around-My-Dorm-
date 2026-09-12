@@ -10,7 +10,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false,
+    // Admin magic-link/OTP sign-in returns through the browser URL. Let the
+    // Supabase client consume that callback so a real admin session can replace
+    // the anonymous browsing session when the user explicitly signs in.
+    detectSessionInUrl: true,
     storageKey: "amd-supabase-auth-session-v1",
   },
 });
@@ -31,6 +34,10 @@ export function ensureCloudUser(): Promise<User> {
     return data.user;
   })();
   return cloudUserPromise;
+}
+
+export function resetCloudUserPromise() {
+  cloudUserPromise = null;
 }
 
 export function cloudOnlyPersistenceNote() {
