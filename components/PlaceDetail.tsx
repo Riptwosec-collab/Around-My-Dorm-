@@ -118,7 +118,7 @@ export function PlaceDetail({
           </div>
 
           <div className="relative h-[220px] bg-gradient-to-br from-[#10233a] to-[#07101b]">
-            <PlacePhoto place={place} eager className="h-full w-full object-cover" fallbackLabel={copy.unknownData} />
+            <PlacePhoto place={place} eager className="h-full w-full object-cover" fallbackLabel={language === "en" ? "No photo yet" : "ยังไม่มีรูป"} />
             <div className="absolute inset-0 bg-gradient-to-t from-[#08111d] via-transparent to-transparent" />
           </div>
 
