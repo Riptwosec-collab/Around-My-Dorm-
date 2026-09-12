@@ -1,0 +1,26 @@
+name: Generate MapLibre Lock
+
+on:
+  push:
+    paths:
+      - ".github/workflows/generate-maplibre-lock.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Upload lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: maplibre-package-lock
+          path: package-lock.json
+          if-no-files-found: error
