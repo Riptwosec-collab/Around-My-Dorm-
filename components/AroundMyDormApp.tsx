@@ -56,9 +56,11 @@ import { HomeLocationSheet } from "@/components/HomeLocationSheet";
 import { InfoSheet } from "@/components/InfoSheet";
 import { MapBottomSheet } from "@/components/MapBottomSheet";
 import { ManualGoogleMap } from "@/components/ManualGoogleMap";
+import { MapPlaceRail } from "@/components/MapPlaceRail";
 import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
 import { DataManagement } from "@/components/DataManagement";
 import { loadPlacesFromDatabase } from "@/lib/database/places";
+import { filterPlacesInSearchArea } from "@/lib/hybrid-map-platform";
 import { Toast, type ToastTone } from "@/components/Toast";
 import { getCopy } from "@/locales";
 import { addRecentView, getTodayRecentStats, resolveRecentPlaces } from "@/lib/storage/recent";
@@ -67,7 +69,6 @@ import type { RecentView } from "@/types/app";
 import {
   DORM_CENTER,
   DORM_NAME,
-  haversineKm,
   formatDistance,
   getPlaceOpenStatus,
   googleMapsDirectionsUrl,
@@ -255,28 +256,17 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }), [settings.preferredCategories, favorites, recentViews]);
 
   const visiblePlaces = useMemo(() => {
-    const data = allPlaces.filter((place) => {
+    const base = allPlaces.filter((place) => {
       if (category !== "all" && !place.categories.includes(category)) return false;
       if (!matchesSearch(place, debouncedQuery)) return false;
       if (!passesFilters(place, filters, settings.verifiedOnly)) return false;
-      if (place.distanceKm != null && place.distanceKm * 1000 > radiusMeters) return false;
       if (originMode === "me" && place.distanceKm == null) return false;
       return true;
     });
+    const inArea = new Set(filterPlacesInSearchArea(base, mapSearchCenter, radiusMeters).map((place) => place.id));
+    const data = base.filter((place) => place.latitude == null || place.longitude == null || inArea.has(place.id));
     return sortPlaces(data, sortMode, recommendationContext);
-  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, originMode, sortMode, settings.verifiedOnly, recommendationContext]);
-
-  const mapVisiblePlaces = useMemo(() => {
-    const data = allPlaces.filter((place) => {
-      if (category !== "all" && !place.categories.includes(category)) return false;
-      if (!matchesSearch(place, debouncedQuery)) return false;
-      if (!passesFilters(place, filters, settings.verifiedOnly)) return false;
-      if (place.latitude == null || place.longitude == null) return false;
-      const fromMapCenter = haversineKm(mapSearchCenter, { lat: place.latitude, lng: place.longitude });
-      return fromMapCenter * 1000 <= radiusMeters;
-    });
-    return sortPlaces(data, sortMode, recommendationContext);
-  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, mapSearchCenter, sortMode, settings.verifiedOnly, recommendationContext]);
+  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, mapSearchCenter, originMode, sortMode, settings.verifiedOnly, recommendationContext]);
 
   const favoritePlaces = useMemo(() => {
     return favorites.map((saved) => allPlaces.find((place) => place.id === saved.id || (saved.googlePlaceId && place.googlePlaceId === saved.googlePlaceId)) || saved);
@@ -522,7 +512,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
               </section>
 
               <div className="mt-5 flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {RADII.slice(0, 4).map((radius) => <button key={radius.value} type="button" onClick={() => { setRadiusMeters(radius.value); setSettings((current) => ({ ...current, defaultRadius: radius.value })); }} className={`amd-chip shrink-0 px-4 text-[10px] font-semibold ${radiusMeters === radius.value ? "amd-chip-active" : ""}`}>{radius.label}</button>)}
+                {RADII.map((radius) => <button key={radius.value} type="button" onClick={() => { setRadiusMeters(radius.value); setSettings((current) => ({ ...current, defaultRadius: radius.value })); }} className={`amd-chip shrink-0 px-4 text-[10px] font-semibold ${radiusMeters === radius.value ? "amd-chip-active" : ""}`}>{radius.label}</button>)}
                 <button type="button" onClick={() => setFilterOpen(true)} className="amd-chip shrink-0 px-4 text-[10px] font-semibold">{copy.moreFilters}</button>
               </div>
 
@@ -583,7 +573,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                   apiKey={googleMapsApiKey}
                   mapId={googleMapId}
                   active={tab === "map"}
-                  places={mapVisiblePlaces}
+                  places={visiblePlaces}
                   origin={origin}
                   radiusMeters={radiusMeters}
                   selectedPlace={selectedPlace}
@@ -597,12 +587,18 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                   onStateChange={(state) => setMapLoadState(state)}
                 />
 
-                <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2"><select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-map-control amd-map-radius-control amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none"><option value={250}>250 ม.</option><option value={500}>500 ม.</option><option value={1000}>1 กม.</option><option value={2000}>2 กม.</option><option value={3000}>3 กม.</option><option value={5000}>5 กม.</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" /></div>{showSearchArea && pendingMapCenter && <button type="button" onClick={() => { setMapSearchCenter(pendingMapCenter); setPendingMapCenter(null); setSelectedPlace(null); setShowSearchArea(false); }} className="amd-map-control amd-map-search-area amd-btn amd-btn-primary absolute left-1/2 top-[64px] z-20 min-h-11 -translate-x-1/2 rounded-full px-4 py-2 text-[10px] font-bold shadow-xl">{copy.searchThisArea}</button>}{showSearchArea && <button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="amd-map-control amd-map-discovery-control amd-btn amd-btn-glass absolute left-1/2 top-[112px] z-20 min-h-11 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-[9px] font-semibold text-[#8ecbff]">{settings.language === "en" ? "Search Google for more places" : "ค้นหา Google เพิ่มเติม"}</button>}
+                <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2"><select aria-label="รัศมีแผนที่" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} className="amd-map-control amd-map-radius-control amd-chip h-11 appearance-none bg-[#07111f]/90 px-5 pr-9 text-[12px] font-semibold text-white outline-none">{RADII.map((radius) => <option key={radius.value} value={radius.value}>{radius.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" /></div>{showSearchArea && pendingMapCenter && <button type="button" onClick={() => { setMapSearchCenter(pendingMapCenter); setPendingMapCenter(null); setSelectedPlace(null); setShowSearchArea(false); }} className="amd-map-control amd-map-search-area amd-btn amd-btn-primary absolute left-1/2 top-[64px] z-20 min-h-11 -translate-x-1/2 rounded-full px-4 py-2 text-[10px] font-bold shadow-xl">{copy.searchThisArea}</button>}{showSearchArea && <button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="amd-map-control amd-map-discovery-control amd-btn amd-btn-glass absolute left-1/2 top-[112px] z-20 min-h-11 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-[9px] font-semibold text-[#8ecbff]">{settings.language === "en" ? "Search Google for more places" : "ค้นหา Google เพิ่มเติม"}</button>}
                 <button type="button" aria-label={settings.language === "en" ? "Use current location" : "ใช้ตำแหน่งปัจจุบัน"} onClick={handleMapLocate} className={`amd-map-control amd-location-control amd-btn amd-icon-btn absolute right-4 z-20 grid h-12 w-12 place-items-center rounded-full text-[#149CFF] transition-[bottom,transform,background-color,border-color,box-shadow] duration-[var(--motion-normal)] ${selectedPlace ? "bottom-[340px]" : "bottom-5"}`}><LocateFixed className="h-5 w-5" /></button>
 
                 {locationError && <div className="amd-glass absolute left-4 top-[72px] z-20 max-w-[280px] rounded-xl border border-amber-300/15 px-3 py-2 text-[9px] leading-4 text-amber-100">{locationError}</div>}
                 {selectedPlace && <MapBottomSheet place={selectedPlace} language={settings.language} onDetails={() => openDetail(selectedPlace)} />}
               </div>
+              <MapPlaceRail
+                places={visiblePlaces}
+                selectedPlace={selectedPlace}
+                language={settings.language}
+                onSelectPlace={(place) => { addRecent(place); setSelectedPlace(place); }}
+              />
             </div>
 
 
@@ -707,7 +703,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
       {googleDiscoveryOpen && <GoogleDiscoverySheet initialQuery={query || (category !== "all" ? CATEGORY_MAP[category]?.name || "" : "")} center={mapSearchCenter} radiusMeters={radiusMeters} language={settings.language} onClose={() => setGoogleDiscoveryOpen(false)} onReviewCandidate={(candidate) => { try { sessionStorage.setItem("around-dorm-google-candidate-review-v1", JSON.stringify(candidate)); } catch {} setGoogleDiscoveryOpen(false); setDataManagementOpen(true); showToast(settings.language === "en" ? "Candidate opened for admin review" : "ส่ง Candidate ไปหน้า Data Management แล้ว"); }} />}
       {dataManagementOpen && <DataManagement places={allPlaces} databaseSource={databaseSource} language={settings.language} onClose={() => setDataManagementOpen(false)} onReload={() => { void reloadDatabase(); }} />}
-      {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} resultCount={tab === "map" ? mapVisiblePlaces.length : visiblePlaces.length} />}
+      {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} resultCount={tab === "map" ? visiblePlaces.length : visiblePlaces.length} />}
       {detailPlace && <PlaceDetail place={detailPlace} saved={isFavorite(detailPlace)} language={settings.language} onClose={() => setDetailPlace(null)} onSave={() => toggleFavorite(detailPlace)} onMap={() => { setDetailPlace(null); openMap(detailPlace); }} />}
       {collectionEditor && <CollectionEditorSheet mode={collectionEditor.mode} collection={collectionEditor.collection} language={settings.language} onClose={() => setCollectionEditor(null)} onSubmit={submitCollectionEditor} />}
       {collectionSelectorPlace && <CollectionSelectorSheet place={collectionSelectorPlace} collections={collections} language={settings.language} onToggle={(collectionId) => toggleFavoriteCollection(collectionSelectorPlace, collectionId)} onClose={() => setCollectionSelectorPlace(null)} />}

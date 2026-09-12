@@ -6,6 +6,8 @@ import { CATEGORIES } from "@/data/categories";
 import { GoogleMaintenancePanel } from "@/components/GoogleMaintenancePanel";
 import { GoogleMapsUsageDashboard } from "@/components/GoogleMapsUsageDashboard";
 import { GoogleCloudAutoEnrichment } from "@/components/GoogleCloudAutoEnrichment";
+import { GoogleRouteRefresh } from "@/components/GoogleRouteRefresh";
+import { AdminPlatformDiagnostics } from "@/components/AdminPlatformDiagnostics";
 import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
 import { DORM_CENTER } from "@/lib/place-utils";
 import { GooglePlaceIdManager } from "@/components/GooglePlaceIdManager";
@@ -320,6 +322,10 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
         <GoogleMapsUsageDashboard language={language} />
 
         <GoogleCloudAutoEnrichment places={places} language={language} onReload={onReload} />
+
+        <GoogleRouteRefresh places={places} language={language} onReload={onReload} />
+
+        <AdminPlatformDiagnostics places={places} language={language} />
 
         <GooglePlaceIdManager places={places} language={language} onReload={onReload} />
 
