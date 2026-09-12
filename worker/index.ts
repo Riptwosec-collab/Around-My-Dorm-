@@ -1,4 +1,5 @@
-import { requireWorkerAdmin } from "@/worker/admin-auth";
+import { bearerToken, requireWorkerAdmin } from "@/worker/admin-auth";
+import { saveAdminNote, type AdminNoteInput } from "@/worker/admin-notes";
 import { computeRouteMatrix, type RouteMatrixInput, type WorkerEnv } from "@/worker/google-routes";
 
 function json(value: unknown, status = 200) {
@@ -37,6 +38,19 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
       const input = await request.json() as RouteMatrixInput;
       const results = await computeRouteMatrix(env, input);
       return json({ ok: true, results, generatedAt: new Date().toISOString() });
+    } catch (error) {
+      return json({ ok: false, error: safeMessage(error) }, errorStatus(error));
+    }
+  }
+
+  if (url.pathname === "/api/admin-notes" && request.method === "POST") {
+    try {
+      await requireWorkerAdmin(request, env);
+      const token = bearerToken(request);
+      if (!token) throw Object.assign(new Error("Admin bearer token is required"), { status: 401 });
+      const input = await request.json() as AdminNoteInput;
+      const result = await saveAdminNote(env, token, input);
+      return json({ ok: true, ...result });
     } catch (error) {
       return json({ ok: false, error: safeMessage(error) }, errorStatus(error));
     }
