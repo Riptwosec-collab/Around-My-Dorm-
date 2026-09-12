@@ -69,7 +69,8 @@ export function PlaceRouteClient({ place }: { place: Place }) {
     const result = await saveAdminPlaceNote(resolvedPlace.id, note);
     setResolvedPlace((current) => ({
       ...current,
-      notes: result.note,
+      adminNote: result.note,
+      adminNoteUpdatedAt: result.updatedAt,
       lastUpdated: result.updatedAt,
     }));
   }
