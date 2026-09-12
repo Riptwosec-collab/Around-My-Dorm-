@@ -1,4 +1,4 @@
-name: Probe Production Google Enrichment Once
+name: Probe Production Anonymous Auth Once
 
 on:
   push:
@@ -22,85 +22,48 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - name: Run one explicitly confirmed production probe
+      - name: Capture passive Data Management failures without Google calls
         env:
           TARGET_URL: https://around-my-dorm.aidsaras.workers.dev
         run: |
           node <<'NODE'
           const { chromium } = require('@playwright/test');
-
-          function redact(url) {
-            return url
-              .replace(/([?&]key=)[^&]+/ig, '$1[REDACTED]')
-              .replace(/(apikey=)[^&]+/ig, '$1[REDACTED]');
-          }
-
           (async () => {
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage();
-            const googleRequests = [];
-            const supabaseEvents = [];
-            const consoleEvents = [];
-
+            const events = [];
+            const google = [];
+            const stamp = () => new Date().toISOString();
+            page.on('pageerror', (error) => events.push(`${stamp()} PAGEERROR ${error.stack || error.message}`));
             page.on('console', (msg) => {
-              if (['error', 'warning'].includes(msg.type())) consoleEvents.push(`${msg.type()}: ${msg.text()}`);
+              if (msg.type() === 'error') events.push(`${stamp()} CONSOLE ${msg.text()}`);
             });
-            page.on('pageerror', (error) => consoleEvents.push(`pageerror: ${error.message}`));
             page.on('request', (request) => {
               const url = request.url();
-              if (url.includes('maps.googleapis.com') || url.includes('places.googleapis.com')) {
-                googleRequests.push(`${request.method()} ${redact(url)}`);
-              }
+              if (url.includes('maps.googleapis.com') || url.includes('places.googleapis.com')) google.push(url);
             });
             page.on('response', async (response) => {
+              if (response.status() < 400) return;
               const url = response.url();
-              if (!url.includes('supabase.co/rest/v1/')) return;
-              if (!/amd_google_(enrichment_diagnostics|public_links|public_cache)/.test(url)) return;
+              if (!url.includes('supabase.co')) return;
               let body = '';
-              if (response.status() >= 400) {
-                try { body = (await response.text()).slice(0, 2000); } catch {}
-              }
-              supabaseEvents.push(`${response.status()} ${response.request().method()} ${redact(url)}${body ? ` BODY=${body}` : ''}`);
+              try { body = (await response.text()).slice(0, 2000); } catch {}
+              events.push(`${stamp()} HTTP ${response.status()} ${response.request().method()} ${url.replace(/apikey=[^&]+/ig, 'apikey=[REDACTED]')} BODY=${body}`);
             });
 
+            events.push(`${stamp()} STEP goto-settings`);
             await page.goto(`${process.env.TARGET_URL}/settings/`, { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForTimeout(1500);
+            events.push(`${stamp()} STEP open-data-management`);
             await page.getByRole('button', { name: 'จัดการ', exact: true }).click();
-            await page.getByTestId('google-cloud-auto-enrichment').waitFor({ state: 'visible', timeout: 30000 });
-            await page.getByTestId('google-cloud-enrich-all').click();
-            await page.getByTestId('confirm-google-cloud-enrich-all').click();
+            await page.getByTestId('google-maps-usage-dashboard').waitFor({ state: 'visible', timeout: 30000 });
+            await page.waitForTimeout(5000);
+            events.push(`${stamp()} STEP done`);
 
-            const cancel = page.getByRole('button', { name: /ยกเลิกหลัง Request ปัจจุบัน|Cancel after current request/ });
-            await cancel.waitFor({ state: 'visible', timeout: 15000 });
-
-            // Allow the confirmed flow to cross the diagnostics/shared-row boundary
-            // and enter the first shop. This is still a bounded one-shop probe.
-            await Promise.race([
-              page.waitForFunction(() => {
-                const el = document.querySelector('[data-testid="google-cloud-auto-enrichment"]');
-                const text = el?.textContent || '';
-                return /1\s*\/\s*91|Latest error:|Systemic Google error|ร้าน • Google/.test(text);
-              }, { timeout: 12000 }).catch(() => null),
-              page.waitForTimeout(8000),
-            ]);
-
-            await cancel.click().catch(() => {});
-            await page.waitForTimeout(4000);
-
-            const text = await page.getByTestId('google-cloud-auto-enrichment').innerText();
-            console.log('=== COMPONENT OUTPUT ===');
-            console.log(text.slice(0, 12000));
-            console.log('=== GOOGLE REQUEST COUNT ===');
-            console.log(googleRequests.length);
-            console.log('=== GOOGLE REQUEST URLS (KEY REDACTED) ===');
-            for (const value of googleRequests.slice(0, 20)) console.log(value);
-            console.log('=== SUPABASE GOOGLE TABLE RESPONSES ===');
-            for (const value of supabaseEvents.slice(0, 50)) console.log(value);
-            console.log('=== BROWSER ERRORS/WARNINGS ===');
-            for (const value of consoleEvents.slice(0, 50)) console.log(value.replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED_GOOGLE_API_KEY]'));
-
+            console.log('=== TIMELINE ===');
+            for (const value of events) console.log(value.replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED_GOOGLE_API_KEY]'));
+            console.log('=== GOOGLE REQUESTS ===');
+            console.log(google.length);
             await browser.close();
-          })().catch((error) => {
-            console.error(error);
-            process.exit(1);
-          });
+          })().catch((error) => { console.error(error); process.exit(1); });
           NODE
