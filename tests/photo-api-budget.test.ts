@@ -30,10 +30,11 @@ describe("manual Google photo runtime publishing", () => {
 
   it("tracks every bulk photo request and preserves the first useful Google error", () => {
     const bulk = read("components/GoogleBulkPhotoRuntimeControl.tsx");
-    expect(bulk).toContain('recordTrackedGoogleRequest');
+    expect(bulk).toContain("recordTrackedGoogleRequest");
     expect(bulk).toContain('requestType: "place_photo"');
-    expect(bulk).toContain('status: "success"');
-    expect(bulk).toContain('status: "failed"');
+    expect(bulk).toContain('let requestStatus: "success" | "failed" = "success"');
+    expect(bulk).toContain('requestStatus = "failed"');
+    expect(bulk).toContain("status: requestStatus");
     expect(bulk).toContain("firstError");
   });
 
