@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeGoogleCloudPayload, sanitizeGoogleLiveDetails } from "@/lib/google-cloud-enrichment";
+import { mergeGoogleCloudPayload, mergeGoogleReviewPayload, sanitizeGoogleLiveDetails } from "@/lib/google-cloud-enrichment";
 import type { GoogleLiveDetails } from "@/lib/google-live";
 import type { Place } from "@/types/place";
 
@@ -45,6 +45,24 @@ describe("Google cloud enrichment", () => {
     expect(merged.phone).toBe("LOCAL-PHONE");
     expect(merged.website).toBe(payload.website);
     expect(merged.source).toContain("google_places_live");
+  });
+
+  it("uses cached review candidate details for cards and map without falsely linking the Place ID", () => {
+    const merged = mergeGoogleReviewPayload(place(), "g-review", payload);
+    expect(merged.googlePlaceId).toBeNull();
+    expect(merged.address).toBe(payload.address);
+    expect(merged.latitude).toBe(payload.latitude);
+    expect(merged.longitude).toBe(payload.longitude);
+    expect(merged.distanceKm).not.toBeNull();
+    expect(merged.rating).toBe(payload.rating);
+    expect(merged.reviewCount).toBe(payload.reviewCount);
+    expect(merged.liveOpenNow).toBe(true);
+    expect(merged.openingHoursText).toContain("Monday");
+    expect(merged.phone).toBe(payload.phone);
+    expect(merged.website).toBe(payload.website);
+    expect(merged.googleMapsUrl).toBe(payload.googleMapsUrl);
+    expect(merged.priceLevel).toBe(2);
+    expect(merged.source).toContain("google_candidate_review");
   });
 
   it("does not put Google name or photo URL into the cloud payload", () => {
