@@ -2,6 +2,8 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+(globalThis as any).React = React;
+
 const { runGoogleCloudAutoEnrichment } = vi.hoisted(() => ({
   runGoogleCloudAutoEnrichment: vi.fn(),
 }));
