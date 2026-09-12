@@ -19,6 +19,7 @@ import { getCopy } from "@/locales";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
+import { PlaceGoogleDataPanel } from "@/components/PlaceGoogleDataPanel";
 import {
   calculateLocalScore,
   formatDistance,
@@ -26,9 +27,9 @@ import {
   getDataFreshness,
   getParkingStatus,
   getPlaceOpenStatus,
-  googleMapsDirectionsUrl,
 } from "@/lib/place-utils";
 import { dataAgeLabel, scorePlaceDataQuality } from "@/lib/data-quality";
+import { googleMapsDirectionsFallbackUrl, googleMapsPlaceUrl } from "@/lib/google-maps-links";
 import type { OpeningHours, Place } from "@/types/place";
 
 const DAYS: { key: keyof OpeningHours; label: string }[] = [
@@ -78,7 +79,7 @@ export function PlaceDetail({
   const dataFreshnessLabel = dataAgeLabel(place, language);
 
   async function share() {
-    const url = place.googleMapsUrl || googleMapsDirectionsUrl(place);
+    const url = googleMapsPlaceUrl(place);
     try {
       if (navigator.share) {
         await navigator.share({ title: place.name, text: place.shortDescription, url });
@@ -150,7 +151,7 @@ export function PlaceDetail({
 
             <div className="mt-4 grid grid-cols-4 gap-2">
               <button type="button" onClick={onMap} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.08] text-[9px] font-bold text-cyan-200"><MapPin className="h-4 w-4" />{copy.mapAction}</button>
-              <a href={googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Navigation className="h-4 w-4" />{copy.navigate}</a>
+              <a href={googleMapsDirectionsFallbackUrl(place)} target="_blank" rel="noreferrer" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Navigation className="h-4 w-4" />{copy.navigate}</a>
               {place.phone ? (
                 <a href={`tel:${place.phone}`} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Phone className="h-4 w-4" />{copy.phone}</a>
               ) : (
@@ -160,6 +161,8 @@ export function PlaceDetail({
             </div>
 
             <GoogleLiveEnrichment place={place} language={language} />
+
+            <PlaceGoogleDataPanel place={place} language={language} />
 
             {gallery.length > 1 && (
               <div className="mt-4">
@@ -236,7 +239,7 @@ export function PlaceDetail({
 
             <button type="button" onClick={() => setReportOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.045] text-[10px] font-bold text-amber-100"><AlertTriangle className="h-4 w-4" />{copy.reportWrong}</button>
 
-            <a href={place.googleMapsUrl || googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-300 text-[11px] font-bold text-[#031018]">
+            <a href={place.googleMapsUrl || googleMapsDirectionsFallbackUrl(place)} target="_blank" rel="noreferrer" className="mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-300 text-[11px] font-bold text-[#031018]">
               {copy.openGoogleMaps} <ArrowUpRight className="h-4 w-4" />
             </a>
           </div>
