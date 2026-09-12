@@ -29,10 +29,10 @@ jobs:
         env:
           DIAG_URL: https://around-my-dorm.aidsaras.workers.dev/map/
         run: node scripts/diag-saved-cloud-map.mjs
-      - name: Upload production screenshot
+      - name: Upload production screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: saved-cloud-map-production-diagnostic
-          path: saved-cloud-map-production.png
+          path: saved-cloud-map-production-*.png
           if-no-files-found: warn
