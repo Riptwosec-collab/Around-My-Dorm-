@@ -55,4 +55,26 @@ describe("app-tracked Google API monthly budget", () => {
     expect(schema).toContain("Asia/Bangkok");
     expect(schema).toContain("place_photo");
   });
+
+  it("aggregates the shared Google project budget only for an authorized admin", () => {
+    for (const path of ["supabase/schema.sql", "supabase/google-api-budget.sql"]) {
+      const sql = read(path).toLowerCase();
+      expect(sql).toContain("security definer");
+      expect(sql).toContain("from auth.users");
+      expect(sql).toContain("raw_app_meta_data");
+      expect(sql).toContain("email_confirmed_at");
+      expect(sql).not.toContain("where l.user_id = auth.uid()");
+    }
+  });
+
+  it("does not mix cached prior-month usage into the Bangkok monthly budget", () => {
+    const dashboard = read("components/GoogleMapsUsageDashboard.tsx");
+    expect(dashboard).not.toContain("localTrackedMonth");
+    expect(dashboard).not.toContain("Math.max(usage.textSearch");
+    expect(dashboard).not.toContain("Math.max(usage.placeDetails");
+    expect(dashboard).not.toContain("Math.max(usage.geocoding");
+    expect(dashboard).not.toContain("Math.max(usage.routes");
+    expect(dashboard).toContain("budget.breakdown.textSearch");
+    expect(dashboard).toContain("budget.breakdown.placeDetails");
+  });
 });
