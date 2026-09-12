@@ -1,5 +1,4 @@
-import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
-import { getGoogleApiControlSettings, hydrateGoogleApiControlSettings } from "@/lib/google-api-control";
+import { supabase } from "@/lib/cloud/supabase";
 import {
   assessGooglePlaceMatch,
   buildGoogleMatchQuery,
@@ -7,24 +6,24 @@ import {
   textSimilarity,
   type GooglePlaceMatchAssessment,
 } from "@/lib/google-place-id-manager";
-import type { GoogleDiscoveryCandidate, GoogleLiveDetails } from "@/lib/google-live";
 import {
-  getGoogleRequestUsage,
-  hydrateGoogleRequestLogs,
-  runGoogleSinglePlaceDetails,
-  runGoogleTextSearchRequest,
-} from "@/lib/google-request-manager";
-import { DORM_CENTER } from "@/lib/place-utils";
+  discoverGooglePlaces,
+  fetchGoogleLiveDetails,
+  type GoogleDiscoveryCandidate,
+  type GoogleLiveDetails,
+} from "@/lib/google-live";
+import { DORM_CENTER, haversineKm } from "@/lib/place-utils";
 import type { FieldProvenanceEntry, Place } from "@/types/place";
 
 export const GOOGLE_CLOUD_CACHE_TTL_DAYS = 29;
 export const GOOGLE_CLOUD_CACHE_TTL_MS = GOOGLE_CLOUD_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
 export const GOOGLE_AUTO_MATCH_THRESHOLD = 75;
+export const GOOGLE_BULK_RUN_REQUEST_LIMIT = 200;
 
-type MatchRow = {
+type LinkRow = {
   place_id: string;
   google_place_id: string | null;
-  status: string;
+  status: "linked" | "review";
   confidence: number | null;
   candidate: Record<string, unknown> | null;
   candidate_expires_at: string | null;
@@ -77,6 +76,7 @@ export type GoogleCloudEnrichmentProgress = {
   cached: number;
   review: number;
   failed: number;
+  lastError: string | null;
 };
 
 export type GoogleCloudEnrichmentResult = GoogleCloudEnrichmentProgress & {
@@ -143,6 +143,16 @@ function googleProvenance(fetchedAt: string, googlePlaceId: string): FieldProven
   };
 }
 
+function normalizedPriceLevel(value: string | null): 1 | 2 | 3 | 4 | null {
+  if (!value) return null;
+  const text = value.toUpperCase();
+  if (text === "1" || text.includes("INEXPENSIVE")) return 1;
+  if (text === "2" || text.includes("MODERATE")) return 2;
+  if (text === "3" || (text.includes("EXPENSIVE") && !text.includes("VERY"))) return 3;
+  if (text === "4" || text.includes("VERY_EXPENSIVE")) return 4;
+  return null;
+}
+
 export function mergeGoogleCloudPayload(place: Place, googlePlaceId: string, payload: GoogleCloudPlacePayload): Place {
   const next: Place = { ...place };
   const provenance = { ...(place.fieldProvenance || {}) };
@@ -167,6 +177,20 @@ export function mergeGoogleCloudPayload(place: Place, googlePlaceId: string, pay
   if (!next.phone && payload.phone) { next.phone = payload.phone; mark("phone"); }
   if (!next.website && payload.website) { next.website = payload.website; mark("website"); }
   if (!next.googleMapsUrl && payload.googleMapsUrl) { next.googleMapsUrl = payload.googleMapsUrl; mark("googleMapsUrl"); }
+  if (next.priceLevel == null) {
+    const priceLevel = normalizedPriceLevel(payload.priceLevel);
+    if (priceLevel != null) { next.priceLevel = priceLevel; mark("priceLevel"); }
+  }
+
+  if (next.latitude != null && next.longitude != null && next.distanceKm == null) {
+    const km = haversineKm(DORM_CENTER, { lat: next.latitude, lng: next.longitude });
+    next.distanceKm = Number(km.toFixed(2));
+    next.straightLineDistanceKm = next.distanceKm;
+    if (next.distance) {
+      next.distance = { ...next.distance, straightLineMeters: Math.round(km * 1000) };
+    }
+    mark("distanceKm");
+  }
 
   const businessStatus = (payload.businessStatus || "").toUpperCase();
   if (businessStatus.includes("PERMANENT")) { next.permanentlyClosed = true; mark("permanentlyClosed"); }
@@ -178,30 +202,29 @@ export function mergeGoogleCloudPayload(place: Place, googlePlaceId: string, pay
   return next;
 }
 
-async function loadCloudRows(userId: string) {
-  const [matchesResult, cacheResult] = await Promise.all([
+async function loadSharedRows() {
+  const [linksResult, cacheResult] = await Promise.all([
     supabase
-      .from("amd_google_place_matches")
-      .select("place_id,google_place_id,status,confidence,candidate,candidate_expires_at,updated_at")
-      .eq("user_id", userId),
+      .from("amd_google_public_links")
+      .select("place_id,google_place_id,status,confidence,candidate,candidate_expires_at,updated_at"),
     supabase
-      .from("amd_google_place_cache")
-      .select("place_id,google_place_id,payload,fetched_at,expires_at")
-      .eq("user_id", userId),
+      .from("amd_google_public_cache")
+      .select("place_id,google_place_id,payload,fetched_at,expires_at"),
   ]);
-  if (matchesResult.error) throw matchesResult.error;
+  if (linksResult.error) throw linksResult.error;
   if (cacheResult.error) throw cacheResult.error;
   return {
-    matches: (matchesResult.data || []) as MatchRow[],
+    links: (linksResult.data || []) as LinkRow[],
     cache: (cacheResult.data || []) as CacheRow[],
   };
 }
 
 export async function applyGoogleCloudPlaceLayer(places: Place[]): Promise<Place[]> {
   if (!places.length) return places;
-  const user = await ensureCloudUser();
-  const { matches, cache } = await loadCloudRows(user.id);
-  const linkedByPlace = new Map(matches.filter((row) => row.status === "linked" && row.google_place_id).map((row) => [row.place_id, row.google_place_id as string]));
+  const { links, cache } = await loadSharedRows();
+  const linkedByPlace = new Map(
+    links.filter((row) => row.status === "linked" && row.google_place_id).map((row) => [row.place_id, row.google_place_id as string]),
+  );
   const freshCacheByPlace = new Map(
     cache.filter((row) => isFresh(row.expires_at)).map((row) => [row.place_id, row]),
   );
@@ -215,7 +238,12 @@ export async function applyGoogleCloudPlaceLayer(places: Place[]): Promise<Place
       return {
         ...place,
         googlePlaceId: linkedId,
-        googleMaps: place.googleMaps || { placeId: linkedId, url: place.googleMapsUrl || null, latitude: place.latitude, longitude: place.longitude },
+        googleMaps: place.googleMaps || {
+          placeId: linkedId,
+          url: place.googleMapsUrl || null,
+          latitude: place.latitude,
+          longitude: place.longitude,
+        },
       };
     }
     return mergeGoogleCloudPayload(place, linkedId, payload);
@@ -223,35 +251,51 @@ export async function applyGoogleCloudPlaceLayer(places: Place[]): Promise<Place
 }
 
 export async function loadGoogleCloudEnrichmentStatus(places: Place[]): Promise<GoogleCloudEnrichmentStatus> {
-  const user = await ensureCloudUser();
-  const { matches, cache } = await loadCloudRows(user.id);
+  const { links, cache } = await loadSharedRows();
   const placeIds = new Set(places.map((place) => place.id));
-  const linkedRows = matches.filter((row) => placeIds.has(row.place_id) && row.status === "linked" && row.google_place_id);
-  const linkedByPlace = new Map(linkedRows.map((row) => [row.place_id, row.google_place_id as string]));
-  const linkedCount = places.filter((place) => Boolean(place.googlePlaceId || linkedByPlace.get(place.id))).length;
-  const review = matches.filter((row) => placeIds.has(row.place_id) && row.status === "review").length;
-  const fresh = cache.filter((row) => placeIds.has(row.place_id) && isFresh(row.expires_at));
-  const expired = cache.filter((row) => placeIds.has(row.place_id) && !isFresh(row.expires_at));
-  const freshIds = new Set(fresh.map((row) => row.place_id));
-  const missingPlaceId = Math.max(0, places.length - linkedCount);
-  const linkedWithoutFreshCache = places.filter((place) => {
-    const linked = Boolean(place.googlePlaceId || linkedByPlace.get(place.id));
-    return linked && !freshIds.has(place.id);
-  }).length;
-  const lastFetchedAt = fresh.map((row) => row.fetched_at).sort().at(-1) || null;
-  const estimatedSearchRequests = missingPlaceId;
-  const estimatedDetailRequests = linkedWithoutFreshCache + missingPlaceId;
+  const linksByPlace = new Map(links.filter((row) => placeIds.has(row.place_id)).map((row) => [row.place_id, row]));
+  const cacheByPlace = new Map(cache.filter((row) => placeIds.has(row.place_id)).map((row) => [row.place_id, row]));
+
+  let linked = 0;
+  let review = 0;
+  let freshCache = 0;
+  let expiredCache = 0;
+  let estimatedSearchRequests = 0;
+  let estimatedDetailRequests = 0;
+  const fetchedTimes: string[] = [];
+
+  for (const place of places) {
+    const link = linksByPlace.get(place.id);
+    const linkedId = place.googlePlaceId || (link?.status === "linked" ? link.google_place_id : null);
+    const freshReview = link?.status === "review" && isFresh(link.candidate_expires_at);
+    const row = cacheByPlace.get(place.id);
+    const fresh = Boolean(row && isFresh(row.expires_at) && linkedId && row.google_place_id === linkedId);
+
+    if (linkedId) linked += 1;
+    if (freshReview) review += 1;
+    if (fresh) {
+      freshCache += 1;
+      if (row) fetchedTimes.push(row.fetched_at);
+    } else if (row) {
+      expiredCache += 1;
+    }
+
+    if (!linkedId && !freshReview) estimatedSearchRequests += 1;
+    if (linkedId && !fresh) estimatedDetailRequests += 1;
+    if (!linkedId && !freshReview) estimatedDetailRequests += 1;
+  }
+
   return {
     total: places.length,
-    linked: linkedCount,
-    missingPlaceId,
+    linked,
+    missingPlaceId: Math.max(0, places.length - linked),
     review,
-    freshCache: fresh.length,
-    expiredCache: expired.length,
+    freshCache,
+    expiredCache,
     estimatedSearchRequests,
     estimatedDetailRequests,
     estimatedMaxRequests: estimatedSearchRequests + estimatedDetailRequests,
-    lastFetchedAt,
+    lastFetchedAt: fetchedTimes.sort().at(-1) || null,
   };
 }
 
@@ -288,61 +332,55 @@ export function chooseAutomaticGoogleMatch(place: Place, assessed: CandidateAsse
     return first;
   }
 
-  // Chain branches without local coordinates need much stronger name + area evidence.
   if (first.assessment.duplicateGooglePlaceId) return null;
   if (nameScore < 0.9 || areaScore < 0.45 || first.assessment.confidence < 80) return null;
   if (second && margin < 10) return null;
   return first;
 }
 
-async function persistMatch(input: {
-  userId: string;
-  place: Place;
-  candidate: CandidateAssessment | null;
-  status: "linked" | "review";
-}) {
+async function persistLink(place: Place, candidate: CandidateAssessment | null, status: "linked" | "review") {
   const now = new Date().toISOString();
-  const expiresAt = input.status === "review" ? new Date(Date.now() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString() : null;
-  const candidatePayload = input.candidate && input.status === "review" ? {
-    name: input.candidate.candidate.name,
-    address: input.candidate.candidate.address,
-    googleMapsUrl: input.candidate.candidate.googleMapsUrl,
-    primaryType: input.candidate.candidate.primaryType,
-    confidence: input.candidate.assessment.confidence,
-    nameScore: input.candidate.assessment.factors.name.score,
-    areaScore: input.candidate.areaScore,
-  } : input.status === "review" ? { reason: "no_unambiguous_match" } : {
-    confidence: input.candidate?.assessment.confidence ?? null,
-    nameScore: input.candidate?.assessment.factors.name.score ?? null,
-    areaScore: input.candidate?.areaScore ?? null,
-  };
-  const { error } = await supabase.from("amd_google_place_matches").upsert({
-    user_id: input.userId,
-    place_id: input.place.id,
-    google_place_id: input.candidate?.candidate.googlePlaceId || null,
-    status: input.status,
-    confidence: input.candidate?.assessment.confidence ?? null,
+  const candidateExpiresAt = status === "review" ? new Date(Date.now() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString() : null;
+  const candidatePayload = status === "review"
+    ? candidate
+      ? {
+          name: candidate.candidate.name,
+          address: candidate.candidate.address,
+          googleMapsUrl: candidate.candidate.googleMapsUrl,
+          primaryType: candidate.candidate.primaryType,
+          confidence: candidate.assessment.confidence,
+          nameScore: candidate.assessment.factors.name.score,
+          areaScore: candidate.areaScore,
+          reason: "manual_review_required",
+        }
+      : { reason: "no_google_candidate" }
+    : null;
+
+  const { error } = await supabase.from("amd_google_public_links").upsert({
+    place_id: place.id,
+    google_place_id: candidate?.candidate.googlePlaceId || null,
+    status,
+    confidence: candidate?.assessment.confidence ?? null,
     candidate: candidatePayload,
-    candidate_expires_at: expiresAt,
-    reviewed_at: now,
+    candidate_expires_at: candidateExpiresAt,
     updated_at: now,
-  }, { onConflict: "user_id,place_id" });
+  }, { onConflict: "place_id" });
   if (error) throw error;
 }
 
-async function persistLiveDetails(userId: string, placeId: string, googlePlaceId: string, live: GoogleLiveDetails) {
+async function persistLiveDetails(placeId: string, googlePlaceId: string, live: GoogleLiveDetails) {
   const fetchedAt = live.fetchedAt || new Date().toISOString();
   const expiresAt = new Date(new Date(fetchedAt).getTime() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString();
   const payload = sanitizeGoogleLiveDetails(live);
-  const { error } = await supabase.from("amd_google_place_cache").upsert({
-    user_id: userId,
+  const { error } = await supabase.from("amd_google_public_cache").upsert({
     place_id: placeId,
     google_place_id: googlePlaceId,
     payload,
     fetched_at: fetchedAt,
     expires_at: expiresAt,
     source: "google_places_admin",
-  }, { onConflict: "user_id,place_id" });
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "place_id" });
   if (error) throw error;
 }
 
@@ -354,19 +392,13 @@ export async function runGoogleCloudAutoEnrichment(input: {
   onProgress?: (progress: GoogleCloudEnrichmentProgress) => void;
 }): Promise<GoogleCloudEnrichmentResult> {
   if (!input.apiKey) throw new Error("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing");
-  const [user, control] = await Promise.all([
-    ensureCloudUser(),
-    hydrateGoogleApiControlSettings(),
-    hydrateGoogleRequestLogs(),
-  ]).then(([cloudUser, apiControl]) => [cloudUser, apiControl] as const);
-  if (control.locked) throw new Error("Google API Request Lock is enabled. Unlock it in Data Management before starting the bulk request.");
 
-  const cloud = await loadCloudRows(user.id);
-  const matchByPlace = new Map(cloud.matches.filter((row) => row.status === "linked" && row.google_place_id).map((row) => [row.place_id, row.google_place_id as string]));
+  const cloud = await loadSharedRows();
+  const linksByPlace = new Map(cloud.links.map((row) => [row.place_id, row]));
   const cacheByPlace = new Map(cloud.cache.map((row) => [row.place_id, row]));
   const usedGooglePlaceIds = new Set<string>([
     ...input.places.map((place) => place.googlePlaceId).filter((value): value is string => Boolean(value)),
-    ...matchByPlace.values(),
+    ...cloud.links.filter((row) => row.status === "linked" && row.google_place_id).map((row) => row.google_place_id as string),
   ]);
 
   let current = 0;
@@ -379,8 +411,9 @@ export async function runGoogleCloudAutoEnrichment(input: {
   let stoppedByLimit = false;
   let stoppedReason: string | null = null;
   let currentName: string | null = null;
+  let lastError: string | null = null;
 
-  const publish = () => input.onProgress?.({ current, total: input.places.length, currentName, networkRequests, linked, cached, review, failed });
+  const publish = () => input.onProgress?.({ current, total: input.places.length, currentName, networkRequests, linked, cached, review, failed, lastError });
   publish();
 
   for (const place of input.places) {
@@ -389,41 +422,66 @@ export async function runGoogleCloudAutoEnrichment(input: {
     publish();
 
     try {
-      let googlePlaceId = place.googlePlaceId || matchByPlace.get(place.id) || null;
+      const existingLink = linksByPlace.get(place.id);
+      let googlePlaceId = place.googlePlaceId || (existingLink?.status === "linked" ? existingLink.google_place_id : null);
+
+      if (!googlePlaceId && existingLink?.status === "review" && isFresh(existingLink.candidate_expires_at)) {
+        review += 1;
+        current += 1;
+        publish();
+        continue;
+      }
+
       if (!googlePlaceId) {
-        const usageBeforeSearch = getGoogleRequestUsage();
-        if (usageBeforeSearch.today >= control.dailyWarningLimit) {
+        if (networkRequests >= GOOGLE_BULK_RUN_REQUEST_LIMIT) {
           stoppedByLimit = true;
-          stoppedReason = `Daily manual Google request safety limit reached (${control.dailyWarningLimit})`;
+          stoppedReason = `Bulk Google safety limit reached (${GOOGLE_BULK_RUN_REQUEST_LIMIT} requests)`;
           break;
         }
 
         const query = [buildGoogleMatchQuery(place), "Bangkok Thailand"].filter(Boolean).join(" ");
         const center = place.latitude != null && place.longitude != null ? { lat: place.latitude, lng: place.longitude } : DORM_CENTER;
         const radiusMeters = place.latitude != null && place.longitude != null ? (isChainPlace(place) ? 1500 : 4000) : 20000;
-        const search = await runGoogleTextSearchRequest({
-          apiKey: input.apiKey,
+        const candidates = await discoverGooglePlaces(input.apiKey, {
           query,
           center,
           radiusMeters,
           language: input.language,
           maxResults: 8,
-          dailyLimit: control.dailyWarningLimit,
         });
-        networkRequests += search.networkAttempts;
-        const assessed = assessCandidates(place, search.candidates, input.places, usedGooglePlaceIds);
+        networkRequests += 1;
+
+        const assessed = assessCandidates(place, candidates, input.places, usedGooglePlaceIds);
         const automatic = chooseAutomaticGoogleMatch(place, assessed);
         if (!automatic) {
-          await persistMatch({ userId: user.id, place, candidate: assessed[0] || null, status: "review" });
+          await persistLink(place, assessed[0] || null, "review");
+          linksByPlace.set(place.id, {
+            place_id: place.id,
+            google_place_id: assessed[0]?.candidate.googlePlaceId || null,
+            status: "review",
+            confidence: assessed[0]?.assessment.confidence ?? null,
+            candidate: null,
+            candidate_expires_at: new Date(Date.now() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString(),
+            updated_at: new Date().toISOString(),
+          });
           review += 1;
           current += 1;
           publish();
           continue;
         }
+
         googlePlaceId = automatic.candidate.googlePlaceId;
         usedGooglePlaceIds.add(googlePlaceId);
-        matchByPlace.set(place.id, googlePlaceId);
-        await persistMatch({ userId: user.id, place, candidate: automatic, status: "linked" });
+        await persistLink(place, automatic, "linked");
+        linksByPlace.set(place.id, {
+          place_id: place.id,
+          google_place_id: googlePlaceId,
+          status: "linked",
+          confidence: automatic.assessment.confidence,
+          candidate: null,
+          candidate_expires_at: null,
+          updated_at: new Date().toISOString(),
+        });
       }
 
       linked += 1;
@@ -435,29 +493,26 @@ export async function runGoogleCloudAutoEnrichment(input: {
         continue;
       }
 
-      const usageBeforeDetails = getGoogleRequestUsage();
-      if (usageBeforeDetails.today >= control.dailyWarningLimit) {
+      if (networkRequests >= GOOGLE_BULK_RUN_REQUEST_LIMIT) {
         stoppedByLimit = true;
-        stoppedReason = `Daily manual Google request safety limit reached (${control.dailyWarningLimit})`;
+        stoppedReason = `Bulk Google safety limit reached (${GOOGLE_BULK_RUN_REQUEST_LIMIT} requests)`;
         break;
       }
 
-      const details = await runGoogleSinglePlaceDetails({
-        apiKey: input.apiKey,
-        place: { ...place, googlePlaceId },
-        dailyLimit: control.dailyWarningLimit,
+      const live = await fetchGoogleLiveDetails(input.apiKey, googlePlaceId);
+      networkRequests += 1;
+      await persistLiveDetails(place.id, googlePlaceId, live);
+      cacheByPlace.set(place.id, {
+        place_id: place.id,
+        google_place_id: googlePlaceId,
+        payload: sanitizeGoogleLiveDetails(live),
+        fetched_at: live.fetchedAt,
+        expires_at: new Date(new Date(live.fetchedAt).getTime() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString(),
       });
-      networkRequests += details.networkAttempts;
-      await persistLiveDetails(user.id, place.id, googlePlaceId, details.live);
       cached += 1;
     } catch (error) {
       failed += 1;
-      const message = error instanceof Error ? error.message : "Google enrichment failed";
-      if (/daily manual google request limit/i.test(message)) {
-        stoppedByLimit = true;
-        stoppedReason = message;
-        break;
-      }
+      lastError = error instanceof Error ? error.message : "Google enrichment failed";
     }
 
     current += 1;
@@ -466,5 +521,5 @@ export async function runGoogleCloudAutoEnrichment(input: {
 
   currentName = null;
   publish();
-  return { current, total: input.places.length, currentName, networkRequests, linked, cached, review, failed, cancelled, stoppedByLimit, stoppedReason };
+  return { current, total: input.places.length, currentName, networkRequests, linked, cached, review, failed, lastError, cancelled, stoppedByLimit, stoppedReason };
 }
