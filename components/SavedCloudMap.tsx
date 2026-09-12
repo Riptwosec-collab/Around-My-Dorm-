@@ -2,53 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Cloud, Home, LoaderCircle, MapPin } from "lucide-react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import type { Place } from "@/types/place";
 
 type Point = { lat: number; lng: number };
 type CloudMapState = "idle" | "loading" | "ready" | "error";
 
-const MAPLIBRE_JS = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js";
-const MAPLIBRE_CSS = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css";
 const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-let mapLibrePromise: Promise<any> | null = null;
-
-function loadMapLibre(): Promise<any> {
-  if (typeof window === "undefined") return Promise.reject(new Error("Map is only available in the browser"));
-  const existing = (window as any).maplibregl;
-  if (existing) return Promise.resolve(existing);
-  if (mapLibrePromise) return mapLibrePromise;
-
-  mapLibrePromise = new Promise((resolve, reject) => {
-    if (!document.querySelector(`link[href="${MAPLIBRE_CSS}"]`)) {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = MAPLIBRE_CSS;
-      document.head.appendChild(link);
-    }
-
-    const prior = document.querySelector(`script[src="${MAPLIBRE_JS}"]`) as HTMLScriptElement | null;
-    const script = prior || document.createElement("script");
-    const done = () => {
-      const lib = (window as any).maplibregl;
-      if (lib) resolve(lib);
-      else reject(new Error("MapLibre loaded without a global map object"));
-    };
-    const failed = () => reject(new Error("Could not load the saved cloud map library"));
-    script.addEventListener("load", done, { once: true });
-    script.addEventListener("error", failed, { once: true });
-    if (!prior) {
-      script.src = MAPLIBRE_JS;
-      script.async = true;
-      script.crossOrigin = "anonymous";
-      document.head.appendChild(script);
-    }
-  }).catch((error) => {
-    mapLibrePromise = null;
-    throw error;
-  });
-
-  return mapLibrePromise;
-}
 
 function categoryColor(place: Place): string {
   if (place.categories.includes("cafe")) return "#8B5CF6";
@@ -60,12 +21,12 @@ function categoryColor(place: Place): string {
 
 function placeFeatureCollection(places: Place[], selectedPlace: Place | null) {
   return {
-    type: "FeatureCollection",
+    type: "FeatureCollection" as const,
     features: places
       .filter((place) => Number.isFinite(place.latitude) && Number.isFinite(place.longitude))
       .map((place) => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [place.longitude, place.latitude] },
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [place.longitude as number, place.latitude as number] },
         properties: {
           id: place.id,
           name: place.name,
@@ -88,7 +49,7 @@ function circleFeature(center: Point, radiusMeters: number) {
     const nextLng = lng + Math.atan2(Math.sin(bearing) * Math.sin(angular) * Math.cos(lat), Math.cos(angular) - Math.sin(lat) * Math.sin(nextLat));
     coordinates.push([nextLng * 180 / Math.PI, nextLat * 180 / Math.PI]);
   }
-  return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [coordinates] } };
+  return { type: "Feature" as const, properties: {}, geometry: { type: "Polygon" as const, coordinates: [coordinates] } };
 }
 
 export function SavedCloudMap({
@@ -115,8 +76,8 @@ export function SavedCloudMap({
   onStateChange?: (state: CloudMapState) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<any>(null);
-  const homeMarkerRef = useRef<any>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const homeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const placesRef = useRef(places);
   const onSelectRef = useRef(onSelectPlace);
   const onMoveEndRef = useRef(onMoveEnd);
@@ -135,8 +96,7 @@ export function SavedCloudMap({
     setError(null);
     onStateChange?.("loading");
 
-    void loadMapLibre().then((maplibregl) => {
-      if (disposed || !containerRef.current) return;
+    try {
       const map = new maplibregl.Map({
         container: containerRef.current,
         center: [center.lng, center.lat],
@@ -158,8 +118,15 @@ export function SavedCloudMap({
       mapRef.current = map;
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
 
+      map.on("error", (event) => {
+        if (disposed) return;
+        const message = event?.error?.message || (language === "en" ? "Map tile rendering failed" : "โหลดพื้นแผนที่ไม่สำเร็จ");
+        setError(message);
+      });
+
       map.on("load", () => {
         if (disposed) return;
+        map.resize();
         map.addSource("radius", { type: "geojson", data: circleFeature(origin, radiusMeters) });
         map.addLayer({ id: "radius-fill", type: "fill", source: "radius", paint: { "fill-color": "#149CFF", "fill-opacity": 0.08 } });
         map.addLayer({ id: "radius-line", type: "line", source: "radius", paint: { "line-color": "#19E6FF", "line-width": 1.5, "line-opacity": 0.75 } });
@@ -192,12 +159,12 @@ export function SavedCloudMap({
           },
         });
 
-        map.on("click", "clusters", (event: any) => {
-          const coordinates = event.features?.[0]?.geometry?.coordinates;
+        map.on("click", "clusters", (event) => {
+          const coordinates = (event.features?.[0]?.geometry as GeoJSON.Point | undefined)?.coordinates;
           if (!coordinates) return;
-          map.easeTo({ center: coordinates, zoom: Math.min(map.getZoom() + 2, 17) });
+          map.easeTo({ center: coordinates as [number, number], zoom: Math.min(map.getZoom() + 2, 17) });
         });
-        map.on("click", "saved-places", (event: any) => {
+        map.on("click", "saved-places", (event) => {
           const id = String(event.features?.[0]?.properties?.id || "");
           const place = placesRef.current.find((item) => item.id === id);
           if (place) onSelectRef.current(place);
@@ -225,38 +192,39 @@ export function SavedCloudMap({
         homeMarkerRef.current = new maplibregl.Marker({ element: homeElement, anchor: "center" }).setLngLat([origin.lng, origin.lat]).addTo(map);
 
         setState("ready");
+        setError(null);
         onStateChange?.("ready");
       });
-    }).catch((caught) => {
+    } catch (caught) {
       if (disposed) return;
       const message = caught instanceof Error ? caught.message : "Saved cloud map unavailable";
       setError(message);
       setState("error");
       onStateChange?.("error");
-    });
+    }
 
     return () => {
       disposed = true;
-      homeMarkerRef.current?.remove?.();
+      homeMarkerRef.current?.remove();
       homeMarkerRef.current = null;
-      mapRef.current?.remove?.();
+      mapRef.current?.remove();
       mapRef.current = null;
     };
   }, [active]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map?.isStyleLoaded?.()) return;
-    const source = map.getSource("places") as any;
-    source?.setData?.(placeFeatureCollection(places, selectedPlace));
+    if (!map?.isStyleLoaded()) return;
+    const source = map.getSource("places") as maplibregl.GeoJSONSource | undefined;
+    source?.setData(placeFeatureCollection(places, selectedPlace));
   }, [places, selectedPlace]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map?.isStyleLoaded?.()) return;
-    const source = map.getSource("radius") as any;
-    source?.setData?.(circleFeature(origin, radiusMeters));
-    homeMarkerRef.current?.setLngLat?.([origin.lng, origin.lat]);
+    if (!map?.isStyleLoaded()) return;
+    const source = map.getSource("radius") as maplibregl.GeoJSONSource | undefined;
+    source?.setData(circleFeature(origin, radiusMeters));
+    homeMarkerRef.current?.setLngLat([origin.lng, origin.lat]);
   }, [origin, radiusMeters]);
 
   useEffect(() => {
@@ -273,7 +241,7 @@ export function SavedCloudMap({
         <span><strong className="text-emerald-100">Saved Cloud Map</strong> • Supabase {coordinatePlaces.length} • OpenStreetMap • no Google request</span>
       </div>
       {state === "loading" && <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-[#02060D]/35"><div className="amd-glass flex items-center gap-2 rounded-xl px-4 py-3 text-[10px]"><LoaderCircle className="h-4 w-4 animate-spin text-[#19E6FF]" />{language === "en" ? "Loading saved places…" : "กำลังโหลดสถานที่ที่บันทึกบน Cloud…"}</div></div>}
-      {error && <div className="absolute inset-x-4 top-16 z-20 rounded-xl border border-rose-300/15 bg-[#12070b]/90 p-3 text-[9px] text-rose-100">{error}</div>}
+      {error && <div className="absolute inset-x-4 top-16 z-20 rounded-xl border border-rose-300/15 bg-[#12070b]/90 p-3 text-[9px] text-rose-100">{language === "en" ? "Saved Cloud Map error" : "Saved Cloud Map โหลดไม่สำเร็จ"}: {error}</div>}
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-[#02060D]/78 px-3 py-2 text-[8px] text-white/55 backdrop-blur-md"><Home className="h-3.5 w-3.5 text-[#149CFF]" /> HOME <span>•</span><MapPin className="h-3.5 w-3.5" /> {coordinatePlaces.length} places</div>
     </div>
   );
