@@ -2,6 +2,7 @@ import { PLACES as EMBEDDED_PLACES } from "@/data/places";
 import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import type { Place } from "@/types/place";
 import { prepareProvenancePatch } from "@/lib/field-provenance";
+import { applyGoogleCloudPlaceLayer } from "@/lib/google-cloud-enrichment";
 
 export type PlaceDatabaseSource = "supabase" | "embedded";
 export type PlaceDatabaseResult = { places: Place[]; source: PlaceDatabaseSource; loadedAt: string; warning: string | null };
@@ -43,7 +44,7 @@ async function applyCloudUserLayer(places: Place[]) {
   });
   const known = new Set(base.map((place) => place.id));
   const additions = (additionsResult.data || []).map((row: any) => row.record).filter(isPlaceRecord).filter((place) => !known.has(place.id));
-  return [...base, ...additions];
+  return applyGoogleCloudPlaceLayer([...base, ...additions]);
 }
 
 export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
