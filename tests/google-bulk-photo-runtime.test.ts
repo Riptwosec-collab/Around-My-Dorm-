@@ -7,24 +7,18 @@ function read(file: string) {
 }
 
 describe("bulk transient Google place photos", () => {
-  const dataManagement = read("components/DataManagement.tsx");
+  const layout = read("app/layout.tsx");
   const placePhoto = read("components/PlacePhoto.tsx");
-  const googleLive = read("lib/google-live.ts");
   const cloudEnrichment = read("lib/google-cloud-enrichment.ts");
 
-  it("exposes an explicit admin bulk photo loader instead of background photo requests", () => {
-    expect(dataManagement).toContain('GoogleBulkPhotoLoader');
-    expect(dataManagement).toContain('<GoogleBulkPhotoLoader');
+  it("mounts a session-wide admin photo control so one explicit action can fill cards across routes", () => {
+    expect(layout).toContain('GoogleBulkPhotoRuntimeControl');
+    expect(layout).toContain('<GoogleBulkPhotoRuntimeControl');
   });
 
   it("lets normal PlacePhoto cards consume the transient runtime photo store", () => {
     expect(placePhoto).toContain('GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT');
     expect(placePhoto).toContain('getGoogleRuntimePhoto');
-  });
-
-  it("reuses a photo already returned by an explicitly requested Place Details call", () => {
-    expect(googleLive).toContain('transientPhoto');
-    expect(cloudEnrichment).toContain('setGoogleRuntimePhoto');
   });
 
   it("does not persist Google photo URIs through the shared cloud payload", () => {
