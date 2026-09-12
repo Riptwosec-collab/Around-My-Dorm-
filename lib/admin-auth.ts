@@ -1,6 +1,8 @@
 import type { User } from "@supabase/supabase-js";
 import { resetCloudUserPromise, supabase } from "@/lib/cloud/supabase";
 
+export const ADMIN_EMAIL_ALLOWLIST = ["misuki2803@gmail.com"] as const;
+
 export type AdminAccessState = {
   authenticated: boolean;
   admin: boolean;
@@ -8,9 +10,24 @@ export type AdminAccessState = {
   email: string | null;
 };
 
+function normalizedEmail(value: string | null | undefined) {
+  return (value || "").trim().toLowerCase();
+}
+
+export function isAllowlistedAdminEmail(email: string | null | undefined): boolean {
+  const normalized = normalizedEmail(email);
+  return ADMIN_EMAIL_ALLOWLIST.some((candidate) => candidate === normalized);
+}
+
+function hasConfirmedEmail(user: User): boolean {
+  const legacyConfirmedAt = (user as User & { confirmed_at?: string | null }).confirmed_at;
+  return Boolean(user.email_confirmed_at || legacyConfirmedAt);
+}
+
 export function isAuthorizedAdmin(user: User | null): boolean {
   if (!user || user.is_anonymous) return false;
-  return user.app_metadata?.amd_admin === true;
+  if (user.app_metadata?.amd_admin === true) return true;
+  return isAllowlistedAdminEmail(user.email) && hasConfirmedEmail(user);
 }
 
 export async function getAdminAccessState(): Promise<AdminAccessState> {
@@ -35,35 +52,70 @@ export async function requireAdminSessionToken(): Promise<string> {
   return session.access_token;
 }
 
-export async function signInAdminWithPassword(email: string, password: string): Promise<AdminAccessState> {
-  const normalizedEmail = email.trim().toLowerCase();
-  if (!normalizedEmail || !normalizedEmail.includes("@")) throw new Error("Select a valid admin email address");
-  if (!password) throw new Error("Enter the admin password");
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: normalizedEmail,
-    password,
-  });
-  if (error) throw error;
-
-  if (!isAuthorizedAdmin(data.user)) {
-    await supabase.auth.signOut();
-    resetCloudUserPromise();
-    throw new Error("This Supabase account is not authorized as an Around My Dorm admin");
-  }
-
-  resetCloudUserPromise();
+function accessState(user: User, fallbackEmail: string): AdminAccessState {
   return {
     authenticated: true,
     admin: true,
     anonymous: false,
-    email: data.user.email ?? normalizedEmail,
+    email: user.email ?? fallbackEmail,
   };
 }
 
+async function finalizeAdminUser(user: User | null, fallbackEmail: string): Promise<AdminAccessState> {
+  if (!user || !isAuthorizedAdmin(user)) {
+    await supabase.auth.signOut();
+    resetCloudUserPromise();
+    if (user && isAllowlistedAdminEmail(user.email) && !hasConfirmedEmail(user)) {
+      throw new Error("ADMIN_EMAIL_CONFIRMATION_REQUIRED");
+    }
+    throw new Error("This Supabase account is not authorized as an Around My Dorm admin");
+  }
+  resetCloudUserPromise();
+  return accessState(user, fallbackEmail);
+}
+
+export async function signInOrCreateAdminWithPassword(email: string, password: string): Promise<AdminAccessState> {
+  const normalized = normalizedEmail(email);
+  if (!normalized || !normalized.includes("@")) throw new Error("Select a valid admin email address");
+  if (!isAllowlistedAdminEmail(normalized)) throw new Error("This email is not in the Around My Dorm admin allowlist");
+  if (!password) throw new Error("Enter the admin password");
+
+  const signedIn = await supabase.auth.signInWithPassword({ email: normalized, password });
+  if (!signedIn.error && signedIn.data.user) {
+    return finalizeAdminUser(signedIn.data.user, normalized);
+  }
+
+  const loginMessage = signedIn.error?.message || "Admin sign-in failed";
+  const canBootstrap = /invalid login credentials|invalid credentials|user not found/i.test(loginMessage);
+  if (!canBootstrap) throw signedIn.error || new Error(loginMessage);
+
+  const created = await supabase.auth.signUp({
+    email: normalized,
+    password,
+    options: {
+      emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+    },
+  });
+  if (created.error) {
+    throw new Error(`Admin sign-in failed: ${loginMessage}. First-time account setup also failed: ${created.error.message}`);
+  }
+
+  if (!created.data.session || !created.data.user) {
+    resetCloudUserPromise();
+    throw new Error("ADMIN_EMAIL_CONFIRMATION_REQUIRED");
+  }
+
+  return finalizeAdminUser(created.data.user, normalized);
+}
+
+export async function signInAdminWithPassword(email: string, password: string): Promise<AdminAccessState> {
+  return signInOrCreateAdminWithPassword(email, password);
+}
+
 export async function requestAdminMagicLink(email: string): Promise<void> {
-  const normalized = email.trim();
+  const normalized = normalizedEmail(email);
   if (!normalized || !normalized.includes("@")) throw new Error("Enter a valid admin email address");
+  if (!isAllowlistedAdminEmail(normalized)) throw new Error("This email is not in the Around My Dorm admin allowlist");
   const { error } = await supabase.auth.signInWithOtp({
     email: normalized,
     options: {
