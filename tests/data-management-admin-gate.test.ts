@@ -7,6 +7,7 @@ describe("Data Management admin login gate", () => {
   const googleBulk = fs.readFileSync(path.join(process.cwd(), "components", "GoogleCloudAutoEnrichment.tsx"), "utf8");
   const adminAccess = fs.readFileSync(path.join(process.cwd(), "components", "AdminGoogleAccess.tsx"), "utf8");
   const adminAuth = fs.readFileSync(path.join(process.cwd(), "lib", "admin-auth.ts"), "utf8");
+  const appShell = fs.readFileSync(path.join(process.cwd(), "components", "AroundMyDormApp.tsx"), "utf8");
 
   it("owns one centralized Supabase admin login at the Data Management boundary", () => {
     expect(dataManagement).toContain('import { AdminGoogleAccess } from "@/components/AdminGoogleAccess";');
@@ -14,6 +15,12 @@ describe("Data Management admin login gate", () => {
     expect(dataManagement).toContain('<AdminGoogleAccess language={language} onStateChange={setAdminAccess} />');
     expect(dataManagement).toContain('adminAccess.admin');
     expect(dataManagement).toContain('data-testid="data-management-admin-locked"');
+  });
+
+  it("shows a direct Admin Login entry in Settings instead of hiding login only behind Data Management", () => {
+    expect(appShell).toContain('data-testid="settings-admin-login"');
+    expect(appShell).toContain('Admin Login');
+    expect(appShell).toContain('setDataManagementOpen(true)');
   });
 
   it("reacts to Supabase auth changes so the database gate opens immediately after login", () => {
