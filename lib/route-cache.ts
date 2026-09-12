@@ -1,11 +1,16 @@
 import { requireAdminSessionToken } from "@/lib/admin-auth";
-import { supabase } from "@/lib/cloud/supabase";
 import { isUsableHomeOrigin } from "@/lib/home-origin";
 import type { HomeOrigin, Place, PlaceDistance } from "@/types/place";
 import type { RouteMode, RouteMatrixResult } from "@/worker/google-routes";
 
-export const ROUTE_CACHE_TTL_DAYS = 29;
-const ROUTE_CACHE_TTL_MS = ROUTE_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+/**
+ * Google Routes response content is never persisted to Supabase, localStorage,
+ * sessionStorage, IndexedDB, or any other durable cache. Results live only in
+ * this JS module's process/runtime memory after an explicit admin request.
+ */
+export const ROUTE_RUNTIME_TTL_MINUTES = 20;
+const ROUTE_RUNTIME_TTL_MS = ROUTE_RUNTIME_TTL_MINUTES * 60 * 1000;
+const runtimeRouteRows = new Map<string, RouteCacheRow>();
 
 export type RouteCacheRow = {
   origin_id: string;
@@ -30,21 +35,50 @@ export type RouteRefreshProgress = {
   totalBatches: number;
 };
 
+function rowKey(originId: string, placeId: string, mode: RouteMode) {
+  return `${originId}:${placeId}:${mode}`;
+}
+
 function isFresh(row: RouteCacheRow) {
   return new Date(row.expires_at).getTime() > Date.now();
+}
+
+function purgeExpiredRuntimeRows() {
+  for (const [key, row] of runtimeRouteRows.entries()) {
+    if (!isFresh(row)) runtimeRouteRows.delete(key);
+  }
 }
 
 function minutes(seconds: number | null) {
   return seconds == null ? null : Math.max(1, Math.round(seconds / 60));
 }
 
+export function clearRuntimeRouteCache() {
+  runtimeRouteRows.clear();
+}
+
+export function storeRuntimeRouteResults(originId: string, results: RouteMatrixResult[], fetchedAt = new Date().toISOString()) {
+  if (!results.length) return;
+  purgeExpiredRuntimeRows();
+  const expiresAt = new Date(new Date(fetchedAt).getTime() + ROUTE_RUNTIME_TTL_MS).toISOString();
+  for (const result of results) {
+    const row: RouteCacheRow = {
+      origin_id: originId,
+      place_id: result.placeId,
+      travel_mode: result.mode,
+      distance_meters: result.distanceMeters,
+      duration_seconds: result.durationSeconds,
+      status: result.condition || (result.statusCode === 0 ? "ROUTE_EXISTS" : "ROUTE_NOT_FOUND"),
+      fetched_at: fetchedAt,
+      expires_at: expiresAt,
+    };
+    runtimeRouteRows.set(rowKey(originId, result.placeId, result.mode), row);
+  }
+}
+
 export async function loadRouteCache(originId = "baan-supha-apartment"): Promise<RouteCacheRow[]> {
-  const { data, error } = await supabase
-    .from("amd_route_cache")
-    .select("origin_id,place_id,travel_mode,distance_meters,duration_seconds,status,fetched_at,expires_at")
-    .eq("origin_id", originId);
-  if (error) throw error;
-  return (data || []) as RouteCacheRow[];
+  purgeExpiredRuntimeRows();
+  return Array.from(runtimeRouteRows.values()).filter((row) => row.origin_id === originId);
 }
 
 export function mergeRouteCacheIntoPlaces(places: Place[], rows: RouteCacheRow[]): Place[] {
@@ -98,33 +132,10 @@ export function mergeRouteCacheIntoPlaces(places: Place[], rows: RouteCacheRow[]
       drivingMinutes,
       walkingDistanceKm: distance.walkingDistanceMeters != null ? Number((distance.walkingDistanceMeters / 1000).toFixed(2)) : place.walkingDistanceKm,
       drivingDistanceKm: distance.drivingDistanceMeters != null ? Number((distance.drivingDistanceMeters / 1000).toFixed(2)) : place.drivingDistanceKm,
-      source: Array.from(new Set([...(place.source || []), "google_routes"])),
+      source: Array.from(new Set([...(place.source || []), "google_routes_runtime"])),
       lastChecked: latest,
     };
   });
-}
-
-async function persistRouteResults(originId: string, results: RouteMatrixResult[]) {
-  if (!results.length) return;
-  const fetchedAt = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + ROUTE_CACHE_TTL_MS).toISOString();
-  const { error } = await supabase.from("amd_route_cache").upsert(
-    results.map((result) => ({
-      origin_id: originId,
-      place_id: result.placeId,
-      travel_mode: result.mode,
-      distance_meters: result.distanceMeters,
-      duration_seconds: result.durationSeconds,
-      status: result.condition || (result.statusCode === 0 ? "ROUTE_EXISTS" : "ROUTE_NOT_FOUND"),
-      status_message: result.statusMessage,
-      fetched_at: fetchedAt,
-      expires_at: expiresAt,
-      source: "google_routes",
-      updated_at: fetchedAt,
-    })),
-    { onConflict: "origin_id,place_id,travel_mode" },
-  );
-  if (error) throw error;
 }
 
 export async function refreshRoutesForPlaces(input: {
@@ -162,7 +173,7 @@ export async function refreshRoutesForPlaces(input: {
       progress.requests += 1;
       const body = await response.json() as { ok?: boolean; results?: RouteMatrixResult[]; error?: string };
       if (!response.ok || !body.ok || !Array.isArray(body.results)) throw new Error(body.error || `Route request failed (${response.status})`);
-      await persistRouteResults(input.origin.id, body.results);
+      storeRuntimeRouteResults(input.origin.id, body.results);
       for (const result of body.results) {
         if (result.distanceMeters != null && result.durationSeconds != null) progress.success += 1;
         else progress.skipped += 1;
