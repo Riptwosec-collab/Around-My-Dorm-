@@ -1,6 +1,6 @@
 -- Shared Admin Notes for Around My Dorm.
 -- Public browsing continues to read amd_places.record through the existing SELECT policy.
--- Permanent note writes are restricted to authenticated admins and only mutate record.notes.
+-- Permanent note writes are restricted to authenticated admins and only mutate dedicated admin-note metadata.
 
 create or replace function public.amd_set_admin_note(p_place_id text, p_note text)
 returns jsonb
@@ -48,10 +48,11 @@ begin
 
   v_record := jsonb_set(
     coalesce(v_record, '{}'::jsonb),
-    '{notes}',
+    '{adminNote}',
     case when v_note is null then 'null'::jsonb else to_jsonb(v_note) end,
     true
   );
+  v_record := jsonb_set(v_record, '{adminNoteUpdatedAt}', to_jsonb(v_updated_at), true);
   v_record := jsonb_set(v_record, '{lastUpdated}', to_jsonb(v_updated_at), true);
 
   update public.amd_places
@@ -72,4 +73,4 @@ revoke execute on function public.amd_set_admin_note(text, text) from anon;
 grant execute on function public.amd_set_admin_note(text, text) to authenticated;
 
 comment on function public.amd_set_admin_note(text, text) is
-  'Admin-only shared note update. Mutates only amd_places.record.notes and lastUpdated metadata.';
+  'Admin-only shared note update. Mutates only amd_places.record.adminNote and admin-note timestamps.';
