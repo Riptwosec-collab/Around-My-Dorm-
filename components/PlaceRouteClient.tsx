@@ -6,13 +6,23 @@ import { PlaceDetail } from "@/components/PlaceDetail";
 import { loadCloudAppState, recordRecentViewCloud, setFavoriteCloud } from "@/lib/cloud/store";
 import { loadPlacesFromDatabase } from "@/lib/database/places";
 import { DEFAULT_COLLECTIONS, DEFAULT_SETTINGS } from "@/lib/app-shell-config";
+import { getAdminAccessState, type AdminAccessState } from "@/lib/admin-auth";
+import { saveAdminPlaceNote } from "@/lib/admin-notes";
 import type { Place } from "@/types/place";
+
+const INITIAL_ADMIN_ACCESS: AdminAccessState = {
+  authenticated: false,
+  admin: false,
+  anonymous: false,
+  email: null,
+};
 
 export function PlaceRouteClient({ place }: { place: Place }) {
   const router = useRouter();
   const [resolvedPlace, setResolvedPlace] = useState(place);
   const [saved, setSaved] = useState(false);
   const [language, setLanguage] = useState<"th" | "en">("th");
+  const [adminAccess, setAdminAccess] = useState<AdminAccessState>(INITIAL_ADMIN_ACCESS);
 
   useEffect(() => {
     let active = true;
@@ -37,6 +47,14 @@ export function PlaceRouteClient({ place }: { place: Place }) {
       })
       .catch(() => undefined);
 
+    void getAdminAccessState()
+      .then((state) => {
+        if (active) setAdminAccess(state);
+      })
+      .catch(() => {
+        if (active) setAdminAccess(INITIAL_ADMIN_ACCESS);
+      });
+
     void recordRecentViewCloud({ placeId: place.id, viewedAt: new Date().toISOString(), source: "seed" }).catch(() => undefined);
     return () => { active = false; };
   }, [place]);
@@ -47,6 +65,15 @@ export function PlaceRouteClient({ place }: { place: Place }) {
     void setFavoriteCloud(resolvedPlace, next).catch(() => setSaved(!next));
   }
 
+  async function saveAdminNote(note: string) {
+    const result = await saveAdminPlaceNote(resolvedPlace.id, note);
+    setResolvedPlace((current) => ({
+      ...current,
+      notes: result.note,
+      lastUpdated: result.updatedAt,
+    }));
+  }
+
   return (
     <main className="amd-app">
       <div className="amd-shell">
@@ -55,6 +82,8 @@ export function PlaceRouteClient({ place }: { place: Place }) {
             place={resolvedPlace}
             saved={saved}
             language={language}
+            adminAllowed={adminAccess.admin}
+            onSaveAdminNote={saveAdminNote}
             onClose={() => router.back()}
             onSave={toggle}
             onMap={() => router.push(`/map/?place=${encodeURIComponent(resolvedPlace.slug)}`)}
