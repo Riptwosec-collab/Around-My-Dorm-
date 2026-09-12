@@ -5,6 +5,7 @@ on:
     branches: [feature/hybrid-google-platform]
     paths:
       - scripts/patch-rich-google-details.py
+      - scripts/fix-rich-google-details-compat.py
       - .github/workflows/patch-rich-google-details.yml
 
 permissions:
@@ -20,9 +21,11 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Apply patch
-        run: python3 scripts/patch-rich-google-details.py
+          node-version: 22
+      - name: Apply rich metadata patch
+        run: |
+          python3 scripts/patch-rich-google-details.py
+          python3 scripts/fix-rich-google-details-compat.py
       - name: Install
         run: npm install
       - name: Unit tests
