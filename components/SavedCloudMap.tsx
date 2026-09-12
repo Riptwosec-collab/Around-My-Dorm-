@@ -235,7 +235,7 @@ export function SavedCloudMap({
 
   return (
     <div className="absolute inset-0" data-testid="saved-cloud-map" data-map-state={state}>
-      <div ref={containerRef} className="absolute inset-0" />
+      <div ref={containerRef} className="h-full w-full" />
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-2 rounded-xl border border-emerald-300/15 bg-[#02060D]/78 px-3 py-2 text-[8px] text-white/65 backdrop-blur-md">
         <Cloud className="h-3.5 w-3.5 text-emerald-200" />
         <span><strong className="text-emerald-100">Saved Cloud Map</strong> • Supabase {coordinatePlaces.length} • OpenStreetMap • no Google request</span>
