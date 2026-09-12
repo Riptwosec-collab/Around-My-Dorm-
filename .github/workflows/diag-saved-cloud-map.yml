@@ -1,0 +1,38 @@
+name: Diagnostic Saved Cloud Map
+
+on:
+  push:
+    branches:
+      - diag/saved-cloud-map-runtime
+    paths:
+      - ".github/workflows/diag-saved-cloud-map.yml"
+      - "scripts/diag-saved-cloud-map.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Probe production map
+        env:
+          DIAG_URL: https://around-my-dorm.aidsaras.workers.dev/map/
+        run: node scripts/diag-saved-cloud-map.mjs
+      - name: Upload production screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saved-cloud-map-production-diagnostic
+          path: saved-cloud-map-production.png
+          if-no-files-found: warn
