@@ -21,10 +21,21 @@ type Progress = {
   currentName: string | null;
 };
 
+type SharedGooglePhotoLink = {
+  place_id: string;
+  google_place_id: string | null;
+  status: "linked" | "review";
+  confidence: number | null;
+};
+
 const EMPTY_PROGRESS: Progress = { current: 0, total: 0, loaded: 0, noPhoto: 0, failed: 0, currentName: null };
 
 function linkedGooglePlaceId(place: Place): string | null {
   return place.googlePlaceId || place.googleMaps?.placeId || null;
+}
+
+function photoGooglePlaceId(place: Place, sharedLink?: SharedGooglePhotoLink): string | null {
+  return linkedGooglePlaceId(place) || sharedLink?.google_place_id || null;
 }
 
 function hasPersistedImage(place: Place): boolean {
@@ -47,6 +58,7 @@ export function GoogleBulkPhotoRuntimeControl() {
   const [open, setOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [places, setPlaces] = useState<Place[]>([]);
+  const [sharedGoogleLinks, setSharedGoogleLinks] = useState<SharedGooglePhotoLink[]>([]);
   const [loadingPlaces, setLoadingPlaces] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Progress>(EMPTY_PROGRESS);
@@ -72,8 +84,13 @@ export function GoogleBulkPhotoRuntimeControl() {
     setLoadingPlaces(true);
     setMessage(null);
     try {
-      const result = await loadPlacesFromDatabase();
+      const [result, linksResult] = await Promise.all([
+        loadPlacesFromDatabase(),
+        supabase.from("amd_google_public_links").select("place_id,google_place_id,status,confidence"),
+      ]);
+      if (linksResult.error) throw linksResult.error;
       setPlaces(result.places);
+      setSharedGoogleLinks((linksResult.data || []) as SharedGooglePhotoLink[]);
       if (result.warning) setMessage(result.warning);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "โหลดรายการร้านไม่สำเร็จ");
@@ -88,12 +105,23 @@ export function GoogleBulkPhotoRuntimeControl() {
 
   const summary = useMemo(() => {
     let linked = 0;
+    let reviewPhotoCandidates = 0;
+    let availableGoogleIds = 0;
     let persisted = 0;
     let runtime = 0;
-    const targets: Array<{ place: Place; googlePlaceId: string }> = [];
+    const linksByPlace = new Map(sharedGoogleLinks.map((row) => [row.place_id, row]));
+    const targets: Array<{ place: Place; googlePlaceId: string; verificationStatus: "linked" | "review" }> = [];
+
     for (const place of places) {
-      const googlePlaceId = linkedGooglePlaceId(place);
-      if (googlePlaceId) linked += 1;
+      const sharedLink = linksByPlace.get(place.id);
+      const verifiedGooglePlaceId = linkedGooglePlaceId(place);
+      const googlePlaceId = photoGooglePlaceId(place, sharedLink);
+      const verificationStatus: "linked" | "review" = verifiedGooglePlaceId || sharedLink?.status === "linked" ? "linked" : "review";
+
+      if (verificationStatus === "linked" && googlePlaceId) linked += 1;
+      if (verificationStatus === "review" && googlePlaceId) reviewPhotoCandidates += 1;
+      if (googlePlaceId) availableGoogleIds += 1;
+
       if (hasPersistedImage(place)) {
         persisted += 1;
         continue;
@@ -102,17 +130,20 @@ export function GoogleBulkPhotoRuntimeControl() {
         runtime += 1;
         continue;
       }
-      if (googlePlaceId) targets.push({ place, googlePlaceId });
+      if (googlePlaceId) targets.push({ place, googlePlaceId, verificationStatus });
     }
+
     return {
       linked,
+      reviewPhotoCandidates,
+      availableGoogleIds,
       persisted,
       runtime,
       targets,
-      missingPlaceId: Math.max(0, places.length - linked),
+      missingPlaceId: Math.max(0, places.length - availableGoogleIds),
       cappedTargets: targets.slice(0, PHOTO_REQUEST_LIMIT),
     };
-  }, [places, progress.loaded]);
+  }, [places, sharedGoogleLinks, progress.loaded]);
 
   async function runBulkPhotos() {
     if (running || !admin) return;
@@ -199,7 +230,7 @@ export function GoogleBulkPhotoRuntimeControl() {
           <Camera className="h-4 w-4" /> Google Photos
         </button>
       ) : (
-        <section data-testid="google-bulk-photo-runtime-control" className="amd-glass-strong w-[min(92vw,390px)] rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl">
+        <section data-testid="google-bulk-photo-runtime-control" className="amd-glass-strong w-[min(92vw,410px)] rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /><p className="text-[11px] font-bold">GOOGLE PHOTOS • MANUAL</p></div>
@@ -209,18 +240,23 @@ export function GoogleBulkPhotoRuntimeControl() {
           </div>
 
           {loadingPlaces ? (
-            <div className="mt-4 flex items-center gap-2 text-[9px] text-white/60"><LoaderCircle className="h-4 w-4 animate-spin" />กำลังอ่านร้านจาก Supabase…</div>
+            <div className="mt-4 flex items-center gap-2 text-[9px] text-white/60"><LoaderCircle className="h-4 w-4 animate-spin" />กำลังอ่านร้านและ Google Place ID จาก Supabase…</div>
           ) : (
-            <div className="mt-4 grid grid-cols-4 gap-1 text-center text-[8px]">
+            <div className="mt-4 grid grid-cols-5 gap-1 text-center text-[8px]">
               <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">ร้าน</p><strong>{places.length}</strong></div>
-              <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">Place ID</p><strong>{summary.linked}</strong></div>
-              <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">มีรูปแล้ว</p><strong>{summary.persisted + summary.runtime}</strong></div>
+              <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">Google ID</p><strong>{summary.availableGoogleIds}</strong></div>
+              <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">Verified</p><strong>{summary.linked}</strong></div>
+              <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">Review</p><strong>{summary.reviewPhotoCandidates}</strong></div>
               <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">จะโหลด</p><strong>{summary.cappedTargets.length}</strong></div>
             </div>
           )}
 
+          {summary.reviewPhotoCandidates > 0 && !loadingPlaces && (
+            <p className="mt-2 rounded-xl border border-amber-300/10 bg-amber-300/[0.04] px-3 py-2 text-[8px] leading-4 text-amber-100">ครอบคลุมรูปครบทุก Google ID: Verified {summary.linked} + Review {summary.reviewPhotoCandidates} = {summary.availableGoogleIds} ร้าน • กลุ่ม Review ใช้ Place ID เพื่อพรีวิวรูปแบบ manual เท่านั้น ไม่เปลี่ยนสถานะเป็น Verified และไม่เขียน ID กลับ canonical record</p>
+          )}
+
           {summary.missingPlaceId > 0 && !loadingPlaces && (
-            <p className="mt-2 rounded-xl border border-amber-300/10 bg-amber-300/[0.04] px-3 py-2 text-[8px] leading-4 text-amber-100">{summary.missingPlaceId} ร้านยังรอ Review/อนุมัติ Google Place ID จึงยังไม่ดึงรูปอัตโนมัติเพื่อกันรูปผิดร้าน/ผิดสาขา • ร้านที่ยืนยันแล้วจะโหลดได้ทันที</p>
+            <p className="mt-2 rounded-xl border border-rose-300/10 bg-rose-300/[0.04] px-3 py-2 text-[8px] leading-4 text-rose-100">ยังไม่มี Google Place ID {summary.missingPlaceId} ร้าน จึงไม่สามารถขอรูปจาก Google ให้ร้านเหล่านี้ได้</p>
           )}
 
           {running && (
@@ -247,7 +283,7 @@ export function GoogleBulkPhotoRuntimeControl() {
           {!running && confirmOpen && (
             <div className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-300/[0.04] p-3">
               <p className="text-[9px] font-bold text-amber-100">ยืนยัน Google Places requests</p>
-              <p className="mt-1 text-[8px] leading-4 text-white/55">จะยิงสูงสุด {summary.cappedTargets.length} requests ใน foreground เท่านั้น • Hard cap {PHOTO_REQUEST_LIMIT} • ตัวนับ Request จะอัปเดตตามแต่ละร้าน • รูปหายเมื่อ reload หน้าเว็บตามข้อจำกัด Google</p>
+              <p className="mt-1 text-[8px] leading-4 text-white/55">จะยิงสูงสุด {summary.cappedTargets.length} requests ใน foreground เท่านั้น • Hard cap {PHOTO_REQUEST_LIMIT} • ตัวนับ Request จะอัปเดตตามแต่ละร้าน • Review ID ใช้สำหรับรูปชั่วคราวเท่านั้น • รูปหายเมื่อ reload หน้าเว็บตามข้อจำกัด Google</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setConfirmOpen(false)} className="amd-chip h-10 min-h-0 text-[8px]">ยกเลิก</button>
                 <button data-testid="google-bulk-photo-runtime-run" type="button" onClick={() => void runBulkPhotos()} className="amd-btn amd-btn-primary h-10 min-h-0 rounded-xl text-[8px] font-bold">ยืนยันและโหลด</button>
