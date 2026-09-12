@@ -1,0 +1,49 @@
+name: Apply Admin Data Management Gate
+
+on:
+  push:
+    branches:
+      - feature/hybrid-google-platform
+    paths:
+      - scripts/apply-admin-data-management-gate.py
+      - .github/workflows/apply-admin-data-management-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-admin-data-management-gate
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply admin login gate
+        run: python3 scripts/apply-admin-data-management-gate.py
+      - name: Install
+        run: npm install
+      - name: Targeted admin gate test
+        run: npx vitest run tests/data-management-admin-gate.test.ts tests/admin-auth.test.ts tests/google-cloud-auto-enrichment-cancel.test.ts
+      - name: Type check
+        run: npm run typecheck
+      - name: Commit validated admin gate
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/DataManagement.tsx components/GoogleCloudAutoEnrichment.tsx components/AdminGoogleAccess.tsx tests/google-cloud-auto-enrichment-cancel.test.ts
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+            exit 0
+          fi
+          git commit -m 'feat: gate data management behind Supabase admin login'
+          git push origin feature/hybrid-google-platform
