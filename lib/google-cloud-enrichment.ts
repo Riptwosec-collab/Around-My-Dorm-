@@ -6,7 +6,7 @@ import {
   textSimilarity,
   type GooglePlaceMatchAssessment,
 } from "@/lib/google-place-id-manager";
-import type { GoogleDiscoveryCandidate, GoogleLiveDetails } from "@/lib/google-live";
+import type { GoogleAccessibility, GoogleDiscoveryCandidate, GoogleLiveDetails, GoogleParkingOptions, GooglePaymentOptions } from "@/lib/google-live";
 import { runSharedGooglePlaceDetails, runSharedGoogleTextSearch } from "@/lib/google-request-manager";
 import {
   classifyGoogleEnrichmentError,
@@ -44,6 +44,7 @@ type CacheRow = {
 
 export type GoogleCloudPlacePayload = {
   address: string | null;
+  shortAddress?: string | null;
   latitude: number | null;
   longitude: number | null;
   rating: number | null;
@@ -51,10 +52,21 @@ export type GoogleCloudPlacePayload = {
   openNow: boolean | null;
   openingHoursText: string[];
   phone: string | null;
+  internationalPhone?: string | null;
   website: string | null;
   googleMapsUrl: string | null;
   priceLevel: string | null;
   businessStatus: string | null;
+  types?: string[];
+  primaryType?: string | null;
+  hasDelivery?: boolean | null;
+  hasDineIn?: boolean | null;
+  hasTakeout?: boolean | null;
+  isReservable?: boolean | null;
+  hasCurbsidePickup?: boolean | null;
+  accessibility?: GoogleAccessibility;
+  parkingOptions?: GoogleParkingOptions;
+  paymentOptions?: GooglePaymentOptions;
   fetchedAt: string;
 };
 
@@ -104,19 +116,53 @@ function safePayload(value: unknown): GoogleCloudPlacePayload | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Partial<GoogleCloudPlacePayload>;
   if (typeof record.fetchedAt !== "string") return null;
+  const bool = (value: unknown) => typeof value === "boolean" ? value : null;
+  const accessibility = (record.accessibility || {}) as Partial<GoogleAccessibility>;
+  const parking = (record.parkingOptions || {}) as Partial<GoogleParkingOptions>;
+  const payment = (record.paymentOptions || {}) as Partial<GooglePaymentOptions>;
   return {
     address: typeof record.address === "string" ? record.address : null,
+    shortAddress: typeof record.shortAddress === "string" ? record.shortAddress : null,
     latitude: typeof record.latitude === "number" ? record.latitude : null,
     longitude: typeof record.longitude === "number" ? record.longitude : null,
     rating: typeof record.rating === "number" ? record.rating : null,
     reviewCount: typeof record.reviewCount === "number" ? record.reviewCount : null,
-    openNow: typeof record.openNow === "boolean" ? record.openNow : null,
+    openNow: bool(record.openNow),
     openingHoursText: Array.isArray(record.openingHoursText) ? record.openingHoursText.map(String) : [],
     phone: typeof record.phone === "string" ? record.phone : null,
+    internationalPhone: typeof record.internationalPhone === "string" ? record.internationalPhone : null,
     website: typeof record.website === "string" ? record.website : null,
     googleMapsUrl: typeof record.googleMapsUrl === "string" ? record.googleMapsUrl : null,
     priceLevel: typeof record.priceLevel === "string" ? record.priceLevel : null,
     businessStatus: typeof record.businessStatus === "string" ? record.businessStatus : null,
+    types: Array.isArray(record.types) ? record.types.map(String) : [],
+    primaryType: typeof record.primaryType === "string" ? record.primaryType : null,
+    hasDelivery: bool(record.hasDelivery),
+    hasDineIn: bool(record.hasDineIn),
+    hasTakeout: bool(record.hasTakeout),
+    isReservable: bool(record.isReservable),
+    hasCurbsidePickup: bool(record.hasCurbsidePickup),
+    accessibility: {
+      wheelchairAccessibleEntrance: bool(accessibility.wheelchairAccessibleEntrance),
+      wheelchairAccessibleParking: bool(accessibility.wheelchairAccessibleParking),
+      wheelchairAccessibleRestroom: bool(accessibility.wheelchairAccessibleRestroom),
+      wheelchairAccessibleSeating: bool(accessibility.wheelchairAccessibleSeating),
+    },
+    parkingOptions: {
+      freeParkingLot: bool(parking.freeParkingLot),
+      paidParkingLot: bool(parking.paidParkingLot),
+      freeStreetParking: bool(parking.freeStreetParking),
+      paidStreetParking: bool(parking.paidStreetParking),
+      freeGarageParking: bool(parking.freeGarageParking),
+      paidGarageParking: bool(parking.paidGarageParking),
+      valetParking: bool(parking.valetParking),
+    },
+    paymentOptions: {
+      cashOnly: bool(payment.cashOnly),
+      creditCards: bool(payment.creditCards),
+      debitCards: bool(payment.debitCards),
+      nfc: bool(payment.nfc),
+    },
     fetchedAt: record.fetchedAt,
   };
 }
@@ -124,6 +170,7 @@ function safePayload(value: unknown): GoogleCloudPlacePayload | null {
 export function sanitizeGoogleLiveDetails(live: GoogleLiveDetails): GoogleCloudPlacePayload {
   return {
     address: live.address,
+    shortAddress: live.shortAddress ?? null,
     latitude: live.latitude,
     longitude: live.longitude,
     rating: live.rating,
@@ -131,10 +178,21 @@ export function sanitizeGoogleLiveDetails(live: GoogleLiveDetails): GoogleCloudP
     openNow: live.openNow,
     openingHoursText: live.openingHoursText,
     phone: live.phone,
+    internationalPhone: live.internationalPhone ?? null,
     website: live.website,
     googleMapsUrl: live.googleMapsUrl,
     priceLevel: live.priceLevel,
     businessStatus: live.businessStatus,
+    types: live.types ?? [],
+    primaryType: live.primaryType ?? null,
+    hasDelivery: live.hasDelivery ?? null,
+    hasDineIn: live.hasDineIn ?? null,
+    hasTakeout: live.hasTakeout ?? null,
+    isReservable: live.isReservable ?? null,
+    hasCurbsidePickup: live.hasCurbsidePickup ?? null,
+    accessibility: live.accessibility ?? { wheelchairAccessibleEntrance: null, wheelchairAccessibleParking: null, wheelchairAccessibleRestroom: null, wheelchairAccessibleSeating: null },
+    parkingOptions: live.parkingOptions ?? { freeParkingLot: null, paidParkingLot: null, freeStreetParking: null, paidStreetParking: null, freeGarageParking: null, paidGarageParking: null, valetParking: null },
+    paymentOptions: live.paymentOptions ?? { cashOnly: null, creditCards: null, debitCards: null, nfc: null },
     fetchedAt: live.fetchedAt,
   };
 }
@@ -186,6 +244,46 @@ export function mergeGoogleCloudPayload(place: Place, googlePlaceId: string, pay
     const priceLevel = normalizedPriceLevel(payload.priceLevel);
     if (priceLevel != null) { next.priceLevel = priceLevel; mark("priceLevel"); }
   }
+  const accessibility = payload.accessibility ?? { wheelchairAccessibleEntrance: null, wheelchairAccessibleParking: null, wheelchairAccessibleRestroom: null, wheelchairAccessibleSeating: null };
+  const parkingOptions = payload.parkingOptions ?? { freeParkingLot: null, paidParkingLot: null, freeStreetParking: null, paidStreetParking: null, freeGarageParking: null, paidGarageParking: null, valetParking: null };
+  const paymentOptions = payload.paymentOptions ?? { cashOnly: null, creditCards: null, debitCards: null, nfc: null };
+  if (next.delivery == null && payload.hasDelivery != null) { next.delivery = payload.hasDelivery; mark("delivery"); }
+  if (next.dineIn == null && payload.hasDineIn != null) { next.dineIn = payload.hasDineIn; mark("dineIn"); }
+  if (next.takeaway == null && payload.hasTakeout != null) { next.takeaway = payload.hasTakeout; mark("takeaway"); }
+  if (next.wheelchairAccessible == null && accessibility.wheelchairAccessibleEntrance != null) { next.wheelchairAccessible = accessibility.wheelchairAccessibleEntrance; mark("wheelchairAccessible"); }
+
+  if (!next.paymentMethods.length) {
+    const methods = [
+      paymentOptions.creditCards ? "credit_card" : null,
+      paymentOptions.debitCards ? "debit_card" : null,
+      paymentOptions.nfc ? "nfc" : null,
+      paymentOptions.cashOnly ? "cash_only" : null,
+    ].filter((value): value is string => Boolean(value));
+    if (methods.length) { next.paymentMethods = methods; mark("paymentMethods"); }
+  }
+
+  if (next.parking.available == null) {
+    const parkingValues = Object.values(parkingOptions);
+    if (parkingValues.some((value) => value === true)) {
+      next.parking = { ...next.parking, available: true };
+      mark("parking.available");
+    }
+  }
+
+  next.googleDetails = {
+    shortAddress: payload.shortAddress ?? null,
+    internationalPhone: payload.internationalPhone ?? null,
+    types: payload.types ?? [],
+    primaryType: payload.primaryType ?? null,
+    businessStatus: payload.businessStatus,
+    reservable: payload.isReservable ?? null,
+    curbsidePickup: payload.hasCurbsidePickup ?? null,
+    accessibility,
+    parkingOptions,
+    paymentOptions,
+    lastUpdatedAt: payload.fetchedAt,
+  };
+  mark("googleDetails");
 
   if (next.latitude != null && next.longitude != null && next.distanceKm == null) {
     const km = haversineKm(DORM_CENTER, { lat: next.latitude, lng: next.longitude });
@@ -235,6 +333,18 @@ export function mergeGoogleReviewPayload(place: Place, googlePlaceId: string, pa
     const priceLevel = normalizedPriceLevel(payload.priceLevel);
     if (priceLevel != null) { next.priceLevel = priceLevel; mark("priceLevel"); }
   }
+  const accessibility = payload.accessibility ?? { wheelchairAccessibleEntrance: null, wheelchairAccessibleParking: null, wheelchairAccessibleRestroom: null, wheelchairAccessibleSeating: null };
+  const parkingOptions = payload.parkingOptions ?? { freeParkingLot: null, paidParkingLot: null, freeStreetParking: null, paidStreetParking: null, freeGarageParking: null, paidGarageParking: null, valetParking: null };
+  const paymentOptions = payload.paymentOptions ?? { cashOnly: null, creditCards: null, debitCards: null, nfc: null };
+  if (next.delivery == null && payload.hasDelivery != null) { next.delivery = payload.hasDelivery; mark("delivery"); }
+  if (next.dineIn == null && payload.hasDineIn != null) { next.dineIn = payload.hasDineIn; mark("dineIn"); }
+  if (next.takeaway == null && payload.hasTakeout != null) { next.takeaway = payload.hasTakeout; mark("takeaway"); }
+  if (next.wheelchairAccessible == null && accessibility.wheelchairAccessibleEntrance != null) { next.wheelchairAccessible = accessibility.wheelchairAccessibleEntrance; mark("wheelchairAccessible"); }
+  next.googleDetails = {
+    shortAddress: payload.shortAddress ?? null, internationalPhone: payload.internationalPhone ?? null, types: payload.types ?? [], primaryType: payload.primaryType ?? null,
+    businessStatus: payload.businessStatus, reservable: payload.isReservable ?? null, curbsidePickup: payload.hasCurbsidePickup ?? null,
+    accessibility, parkingOptions, paymentOptions, lastUpdatedAt: payload.fetchedAt,
+  };
   if (next.latitude != null && next.longitude != null && next.distanceKm == null) {
     const km = haversineKm(DORM_CENTER, { lat: next.latitude, lng: next.longitude });
     next.distanceKm = Number(km.toFixed(2));
@@ -429,6 +539,7 @@ async function persistDiscoveryCandidate(placeId: string, candidate: GoogleDisco
   const expiresAt = new Date(new Date(fetchedAt).getTime() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString();
   const payload: GoogleCloudPlacePayload = {
     address: candidate.address,
+    shortAddress: null,
     latitude: candidate.latitude,
     longitude: candidate.longitude,
     rating: candidate.rating,
@@ -436,10 +547,21 @@ async function persistDiscoveryCandidate(placeId: string, candidate: GoogleDisco
     openNow: candidate.openNow,
     openingHoursText: [],
     phone: null,
+    internationalPhone: null,
     website: null,
     googleMapsUrl: candidate.googleMapsUrl,
     priceLevel: null,
     businessStatus: null,
+    types: candidate.primaryType ? [candidate.primaryType] : [],
+    primaryType: candidate.primaryType,
+    hasDelivery: null,
+    hasDineIn: null,
+    hasTakeout: null,
+    isReservable: null,
+    hasCurbsidePickup: null,
+    accessibility: { wheelchairAccessibleEntrance: null, wheelchairAccessibleParking: null, wheelchairAccessibleRestroom: null, wheelchairAccessibleSeating: null },
+    parkingOptions: { freeParkingLot: null, paidParkingLot: null, freeStreetParking: null, paidStreetParking: null, freeGarageParking: null, paidGarageParking: null, valetParking: null },
+    paymentOptions: { cashOnly: null, creditCards: null, debitCards: null, nfc: null },
     fetchedAt,
   };
   const { error } = await supabase.from("amd_google_public_cache").upsert({
