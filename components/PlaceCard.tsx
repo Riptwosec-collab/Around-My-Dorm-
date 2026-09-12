@@ -87,7 +87,7 @@ export function PlaceCard({
     <article className="amd-glass amd-card amd-place-card group overflow-hidden">
       <div className="flex min-h-[154px]">
         <div className="amd-place-card-media relative w-[35%] min-w-[112px] max-w-[190px] shrink-0 overflow-hidden bg-[#07111f]">
-          <PlacePhoto place={place} fallbackLabel={copy.unknownData} className="amd-place-card-photo h-full min-h-[154px] w-full object-cover contrast-[.98] saturate-[.94]" />
+          <PlacePhoto place={place} fallbackLabel={language === "en" ? "No photo yet" : "ยังไม่มีรูป"} className="amd-place-card-photo h-full min-h-[154px] w-full object-cover contrast-[.98] saturate-[.94]" />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-white/[0.025]" />
           <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/[0.04]" />
           <button
