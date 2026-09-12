@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Image as ImageIcon, LoaderCircle, ShieldCheck, X } from "lucide-react";
 import { getAdminAccessState } from "@/lib/admin-auth";
+import { recordTrackedGoogleRequest } from "@/lib/google-api-budget";
 import { supabase } from "@/lib/cloud/supabase";
 import { loadPlacesFromDatabase } from "@/lib/database/places";
 import { fetchGoogleTransientPhoto } from "@/lib/google-transient-photo";
@@ -34,6 +35,10 @@ function hasPersistedImage(place: Place): boolean {
     || place.galleryImages?.some(Boolean)
     || place.imageMetadata?.some((image) => Boolean(image.url)),
   );
+}
+
+function errorText(error: unknown) {
+  return (error instanceof Error ? error.message : String(error || "Unknown error")).slice(0, 420);
 }
 
 export function GoogleBulkPhotoRuntimeControl() {
@@ -125,12 +130,16 @@ export function GoogleBulkPhotoRuntimeControl() {
     let loaded = 0;
     let noPhoto = 0;
     let failed = 0;
+    let firstError: string | null = null;
     setProgress({ ...EMPTY_PROGRESS, total: targets.length });
 
     for (let index = 0; index < targets.length; index += 1) {
       if (cancelRef.current) break;
       const target = targets[index];
+      const startedAt = Date.now();
+      let requestStatus: "success" | "failed" = "success";
       setProgress({ current: index, total: targets.length, loaded, noPhoto, failed, currentName: target.place.name });
+
       try {
         const photo = await fetchGoogleTransientPhoto(apiKey, target.googlePlaceId);
         if (photo) {
@@ -139,19 +148,38 @@ export function GoogleBulkPhotoRuntimeControl() {
         } else {
           noPhoto += 1;
         }
-      } catch {
+      } catch (error) {
+        requestStatus = "failed";
         failed += 1;
+        if (!firstError) firstError = `${target.place.name}: ${errorText(error)}`;
       }
+
+      try {
+        await recordTrackedGoogleRequest({
+          requestType: "place_photo",
+          placeId: target.place.id,
+          placeName: target.place.name,
+          googlePlaceId: target.googlePlaceId,
+          status: requestStatus,
+          attempted: 1,
+          retryCount: 0,
+          durationMs: Math.max(0, Date.now() - startedAt),
+        });
+      } catch (error) {
+        if (!firstError) firstError = `บันทึกตัวนับ Request ไม่สำเร็จ: ${errorText(error)}`;
+      }
+
       setProgress({ current: index + 1, total: targets.length, loaded, noPhoto, failed, currentName: target.place.name });
     }
 
     const cancelled = cancelRef.current;
+    const diagnostic = firstError ? ` • สาเหตุแรก: ${firstError}` : "";
     setRunning(false);
     setProgress((current) => ({ ...current, currentName: null }));
     setMessage(
       cancelled
-        ? `หยุดแล้ว • โหลดรูปสำเร็จ ${loaded} ร้าน • ไม่มีรูป ${noPhoto} • ผิดพลาด ${failed}`
-        : `โหลดรูป Google ชั่วคราวสำเร็จ ${loaded} ร้าน • ไม่มีรูป ${noPhoto} • ผิดพลาด ${failed}`,
+        ? `หยุดแล้ว • โหลดรูปสำเร็จ ${loaded} ร้าน • ไม่มีรูป ${noPhoto} • ผิดพลาด ${failed}${diagnostic}`
+        : `โหลดรูป Google ชั่วคราวสำเร็จ ${loaded} ร้าน • ไม่มีรูป ${noPhoto} • ผิดพลาด ${failed}${diagnostic}`,
     );
   }
 
@@ -192,7 +220,7 @@ export function GoogleBulkPhotoRuntimeControl() {
           )}
 
           {summary.missingPlaceId > 0 && !loadingPlaces && (
-            <p className="mt-2 rounded-xl border border-amber-300/10 bg-amber-300/[0.04] px-3 py-2 text-[8px] leading-4 text-amber-100">{summary.missingPlaceId} ร้านยังไม่มี Google Place ID ที่ยืนยัน จึงไม่ดึงรูปมั่วข้ามร้าน/ข้ามสาขา • ให้รัน Google → Supabase enrichment ก่อน</p>
+            <p className="mt-2 rounded-xl border border-amber-300/10 bg-amber-300/[0.04] px-3 py-2 text-[8px] leading-4 text-amber-100">{summary.missingPlaceId} ร้านยังรอ Review/อนุมัติ Google Place ID จึงยังไม่ดึงรูปอัตโนมัติเพื่อกันรูปผิดร้าน/ผิดสาขา • ร้านที่ยืนยันแล้วจะโหลดได้ทันที</p>
           )}
 
           {running && (
@@ -219,7 +247,7 @@ export function GoogleBulkPhotoRuntimeControl() {
           {!running && confirmOpen && (
             <div className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-300/[0.04] p-3">
               <p className="text-[9px] font-bold text-amber-100">ยืนยัน Google Places requests</p>
-              <p className="mt-1 text-[8px] leading-4 text-white/55">จะยิงสูงสุด {summary.cappedTargets.length} requests ใน foreground เท่านั้น • Hard cap {PHOTO_REQUEST_LIMIT} • รูปหายเมื่อ reload หน้าเว็บตามข้อจำกัด Google</p>
+              <p className="mt-1 text-[8px] leading-4 text-white/55">จะยิงสูงสุด {summary.cappedTargets.length} requests ใน foreground เท่านั้น • Hard cap {PHOTO_REQUEST_LIMIT} • ตัวนับ Request จะอัปเดตตามแต่ละร้าน • รูปหายเมื่อ reload หน้าเว็บตามข้อจำกัด Google</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setConfirmOpen(false)} className="amd-chip h-10 min-h-0 text-[8px]">ยกเลิก</button>
                 <button data-testid="google-bulk-photo-runtime-run" type="button" onClick={() => void runBulkPhotos()} className="amd-btn amd-btn-primary h-10 min-h-0 rounded-xl text-[8px] font-bold">ยืนยันและโหลด</button>
