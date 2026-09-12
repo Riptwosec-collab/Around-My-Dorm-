@@ -52,10 +52,10 @@ describe("GoogleCloudAutoEnrichment cancel guard", () => {
   });
 
   it("does not cancel on the first click and requires an explicit confirmation", async () => {
-    render(<GoogleCloudAutoEnrichment places={[place]} language="en" onReload={() => {}} />);
+    render(React.createElement(GoogleCloudAutoEnrichment, { places: [place], language: "en", onReload: () => {} }));
 
-    fireEvent.click(await screen.findByRole("button", { name: /pull google/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /enrich all 1 shops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /send google requests/i }));
 
     const cancelButton = await screen.findByRole("button", { name: /cancel after current request/i });
     fireEvent.click(cancelButton);
