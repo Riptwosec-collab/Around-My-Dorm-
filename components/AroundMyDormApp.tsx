@@ -138,8 +138,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [locationError, setLocationError] = useState<string | null>(null);
   const [mapLoadState, setMapLoadState] = useState<MapLoadState>(googleMapsApiKey ? "idle" : "missing");
   const [loadingPlaces, setLoadingPlaces] = useState(true);
-  const [databasePlaces, setDatabasePlaces] = useState<Place[]>(PLACES);
-  const [databaseSource, setDatabaseSource] = useState("embedded");
+  const [databasePlaces, setDatabasePlaces] = useState<Place[]>([]);
+  const [databaseSource, setDatabaseSource] = useState("supabase");
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
   const [googleDiscoveryOpen, setGoogleDiscoveryOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -237,7 +237,14 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       const result = await loadPlacesFromDatabase();
       setDatabasePlaces(result.places);
       setDatabaseSource(result.source);
+      setCloudError(null);
       if (result.warning) showToast(result.warning, "removed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Supabase cloud database unavailable";
+      setDatabasePlaces([]);
+      setDatabaseSource("supabase");
+      setCloudError(message);
+      showToast(settings.language === "en" ? `Cloud database unavailable: ${message}` : `ฐานข้อมูล Cloud ใช้งานไม่ได้: ${message}`, "removed");
     } finally {
       setLoadingPlaces(false);
     }
