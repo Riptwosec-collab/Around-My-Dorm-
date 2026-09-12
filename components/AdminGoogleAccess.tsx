@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KeyRound, LogOut, Mail, ShieldCheck } from "lucide-react";
+import { KeyRound, LogOut, ShieldCheck } from "lucide-react";
 import { HomeOriginManager } from "@/components/HomeOriginManager";
 import { supabase } from "@/lib/cloud/supabase";
 import {
   getAdminAccessState,
-  requestAdminMagicLink,
+  signInAdminWithPassword,
   signOutAdmin,
   type AdminAccessState,
 } from "@/lib/admin-auth";
 
+const ADMIN_EMAIL_OPTIONS = ["misuki2803@gmail.com"] as const;
 const EMPTY: AdminAccessState = { authenticated: false, admin: false, anonymous: false, email: null };
 
 export function AdminGoogleAccess({
@@ -21,7 +22,8 @@ export function AdminGoogleAccess({
   onStateChange?: (state: AdminAccessState) => void;
 }) {
   const [state, setState] = useState<AdminAccessState>(EMPTY);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState<string>(ADMIN_EMAIL_OPTIONS[0]);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -53,14 +55,18 @@ export function AdminGoogleAccess({
     };
   }, [onStateChange]);
 
-  async function sendLink() {
+  async function login() {
+    if (busy) return;
     setBusy(true);
     setMessage(null);
     try {
-      await requestAdminMagicLink(email);
-      setMessage(language === "en" ? "Admin sign-in link sent. Open it in this browser, then return here." : "ส่งลิงก์เข้าสู่ระบบ Admin แล้ว • เปิดลิงก์ในเบราว์เซอร์นี้แล้วกลับมาหน้านี้");
+      const next = await signInAdminWithPassword(email, password);
+      setState(next);
+      onStateChange?.(next);
+      setPassword("");
+      setMessage(language === "en" ? "Supabase admin connected." : "เชื่อม Supabase Admin แล้ว");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not send admin sign-in link");
+      setMessage(error instanceof Error ? error.message : "Admin login failed");
     } finally {
       setBusy(false);
     }
@@ -71,6 +77,7 @@ export function AdminGoogleAccess({
     try {
       await signOutAdmin();
       await refresh();
+      setPassword("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Sign out failed");
     } finally {
@@ -88,28 +95,37 @@ export function AdminGoogleAccess({
             <p className="mt-1 text-[9px] leading-5 text-white/48">
               {state.admin
                 ? language === "en" ? `Authorized admin${state.email ? ` • ${state.email}` : ""}` : `ยืนยันสิทธิ์ Admin แล้ว${state.email ? ` • ${state.email}` : ""}`
-                : language === "en" ? "Bulk Google enrichment and Routes refresh require a real authorized admin session." : "เข้าสู่ระบบ Admin เพื่อเชื่อม Supabase Database และเปิดเครื่องมือแก้ข้อมูล / Google / Routes • Anonymous session ใช้สิทธิ์นี้ไม่ได้"}
+                : language === "en" ? "Choose the admin account and enter its Supabase Auth password." : "เลือกบัญชี Admin จากดรอปดาวน์ แล้วกรอกรหัสผ่าน Supabase Auth"}
             </p>
           </div>
         </div>
 
         {!state.admin && (
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-            <label className="relative block">
-              <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder={language === "en" ? "Admin email" : "อีเมล Admin"}
-                className="amd-input h-11 w-full rounded-xl pl-10 pr-3 text-[10px]"
-              />
-            </label>
-            <button type="button" disabled={busy} onClick={() => void sendLink()} className="amd-btn amd-btn-primary min-h-11 rounded-xl px-4 text-[9px] font-bold disabled:opacity-50">
-              <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />{language === "en" ? "Login Admin" : "เข้าสู่ระบบ Admin"}</span>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <select
+              aria-label={language === "en" ? "Admin account" : "บัญชี Admin"}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="amd-input h-11 w-full rounded-xl bg-[#07111f] px-3 text-[10px]"
+            >
+              {ADMIN_EMAIL_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") void login(); }}
+              placeholder={language === "en" ? "Admin password" : "รหัสผ่าน Admin"}
+              autoComplete="current-password"
+              className="amd-input h-11 w-full rounded-xl px-3 text-[10px]"
+            />
+            <button type="button" disabled={busy || !password} onClick={() => void login()} className="amd-btn amd-btn-primary min-h-11 rounded-xl px-4 text-[9px] font-bold disabled:opacity-50">
+              <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />{busy ? (language === "en" ? "Signing in…" : "กำลังเข้า…") : (language === "en" ? "Login Admin" : "เข้าสู่ระบบ Admin")}</span>
             </button>
           </div>
         )}
+
+        {!state.admin && <p className="mt-2 text-[8px] leading-4 text-white/35">{language === "en" ? "The password is submitted directly to Supabase Auth and is not stored in this app or repository." : "รหัสผ่านจะส่งตรงไป Supabase Auth และไม่ถูกบันทึกไว้ในโค้ดหรือ Repository"}</p>}
 
         {state.admin && (
           <button type="button" disabled={busy} onClick={() => void logout()} className="amd-chip mt-3 h-10 min-h-0 px-3 text-[9px]">
