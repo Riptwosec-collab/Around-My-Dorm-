@@ -40,6 +40,7 @@ export function GoogleCloudAutoEnrichment({
   const [result, setResult] = useState<GoogleCloudEnrichmentResult | null>(null);
   const [running, setRunning] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const cancelRef = useRef(false);
 
@@ -73,6 +74,7 @@ export function GoogleCloudAutoEnrichment({
   async function runBulk() {
     if (running) return;
     setConfirmOpen(false);
+    setCancelConfirmOpen(false);
     setRunning(true);
     setMessage(null);
     setResult(null);
@@ -119,6 +121,7 @@ export function GoogleCloudAutoEnrichment({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Google cloud enrichment failed");
     } finally {
+      setCancelConfirmOpen(false);
       setRunning(false);
     }
   }
@@ -206,9 +209,34 @@ export function GoogleCloudAutoEnrichment({
             <div>Failed<br /><strong className="text-rose-200">{progress.failed}</strong></div>
           </div>
           {progress.lastError && <p className="mt-2 break-words text-[8px] leading-4 text-rose-200">Latest error: {progress.lastError}</p>}
-          <button type="button" onClick={() => { cancelRef.current = true; }} className="amd-chip mt-3 h-10 min-h-0 w-full px-3 text-[9px] text-rose-100">
-            {language === "en" ? "Cancel after current request" : "ยกเลิกหลัง Request ปัจจุบัน"}
-          </button>
+          {!cancelConfirmOpen ? (
+            <button type="button" onClick={() => setCancelConfirmOpen(true)} className="amd-chip mt-3 h-10 min-h-0 w-full px-3 text-[9px] text-rose-100">
+              {language === "en" ? "Cancel after current request" : "ยกเลิกหลัง Request ปัจจุบัน"}
+            </button>
+          ) : (
+            <div className="mt-3 rounded-xl border border-rose-300/15 bg-rose-300/[0.04] p-3">
+              <p className="text-[9px] leading-5 text-rose-100">
+                {language === "en"
+                  ? "Confirm cancellation? The current request may finish, then the remaining shops will be skipped."
+                  : "ยืนยันยกเลิกหรือไม่? Request ที่กำลังทำอาจทำจนจบ แล้วระบบจะหยุดก่อนร้านที่เหลือ"}
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setCancelConfirmOpen(false)} className="amd-chip h-10 min-h-0 px-3 text-[9px]">
+                  {language === "en" ? "Keep running" : "ทำต่อ"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelRef.current = true;
+                    setCancelConfirmOpen(false);
+                  }}
+                  className="amd-chip h-10 min-h-0 px-3 text-[9px] text-rose-100"
+                >
+                  {language === "en" ? "Confirm cancel" : "ยืนยันยกเลิก"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
