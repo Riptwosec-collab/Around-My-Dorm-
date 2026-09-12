@@ -1,10 +1,35 @@
 import { loadGoogleMaps } from "@/lib/google-maps";
 import { readGoogleMemoryCache, writeGoogleMemoryCache } from "@/lib/google-memory-cache";
 
+export type GoogleAccessibility = {
+  wheelchairAccessibleEntrance: boolean | null;
+  wheelchairAccessibleParking: boolean | null;
+  wheelchairAccessibleRestroom: boolean | null;
+  wheelchairAccessibleSeating: boolean | null;
+};
+
+export type GoogleParkingOptions = {
+  freeParkingLot: boolean | null;
+  paidParkingLot: boolean | null;
+  freeStreetParking: boolean | null;
+  paidStreetParking: boolean | null;
+  freeGarageParking: boolean | null;
+  paidGarageParking: boolean | null;
+  valetParking: boolean | null;
+};
+
+export type GooglePaymentOptions = {
+  cashOnly: boolean | null;
+  creditCards: boolean | null;
+  debitCards: boolean | null;
+  nfc: boolean | null;
+};
+
 export type GoogleLiveDetails = {
   googlePlaceId: string;
   name: string | null;
   address: string | null;
+  shortAddress?: string | null;
   latitude: number | null;
   longitude: number | null;
   rating: number | null;
@@ -12,11 +37,23 @@ export type GoogleLiveDetails = {
   openNow: boolean | null;
   openingHoursText: string[];
   phone: string | null;
+  internationalPhone?: string | null;
   website: string | null;
   googleMapsUrl: string | null;
+  /** Transient only. This URI must never be persisted to Supabase. */
   photoUrl: string | null;
   priceLevel: string | null;
   businessStatus: string | null;
+  types?: string[];
+  primaryType?: string | null;
+  hasDelivery?: boolean | null;
+  hasDineIn?: boolean | null;
+  hasTakeout?: boolean | null;
+  isReservable?: boolean | null;
+  hasCurbsidePickup?: boolean | null;
+  accessibility?: GoogleAccessibility;
+  parkingOptions?: GoogleParkingOptions;
+  paymentOptions?: GooglePaymentOptions;
   fetchedAt: string;
 };
 
@@ -37,6 +74,10 @@ export type GoogleDiscoveryCandidate = {
 
 function readCache<T>(key: string): T | null { return readGoogleMemoryCache<T>(key); }
 function writeCache<T>(key: string, value: T, ttlMs: number) { writeGoogleMemoryCache(key, value, ttlMs); }
+
+function nullableBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
 
 function literalLocation(location: any) {
   if (!location) return { latitude: null, longitude: null };
@@ -89,6 +130,31 @@ async function geocoder(apiKey: string) {
   throw new Error("Google Geocoding service is unavailable");
 }
 
+function emptyAccessibility(): GoogleAccessibility {
+  return {
+    wheelchairAccessibleEntrance: null,
+    wheelchairAccessibleParking: null,
+    wheelchairAccessibleRestroom: null,
+    wheelchairAccessibleSeating: null,
+  };
+}
+
+function emptyParkingOptions(): GoogleParkingOptions {
+  return {
+    freeParkingLot: null,
+    paidParkingLot: null,
+    freeStreetParking: null,
+    paidStreetParking: null,
+    freeGarageParking: null,
+    paidGarageParking: null,
+    valetParking: null,
+  };
+}
+
+function emptyPaymentOptions(): GooglePaymentOptions {
+  return { cashOnly: null, creditCards: null, debitCards: null, nfc: null };
+}
+
 async function discoverGoogleGeocode(apiKey: string, query: string): Promise<GoogleDiscoveryCandidate[]> {
   const service = await geocoder(apiKey);
   const response = await service.geocode({ address: query, region: "TH", language: "th" });
@@ -98,9 +164,6 @@ async function discoverGoogleGeocode(apiKey: string, query: string): Promise<Goo
     const placeId = result.place_id || "";
     return {
       googlePlaceId: placeId,
-      // Keep the original shop query as the candidate name so matching still
-      // recognises the local business name while the formatted address remains
-      // available separately for area validation.
       name: query,
       address: result.formatted_address || null,
       ...location,
@@ -125,28 +188,37 @@ async function geocodePlaceId(apiKey: string, googlePlaceId: string): Promise<Go
     googlePlaceId,
     name: null,
     address: result.formatted_address || null,
+    shortAddress: null,
     ...location,
     rating: null,
     reviewCount: null,
     openNow: null,
     openingHoursText: [],
     phone: null,
+    internationalPhone: null,
     website: null,
     googleMapsUrl: mapsSearchUrl(result.formatted_address || googlePlaceId, googlePlaceId),
     photoUrl: null,
     priceLevel: null,
     businessStatus: null,
+    types: [],
+    primaryType: null,
+    hasDelivery: null,
+    hasDineIn: null,
+    hasTakeout: null,
+    isReservable: null,
+    hasCurbsidePickup: null,
+    accessibility: emptyAccessibility(),
+    parkingOptions: emptyParkingOptions(),
+    paymentOptions: emptyPaymentOptions(),
     fetchedAt: new Date().toISOString(),
   };
 }
 
 /**
- * Explicit, short-lived live enrichment. Nothing here writes into the Around My
- * Dorm permanent place database. Call only after a user/admin action.
- *
- * Full Places fields are preferred. If Places API (New) is unavailable but the
- * Geocoding API is enabled, we still return verified Google coordinates/address
- * so every shop can be placed on the map instead of disappearing entirely.
+ * Explicit, short-lived live enrichment. Google photo URIs remain memory-only
+ * and are deliberately excluded from the shared Supabase payload by
+ * sanitizeGoogleLiveDetails(). Call only after a user/admin action.
  */
 export async function fetchGoogleLiveDetails(apiKey: string, googlePlaceId: string, ttlMs = 20 * 60_000): Promise<GoogleLiveDetails> {
   const cacheKey = `detail:${googlePlaceId}`;
@@ -159,22 +231,35 @@ export async function fetchGoogleLiveDetails(apiKey: string, googlePlaceId: stri
     const PlaceCtor = library.Place || window.google?.maps?.places?.Place;
     if (!PlaceCtor) throw new Error("Google Place Details is unavailable");
 
-    const place = new PlaceCtor({ id: googlePlaceId });
+    const place = new PlaceCtor({ id: googlePlaceId, requestedLanguage: "th", requestedRegion: "TH" });
     await place.fetchFields({
       fields: [
         "id",
         "displayName",
         "formattedAddress",
+        "shortFormattedAddress",
         "location",
         "rating",
         "userRatingCount",
         "currentOpeningHours",
+        "regularOpeningHours",
         "nationalPhoneNumber",
+        "internationalPhoneNumber",
         "websiteURI",
         "googleMapsURI",
         "photos",
         "priceLevel",
         "businessStatus",
+        "types",
+        "primaryType",
+        "hasDelivery",
+        "hasDineIn",
+        "hasTakeout",
+        "isReservable",
+        "hasCurbsidePickup",
+        "accessibilityOptions",
+        "parkingOptions",
+        "paymentOptions",
       ],
     });
 
@@ -182,24 +267,60 @@ export async function fetchGoogleLiveDetails(apiKey: string, googlePlaceId: stri
     let photoUrl: string | null = null;
     try {
       const photo = Array.isArray(place.photos) ? place.photos[0] : null;
+      // Memory-only preview. Do not persist this URI.
       photoUrl = photo?.getURI?.({ maxWidth: 1200, maxHeight: 900 }) || null;
     } catch {}
+
+    const accessibility = place.accessibilityOptions;
+    const parking = place.parkingOptions;
+    const payment = place.paymentOptions;
+    const hours = place.currentOpeningHours || place.regularOpeningHours;
 
     const value: GoogleLiveDetails = {
       googlePlaceId: place.id || googlePlaceId,
       name: typeof place.displayName === "string" ? place.displayName : place.displayName?.text || null,
       address: place.formattedAddress || null,
+      shortAddress: place.shortFormattedAddress || null,
       ...location,
       rating: typeof place.rating === "number" ? place.rating : null,
       reviewCount: typeof place.userRatingCount === "number" ? place.userRatingCount : null,
       openNow: typeof place.currentOpeningHours?.openNow === "boolean" ? place.currentOpeningHours.openNow : null,
-      openingHoursText: Array.isArray(place.currentOpeningHours?.weekdayDescriptions) ? place.currentOpeningHours.weekdayDescriptions.map(String) : [],
+      openingHoursText: Array.isArray(hours?.weekdayDescriptions) ? hours.weekdayDescriptions.map(String) : [],
       phone: place.nationalPhoneNumber || null,
+      internationalPhone: place.internationalPhoneNumber || null,
       website: place.websiteURI || null,
       googleMapsUrl: place.googleMapsURI || null,
       photoUrl,
       priceLevel: place.priceLevel != null ? String(place.priceLevel) : null,
       businessStatus: place.businessStatus != null ? String(place.businessStatus) : null,
+      types: Array.isArray(place.types) ? place.types.map(String) : [],
+      primaryType: place.primaryType || null,
+      hasDelivery: nullableBoolean(place.hasDelivery),
+      hasDineIn: nullableBoolean(place.hasDineIn),
+      hasTakeout: nullableBoolean(place.hasTakeout),
+      isReservable: nullableBoolean(place.isReservable),
+      hasCurbsidePickup: nullableBoolean(place.hasCurbsidePickup),
+      accessibility: {
+        wheelchairAccessibleEntrance: nullableBoolean(accessibility?.hasWheelchairAccessibleEntrance),
+        wheelchairAccessibleParking: nullableBoolean(accessibility?.hasWheelchairAccessibleParking),
+        wheelchairAccessibleRestroom: nullableBoolean(accessibility?.hasWheelchairAccessibleRestroom),
+        wheelchairAccessibleSeating: nullableBoolean(accessibility?.hasWheelchairAccessibleSeating),
+      },
+      parkingOptions: {
+        freeParkingLot: nullableBoolean(parking?.hasFreeParkingLot),
+        paidParkingLot: nullableBoolean(parking?.hasPaidParkingLot),
+        freeStreetParking: nullableBoolean(parking?.hasFreeStreetParking),
+        paidStreetParking: nullableBoolean(parking?.hasPaidStreetParking),
+        freeGarageParking: nullableBoolean(parking?.hasFreeGarageParking),
+        paidGarageParking: nullableBoolean(parking?.hasPaidGarageParking),
+        valetParking: nullableBoolean(parking?.hasValetParking),
+      },
+      paymentOptions: {
+        cashOnly: nullableBoolean(payment?.acceptsCashOnly),
+        creditCards: nullableBoolean(payment?.acceptsCreditCards),
+        debitCards: nullableBoolean(payment?.acceptsDebitCards),
+        nfc: nullableBoolean(payment?.acceptsNFC),
+      },
       fetchedAt: new Date().toISOString(),
     };
     writeCache(cacheKey, value, ttlMs);
@@ -221,13 +342,7 @@ export async function fetchGoogleLiveDetails(apiKey: string, googlePlaceId: stri
   throw new Error(`Google Place Details failed: ${googleErrorText(placesError)}`);
 }
 
-/**
- * Explicit discovery only. Results are temporary candidates and must not be
- * silently inserted into the permanent Around My Dorm database.
- *
- * Places Text Search is preferred. If it is unavailable, fall back to Google
- * Geocoding so the app can still obtain a Place ID + coordinates for map pins.
- */
+/** Explicit manual discovery. No background requests are triggered here. */
 export async function discoverGooglePlaces(
   apiKey: string,
   input: { query: string; center: { lat: number; lng: number }; radiusMeters: number; language?: "th" | "en"; maxResults?: number },
