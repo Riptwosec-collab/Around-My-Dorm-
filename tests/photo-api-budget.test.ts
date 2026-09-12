@@ -18,6 +18,15 @@ describe("manual Google photo runtime publishing", () => {
     expect(panel).toContain("onClick={() => void loadPhoto()}");
     expect(panel).not.toContain("void loadPhoto();\n  }, []");
   });
+
+  it("uses a photo-specific empty label instead of the generic unknown-data label", () => {
+    const card = read("components/PlaceCard.tsx");
+    const detail = read("components/PlaceDetail.tsx");
+    expect(card).toContain('language === "en" ? "No photo yet" : "ยังไม่มีรูป"');
+    expect(detail).toContain('language === "en" ? "No photo yet" : "ยังไม่มีรูป"');
+    expect(card).not.toContain("fallbackLabel={copy.unknownData}");
+    expect(detail).not.toContain("fallbackLabel={copy.unknownData}");
+  });
 });
 
 describe("app-tracked Google API monthly budget", () => {
