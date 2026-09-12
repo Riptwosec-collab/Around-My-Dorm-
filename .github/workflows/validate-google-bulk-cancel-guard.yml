@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,4 +18,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npm test -- tests/google-cloud-auto-enrichment-cancel.test.ts
+      - name: Targeted regression test
+        run: npm test -- tests/google-cloud-auto-enrichment-cancel.test.ts
+      - name: Full unit test suite
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
