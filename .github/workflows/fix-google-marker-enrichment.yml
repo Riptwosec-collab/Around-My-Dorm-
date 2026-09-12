@@ -1,0 +1,54 @@
+name: Fix Google Marker Enrichment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/google-live.ts'
+      - 'scripts/fix-google-marker-enrichment.py'
+      - '.github/workflows/fix-google-marker-enrichment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-google-marker-enrichment-main
+  cancel-in-progress: false
+
+jobs:
+  fix-and-validate:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply marker enrichment fix
+        run: python3 scripts/fix-google-marker-enrichment.py
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/google-place-id-manager.ts tests/google-place-id-manager.test.ts
+          if git diff --cached --quiet; then
+            echo 'No generated fix changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Fix Google shop matching and map markers'
+          git push origin main
