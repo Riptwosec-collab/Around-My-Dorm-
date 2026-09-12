@@ -1,0 +1,42 @@
+name: Apply Google Detail Panel
+
+on:
+  push:
+    branches: [feature/hybrid-google-platform]
+    paths:
+      - scripts/apply-place-detail-google-panel.py
+      - .github/workflows/apply-place-detail-google-panel.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply detail patch
+        run: python3 scripts/apply-place-detail-google-panel.py
+      - name: Install
+        run: npm install
+      - name: Unit tests
+        run: npm test -- tests/google-transient-photo.test.ts tests/google-place-details.test.ts tests/google-cloud-enrichment.test.ts
+      - name: Type check
+        run: npm run typecheck
+      - name: Commit generated detail integration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/PlaceDetail.tsx
+          if git diff --cached --quiet; then
+            echo 'No changes.'
+            exit 0
+          fi
+          git commit -m 'feat: show Google routes and photo details safely'
+          git push origin feature/hybrid-google-platform
