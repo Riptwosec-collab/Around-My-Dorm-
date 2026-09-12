@@ -44,16 +44,15 @@ export function GoogleMapsUsageDashboard({ language }: { language: "th" | "en" }
   }, []);
 
   const usage = useMemo(() => getGoogleRequestUsage(), [version]);
-  const localTrackedMonth = usage.dynamicMapMonth + usage.manualMonth;
-  const trackedUsed = Math.max(budget.used, localTrackedMonth);
   const budgetState = useMemo(
-    () => googleDynamicMapSafetyState(trackedUsed, googleMapsMonthlySoftLimit()),
-    [trackedUsed],
+    () => googleDynamicMapSafetyState(budget.used, googleMapsMonthlySoftLimit()),
+    [budget.used],
   );
   const safety = useMemo(
-    () => googleDynamicMapSafetyState(usage.dynamicMapMonth, googleMapsMonthlySoftLimit()),
-    [usage.dynamicMapMonth],
+    () => googleDynamicMapSafetyState(budget.breakdown.dynamicMap, googleMapsMonthlySoftLimit()),
+    [budget.breakdown.dynamicMap],
   );
+  const monthlyManual = Math.max(0, budget.used - budget.breakdown.dynamicMap);
   const tone = safety.level === "safe" ? "text-emerald-200" : safety.level === "warning" ? "text-amber-100" : safety.level === "high" ? "text-orange-200" : "text-rose-200";
 
   return (
@@ -61,7 +60,7 @@ export function GoogleMapsUsageDashboard({ language }: { language: "th" | "en" }
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2"><Gauge className="h-5 w-5 text-[#00D9FF]" /><p className="text-[11px] font-bold">GOOGLE MAPS USAGE</p></div>
-          <p className="mt-1 text-[8px] leading-4 text-white/38">{language === "en" ? "Application-side estimated counter — not the official Google billing counter." : "ตัวนับโดยประมาณฝั่งแอป — ไม่ใช่ตัวเลข Billing อย่างเป็นทางการของ Google"}</p>
+          <p className="mt-1 text-[8px] leading-4 text-white/38">{language === "en" ? "Admin project-wide app estimate — not the official Google billing counter." : "ตัวนับโดยประมาณทั้งโปรเจกต์สำหรับ Admin — ไม่ใช่ตัวเลข Billing อย่างเป็นทางการของ Google"}</p>
         </div>
         <ShieldCheck className="h-5 w-5 text-[#00E5C3]" />
       </div>
@@ -81,24 +80,24 @@ export function GoogleMapsUsageDashboard({ language }: { language: "th" | "en" }
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full bg-white/55 transition-[width]" style={{ width: `${Math.min(100, budgetState.percent)}%` }} /></div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[8px] leading-4 text-white/35">
           <span>App-tracked estimate</span>
-          <span>{language === "en" ? "Monthly cycle • Asia/Bangkok" : "รอบรายเดือน • Asia/Bangkok"}</span>
+          <span>{language === "en" ? "Project-wide monthly cycle • Asia/Bangkok" : "รอบรายเดือนทั้งโปรเจกต์ • Asia/Bangkok"}</span>
         </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-3"><p className="text-[8px] text-white/35">Dynamic Map Loads — Today</p><p className="mt-1 text-[20px] font-bold">{usage.dynamicMapToday}</p></div>
-        <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-3"><p className="text-[8px] text-white/35">Dynamic Map Loads — Month</p><p className="mt-1 text-[20px] font-bold">{usage.dynamicMapMonth}</p></div>
-        <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-3"><p className="text-[8px] text-white/35">Manual Google Requests — Today</p><p className="mt-1 text-[20px] font-bold">{usage.manualToday}</p></div>
-        <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-3"><p className="text-[8px] text-white/35">Manual Google Requests — Month</p><p className="mt-1 text-[20px] font-bold">{usage.manualMonth}</p></div>
+        <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-3"><p className="text-[8px] text-white/35">Dynamic Map Loads — This Browser Today</p><p className="mt-1 text-[20px] font-bold">{usage.dynamicMapToday}</p></div>
+        <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-3"><p className="text-[8px] text-white/35">Dynamic Map Loads — Project Month</p><p className="mt-1 text-[20px] font-bold">{budget.breakdown.dynamicMap}</p></div>
+        <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-3"><p className="text-[8px] text-white/35">Manual Google Requests — This Browser Today</p><p className="mt-1 text-[20px] font-bold">{usage.manualToday}</p></div>
+        <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-3"><p className="text-[8px] text-white/35">Manual Google Requests — Project Month</p><p className="mt-1 text-[20px] font-bold">{monthlyManual}</p></div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-[8px] sm:grid-cols-5">
         {[
-          ["Places Search", Math.max(usage.textSearch, budget.breakdown.textSearch)],
-          ["Place Details", Math.max(usage.placeDetails, budget.breakdown.placeDetails)],
+          ["Places Search", budget.breakdown.textSearch],
+          ["Place Details", budget.breakdown.placeDetails],
           ["Photos", budget.breakdown.placePhoto],
-          ["Geocoding", Math.max(usage.geocoding, budget.breakdown.geocoding)],
-          ["Routes", Math.max(usage.routes, budget.breakdown.routes)],
+          ["Geocoding", budget.breakdown.geocoding],
+          ["Routes", budget.breakdown.routes],
         ].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-white/[0.035] p-2"><span className="text-white/35">{label}</span><strong className="float-right text-white/78">{Number(value).toLocaleString()}</strong></div>)}
       </div>
 
