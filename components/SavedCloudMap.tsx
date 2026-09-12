@@ -101,7 +101,7 @@ export function SavedCloudMap({
         container: containerRef.current,
         center: [center.lng, center.lat],
         zoom: 15,
-        attributionControl: true,
+        attributionControl: {},
         style: {
           version: 8,
           sources: {
