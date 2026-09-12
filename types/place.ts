@@ -60,24 +60,10 @@ export type DayKey =
 /** Legacy dataset format kept for backward compatibility. */
 export type OpeningHours = Record<DayKey, string | null>;
 
-export type OpeningPeriod = {
-  open: string;
-  close: string;
-};
-
+export type OpeningPeriod = { open: string; close: string };
 export type StructuredOpeningHours = Partial<Record<DayKey, OpeningPeriod[] | null>>;
-
-export type SpecialHours = {
-  date: string;
-  periods: OpeningPeriod[] | null;
-  closed?: boolean;
-};
-
-export type PlaceDataSource = {
-  provider: string;
-  url?: string | null;
-  checkedAt: string;
-};
+export type SpecialHours = { date: string; periods: OpeningPeriod[] | null; closed?: boolean };
+export type PlaceDataSource = { provider: string; url?: string | null; checkedAt: string };
 
 export type FieldProvenanceSource =
   | "manual_verified"
@@ -87,9 +73,7 @@ export type FieldProvenanceSource =
   | "google_places_admin"
   | "google_places_live"
   | "fallback";
-
 export type FieldProvenanceConfidence = "verified" | "high" | "medium" | "low";
-
 export type FieldProvenanceEntry = {
   source: FieldProvenanceSource;
   checkedAt: string;
@@ -146,14 +130,8 @@ export type PlaceImage = {
   verified?: boolean;
 };
 
-export type DeliveryPlatform = {
-  provider: string;
-  url: string;
-  verifiedAt: string | null;
-};
-
+export type DeliveryPlatform = { provider: string; url: string; verifiedAt: string | null };
 export type ParkingAvailabilityStatus = "available" | "call_to_confirm" | "full" | "unknown";
-
 export type ParkingDetails = {
   parkingType: "hourly" | "daily" | "monthly" | "mixed" | "unknown";
   hourlyPrice: number | null;
@@ -171,6 +149,38 @@ export type ParkingDetails = {
   estimatedCapacity: number | null;
   availabilityStatus: ParkingAvailabilityStatus;
   availabilityVerifiedAt: string | null;
+};
+
+export type GooglePlaceDetailsMetadata = {
+  shortAddress: string | null;
+  internationalPhone: string | null;
+  types: string[];
+  primaryType: string | null;
+  businessStatus: string | null;
+  reservable: boolean | null;
+  curbsidePickup: boolean | null;
+  accessibility: {
+    wheelchairAccessibleEntrance: boolean | null;
+    wheelchairAccessibleParking: boolean | null;
+    wheelchairAccessibleRestroom: boolean | null;
+    wheelchairAccessibleSeating: boolean | null;
+  };
+  parkingOptions: {
+    freeParkingLot: boolean | null;
+    paidParkingLot: boolean | null;
+    freeStreetParking: boolean | null;
+    paidStreetParking: boolean | null;
+    freeGarageParking: boolean | null;
+    paidGarageParking: boolean | null;
+    valetParking: boolean | null;
+  };
+  paymentOptions: {
+    cashOnly: boolean | null;
+    creditCards: boolean | null;
+    debitCards: boolean | null;
+    nfc: boolean | null;
+  };
+  lastUpdatedAt: string | null;
 };
 
 export type Place = {
@@ -236,6 +246,7 @@ export type Place = {
     latitude: number | null;
     longitude: number | null;
   };
+  googleDetails?: GooglePlaceDetailsMetadata;
 
   image: string | null;
   images: string[];
@@ -254,12 +265,7 @@ export type Place = {
   dineIn: boolean | null;
   takeaway: boolean | null;
 
-  parking: {
-    available: boolean | null;
-    type: string | null;
-    price: string | null;
-    note: string | null;
-  };
+  parking: { available: boolean | null; type: string | null; price: string | null; note: string | null };
   parkingDetails?: ParkingDetails;
 
   airConditioned: boolean | null;
