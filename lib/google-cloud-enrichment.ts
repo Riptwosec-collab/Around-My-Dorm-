@@ -39,6 +39,7 @@ type CacheRow = {
   payload: GoogleCloudPlacePayload;
   fetched_at: string;
   expires_at: string;
+  source: string | null;
 };
 
 export type GoogleCloudPlacePayload = {
@@ -206,20 +207,44 @@ export function mergeGoogleCloudPayload(place: Place, googlePlaceId: string, pay
   return next;
 }
 
-function mergeGoogleReviewLocation(place: Place, payload: GoogleCloudPlacePayload): Place {
+export function mergeGoogleReviewPayload(place: Place, googlePlaceId: string, payload: GoogleCloudPlacePayload): Place {
   const next: Place = { ...place };
-  if (!next.address && payload.address) next.address = payload.address;
-  if (next.latitude == null && payload.latitude != null) next.latitude = payload.latitude;
-  if (next.longitude == null && payload.longitude != null) next.longitude = payload.longitude;
-  if (!next.googleMapsUrl && payload.googleMapsUrl) next.googleMapsUrl = payload.googleMapsUrl;
+  const provenance = { ...(place.fieldProvenance || {}) };
+  const mark = (field: string) => {
+    provenance[field] = {
+      source: "google_places_admin",
+      checkedAt: payload.fetchedAt,
+      confidence: "medium",
+      sourceId: googlePlaceId,
+    };
+  };
+
+  // Keep the candidate unlinked until it is explicitly accepted, but use
+  // its fresh cached fields so details and map pins are not needlessly blank.
+  if (!next.address && payload.address) { next.address = payload.address; mark("address"); }
+  if (next.latitude == null && payload.latitude != null) { next.latitude = payload.latitude; mark("latitude"); }
+  if (next.longitude == null && payload.longitude != null) { next.longitude = payload.longitude; mark("longitude"); }
+  if (next.rating == null && payload.rating != null) { next.rating = payload.rating; mark("rating"); }
+  if (next.reviewCount == null && payload.reviewCount != null) { next.reviewCount = payload.reviewCount; mark("reviewCount"); }
+  if (next.liveOpenNow == null && payload.openNow != null) { next.liveOpenNow = payload.openNow; mark("liveOpenNow"); }
+  if (!next.openingHoursText && payload.openingHoursText.length) { next.openingHoursText = payload.openingHoursText.join("\n"); mark("openingHoursText"); }
+  if (!next.phone && payload.phone) { next.phone = payload.phone; mark("phone"); }
+  if (!next.website && payload.website) { next.website = payload.website; mark("website"); }
+  if (!next.googleMapsUrl && payload.googleMapsUrl) { next.googleMapsUrl = payload.googleMapsUrl; mark("googleMapsUrl"); }
+  if (next.priceLevel == null) {
+    const priceLevel = normalizedPriceLevel(payload.priceLevel);
+    if (priceLevel != null) { next.priceLevel = priceLevel; mark("priceLevel"); }
+  }
   if (next.latitude != null && next.longitude != null && next.distanceKm == null) {
     const km = haversineKm(DORM_CENTER, { lat: next.latitude, lng: next.longitude });
     next.distanceKm = Number(km.toFixed(2));
     next.straightLineDistanceKm = next.distanceKm;
     if (next.distance) next.distance = { ...next.distance, straightLineMeters: Math.round(km * 1000) };
+    mark("distanceKm");
   }
   next.source = Array.from(new Set([...(place.source || []), "google_candidate_review"]));
   next.lastChecked = payload.fetchedAt;
+  next.fieldProvenance = provenance;
   return next;
 }
 
@@ -230,7 +255,7 @@ async function loadSharedRows() {
       .select("place_id,google_place_id,status,confidence,candidate,candidate_expires_at,updated_at"),
     supabase
       .from("amd_google_public_cache")
-      .select("place_id,google_place_id,payload,fetched_at,expires_at"),
+      .select("place_id,google_place_id,payload,fetched_at,expires_at,source"),
   ]);
   if (linksResult.error) throw linksResult.error;
   if (cacheResult.error) throw cacheResult.error;
@@ -272,7 +297,7 @@ export async function applyGoogleCloudPlaceLayer(places: Place[]): Promise<Place
     }
 
     if (linkedId) return mergeGoogleCloudPayload(place, linkedId, payload);
-    return mergeGoogleReviewLocation(place, payload);
+    return mergeGoogleReviewPayload(place, reviewId as string, payload);
   });
 }
 
@@ -295,8 +320,10 @@ export async function loadGoogleCloudEnrichmentStatus(places: Place[]): Promise<
     const linkedId = place.googlePlaceId || (link?.status === "linked" ? link.google_place_id : null);
     const freshReview = link?.status === "review" && isFresh(link.candidate_expires_at);
     const row = cacheByPlace.get(place.id);
-    const effectiveId = linkedId || (freshReview ? link?.google_place_id : null);
+    const reviewId = freshReview ? link?.google_place_id : null;
+    const effectiveId = linkedId || reviewId;
     const fresh = Boolean(row && isFresh(row.expires_at) && effectiveId && row.google_place_id === effectiveId);
+    const richFresh = Boolean(fresh && row?.source === "google_places_admin");
 
     if (linkedId) linked += 1;
     if (freshReview) review += 1;
@@ -309,6 +336,7 @@ export async function loadGoogleCloudEnrichmentStatus(places: Place[]): Promise<
 
     if (!linkedId && !freshReview) estimatedSearchRequests += 1;
     if (linkedId && !fresh) estimatedDetailRequests += 1;
+    if (!linkedId && freshReview && reviewId && !richFresh) estimatedDetailRequests += 1;
     if (!linkedId && !freshReview) estimatedDetailRequests += 1;
   }
 
@@ -492,12 +520,17 @@ export async function runGoogleCloudAutoEnrichment(input: {
     try {
       const existingLink = linksByPlace.get(place.id);
       let googlePlaceId = place.googlePlaceId || (existingLink?.status === "linked" ? existingLink.google_place_id : null);
+      let isReviewCandidate = false;
 
       if (!googlePlaceId && existingLink?.status === "review" && isFresh(existingLink.candidate_expires_at)) {
         review += 1;
-        current += 1;
-        publish();
-        continue;
+        if (!existingLink.google_place_id) {
+          current += 1;
+          publish();
+          continue;
+        }
+        googlePlaceId = existingLink.google_place_id;
+        isReviewCandidate = true;
       }
 
       if (!googlePlaceId) {
@@ -524,46 +557,50 @@ export async function runGoogleCloudAutoEnrichment(input: {
         const assessed = assessCandidates(place, candidates, input.places, usedGooglePlaceIds);
         const automatic = chooseAutomaticGoogleMatch(place, assessed);
         if (!automatic) {
-          await persistLink(place, assessed[0] || null, "review");
-          if (assessed[0]) {
-            await persistDiscoveryCandidate(place.id, assessed[0].candidate);
-            cached += 1;
-          }
+          const reviewMatch = assessed[0] || null;
+          await persistLink(place, reviewMatch, "review");
           linksByPlace.set(place.id, {
             place_id: place.id,
-            google_place_id: assessed[0]?.candidate.googlePlaceId || null,
+            google_place_id: reviewMatch?.candidate.googlePlaceId || null,
             status: "review",
-            confidence: assessed[0]?.assessment.confidence ?? null,
+            confidence: reviewMatch?.assessment.confidence ?? null,
             candidate: null,
             candidate_expires_at: new Date(Date.now() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString(),
             updated_at: new Date().toISOString(),
           });
           review += 1;
-          current += 1;
-          publish();
-          continue;
+          if (!reviewMatch) {
+            current += 1;
+            publish();
+            continue;
+          }
+          googlePlaceId = reviewMatch.candidate.googlePlaceId;
+          isReviewCandidate = true;
+          // Save coordinates immediately for the map, then continue to Place
+          // Details so address/rating/hours/phone/website can also be cached.
+          await persistDiscoveryCandidate(place.id, reviewMatch.candidate);
+        } else {
+          googlePlaceId = automatic.candidate.googlePlaceId;
+          usedGooglePlaceIds.add(googlePlaceId);
+          await persistLink(place, automatic, "linked");
+          await persistDiscoveryCandidate(place.id, automatic.candidate);
+          linksByPlace.set(place.id, {
+            place_id: place.id,
+            google_place_id: googlePlaceId,
+            status: "linked",
+            confidence: automatic.assessment.confidence,
+            candidate: null,
+            candidate_expires_at: null,
+            updated_at: new Date().toISOString(),
+          });
         }
-
-        googlePlaceId = automatic.candidate.googlePlaceId;
-        usedGooglePlaceIds.add(googlePlaceId);
-        await persistLink(place, automatic, "linked");
-        // Persist discovery coordinates immediately. If full Place Details is
-        // unavailable, the shop still has a real Google position for its map pin.
-        await persistDiscoveryCandidate(place.id, automatic.candidate);
-        linksByPlace.set(place.id, {
-          place_id: place.id,
-          google_place_id: googlePlaceId,
-          status: "linked",
-          confidence: automatic.assessment.confidence,
-          candidate: null,
-          candidate_expires_at: null,
-          updated_at: new Date().toISOString(),
-        });
       }
 
-      linked += 1;
+      if (!isReviewCandidate) linked += 1;
       const existingCache = cacheByPlace.get(place.id);
-      if (existingCache && existingCache.google_place_id === googlePlaceId && isFresh(existingCache.expires_at)) {
+      const existingCacheIsFresh = Boolean(existingCache && existingCache.google_place_id === googlePlaceId && isFresh(existingCache.expires_at));
+      const existingCacheIsRichEnough = Boolean(existingCacheIsFresh && (!isReviewCandidate || existingCache?.source === "google_places_admin"));
+      if (existingCacheIsRichEnough) {
         cached += 1;
         current += 1;
         publish();
@@ -589,6 +626,7 @@ export async function runGoogleCloudAutoEnrichment(input: {
         payload: sanitizeGoogleLiveDetails(live),
         fetched_at: live.fetchedAt,
         expires_at: new Date(new Date(live.fetchedAt).getTime() + GOOGLE_CLOUD_CACHE_TTL_MS).toISOString(),
+        source: "google_places_admin",
       });
       cached += 1;
     } catch (error) {
