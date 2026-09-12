@@ -38,6 +38,16 @@ describe("manual Google photo runtime publishing", () => {
     expect(bulk).toContain("firstError");
   });
 
+  it("uses every shared Google Place ID for manual photo preview without auto-verifying review candidates", () => {
+    const bulk = read("components/GoogleBulkPhotoRuntimeControl.tsx");
+    expect(bulk).toContain('from("amd_google_public_links")');
+    expect(bulk).toContain('select("place_id,google_place_id,status,confidence")');
+    expect(bulk).toContain('status: "linked" | "review"');
+    expect(bulk).toContain("photoGooglePlaceId");
+    expect(bulk).toContain("reviewPhotoCandidates");
+    expect(bulk).not.toContain('.update({ status: "linked" })');
+  });
+
   it("turns raw photo failures into actionable Places API diagnostics", () => {
     const photo = read("lib/google-transient-photo.ts");
     expect(photo).toContain("Google Place Photos failed:");
