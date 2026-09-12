@@ -30,6 +30,17 @@ describe("Saved Cloud Map + HOME sync", () => {
     expect(savedMap).not.toContain('google.maps');
   });
 
+  it("bundles MapLibre with the application instead of loading its runtime from a CDN", () => {
+    const savedMap = read("components/SavedCloudMap.tsx");
+    const packageJson = JSON.parse(read("package.json"));
+    expect(packageJson.dependencies?.["maplibre-gl"]).toBeTruthy();
+    expect(savedMap).toContain('import maplibregl from "maplibre-gl";');
+    expect(savedMap).toContain('import "maplibre-gl/dist/maplibre-gl.css";');
+    expect(savedMap).not.toContain("unpkg.com/maplibre-gl");
+    expect(savedMap).not.toContain("document.createElement(\"script\")");
+    expect(savedMap).not.toContain("document.createElement(\"link\")");
+  });
+
   it("uses the saved cloud map by default and exposes Google only as an explicit manual choice", () => {
     expect(manualMap).toContain('import { SavedCloudMap } from "@/components/SavedCloudMap";');
     expect(manualMap).toContain('useState<"cloud" | "google">("cloud")');
