@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
 import { getCopy } from "@/locales";
+import { AdminNotePanel } from "@/components/AdminNotePanel";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
@@ -57,6 +58,8 @@ export function PlaceDetail({
   onClose,
   onSave,
   onMap,
+  adminAllowed,
+  onSaveAdminNote,
   language = "th",
 }: {
   place: Place;
@@ -64,6 +67,8 @@ export function PlaceDetail({
   onClose: () => void;
   onSave: () => void;
   onMap: () => void;
+  adminAllowed: boolean;
+  onSaveAdminNote: (note: string) => Promise<void>;
   language?: "th" | "en";
 }) {
   const [reportOpen, setReportOpen] = useState(false);
@@ -178,6 +183,15 @@ export function PlaceDetail({
               <div className="mt-3 flex flex-wrap gap-1.5">{place.tags.map((tag) => <span key={tag} className="rounded-lg bg-white/[0.055] px-2 py-1 text-[9px] text-white/55">{tag}</span>)}</div>
             </div>
 
+            <AdminNotePanel
+              note={place.notes}
+              adminAllowed={adminAllowed}
+              language={language}
+              publicTitle={language === "en" ? "Admin Note" : "โน้ตจากผู้ดูแล"}
+              editLabel="Edit Admin Note"
+              onSave={onSaveAdminNote}
+            />
+
             <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] px-4">
               <ValueRow label={copy.area} value={place.area} />
               <ValueRow label={copy.address} value={place.address || copy.unknownData} />
@@ -234,7 +248,6 @@ export function PlaceDetail({
               </div>
               <p className="mt-2 text-[10px] leading-5 text-white/48">{copy.lastVerified}: {place.lastVerified || copy.unknownVerified}</p>
               <p className="text-[10px] leading-5 text-white/48">{copy.source}: {place.source.length ? place.source.join(" • ") : copy.unknownVerified}</p>
-              {place.notes && <p className="mt-1 text-[10px] leading-5 text-white/48">{copy.notes}: {place.notes}</p>}
             </div>
 
             <button type="button" onClick={() => setReportOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.045] text-[10px] font-bold text-amber-100"><AlertTriangle className="h-4 w-4" />{copy.reportWrong}</button>
