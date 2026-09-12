@@ -41,6 +41,12 @@ describe("Saved Cloud Map + HOME sync", () => {
     expect(savedMap).not.toContain("document.createElement(\"link\")");
   });
 
+  it("gives the MapLibre-owned container explicit full dimensions so its CSS cannot collapse it to zero height", () => {
+    const savedMap = read("components/SavedCloudMap.tsx");
+    expect(savedMap).toContain('ref={containerRef} className="h-full w-full"');
+    expect(savedMap).not.toContain('ref={containerRef} className="absolute inset-0"');
+  });
+
   it("uses the saved cloud map by default and exposes Google only as an explicit manual choice", () => {
     expect(manualMap).toContain('import { SavedCloudMap } from "@/components/SavedCloudMap";');
     expect(manualMap).toContain('useState<"cloud" | "google">("cloud")');
