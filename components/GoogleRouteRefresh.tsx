@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Navigation, Route } from "lucide-react";
 import { getAdminAccessState } from "@/lib/admin-auth";
 import { supabase } from "@/lib/cloud/supabase";
-import { isUsableHomeOrigin, loadHomeOrigin } from "@/lib/home-origin";
+import { HOME_ORIGIN_CHANGED_EVENT, isUsableHomeOrigin, loadHomeOrigin } from "@/lib/home-origin";
 import { refreshRoutesForPlaces, ROUTE_RUNTIME_TTL_MINUTES, type RouteRefreshProgress } from "@/lib/route-cache";
 import type { HomeOrigin, Place } from "@/types/place";
 
@@ -34,18 +34,27 @@ export function GoogleRouteRefresh({
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([loadHomeOrigin(), getAdminAccessState()])
-      .then(([nextOrigin, access]) => {
-        if (!alive) return;
-        setOrigin(nextOrigin);
-        setSessionAdmin(access.admin);
-      })
-      .catch((error) => { if (alive) setMessage(error instanceof Error ? error.message : "Routes prerequisites unavailable"); });
+    const syncOrigin = () => {
+      void loadHomeOrigin()
+        .then((nextOrigin) => { if (alive) setOrigin(nextOrigin); })
+        .catch((error) => { if (alive) setMessage(error instanceof Error ? error.message : "Routes prerequisites unavailable"); });
+    };
+    const syncAdmin = () => {
+      void getAdminAccessState()
+        .then((access) => { if (alive) setSessionAdmin(access.admin); })
+        .catch(() => { if (alive) setSessionAdmin(false); });
+    };
 
-    const { data } = supabase.auth.onAuthStateChange(() => {
-      void getAdminAccessState().then((access) => { if (alive) setSessionAdmin(access.admin); }).catch(() => { if (alive) setSessionAdmin(false); });
-    });
-    return () => { alive = false; data.subscription.unsubscribe(); };
+    syncOrigin();
+    syncAdmin();
+    const onHomeChanged = () => syncOrigin();
+    window.addEventListener(HOME_ORIGIN_CHANGED_EVENT, onHomeChanged);
+    const { data } = supabase.auth.onAuthStateChange(() => syncAdmin());
+    return () => {
+      alive = false;
+      window.removeEventListener(HOME_ORIGIN_CHANGED_EVENT, onHomeChanged);
+      data.subscription.unsubscribe();
+    };
   }, []);
 
   async function refreshRoutes() {
