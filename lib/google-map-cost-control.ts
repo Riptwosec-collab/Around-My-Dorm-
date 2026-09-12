@@ -3,6 +3,7 @@ export const GOOGLE_DYNAMIC_MAP_WARNING = 8_000;
 export const GOOGLE_DYNAMIC_MAP_HIGH = 9_000;
 export const GOOGLE_DYNAMIC_MAP_CRITICAL = 9_500;
 export const DEFAULT_GOOGLE_MAPS_MONTHLY_SOFT_LIMIT = 9_500;
+export const GOOGLE_API_RESET_TIMEZONE = "Asia/Bangkok" as const;
 
 export type GoogleDynamicMapSafetyLevel = "safe" | "warning" | "high" | "critical" | "reached";
 
@@ -12,9 +13,35 @@ export function googleMapsMonthlySoftLimit(raw = process.env.NEXT_PUBLIC_GOOGLE_
   return Math.min(parsed, GOOGLE_DYNAMIC_MAP_MONTHLY_TARGET);
 }
 
-export function googleDynamicMapSafetyState(monthlyLoads: number, softLimit = googleMapsMonthlySoftLimit()) {
+function bangkokYearMonth(now: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: GOOGLE_API_RESET_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === "year")?.value || now.getUTCFullYear());
+  const month = Number(parts.find((part) => part.type === "month")?.value || now.getUTCMonth() + 1);
+  return { year, month };
+}
+
+export function nextGoogleApiMonthlyReset(now = new Date()) {
+  const { year, month } = bangkokYearMonth(now);
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}-01T00:00:00+07:00`;
+}
+
+export function googleDynamicMapSafetyState(
+  monthlyLoads: number,
+  softLimit = googleMapsMonthlySoftLimit(),
+  now = new Date(),
+) {
   const used = Math.max(0, Math.round(Number(monthlyLoads) || 0));
   const target = GOOGLE_DYNAMIC_MAP_MONTHLY_TARGET;
+  const freeLimit = target;
+  const remaining = Math.max(0, freeLimit - used);
+  const resetTimezone = GOOGLE_API_RESET_TIMEZONE;
+  const resetAt = nextGoogleApiMonthlyReset(now);
   const percent = Math.min(100, Math.round((used / target) * 100));
   const level: GoogleDynamicMapSafetyLevel = used >= target ? "reached" : used >= GOOGLE_DYNAMIC_MAP_CRITICAL ? "critical" : used >= GOOGLE_DYNAMIC_MAP_HIGH ? "high" : used >= GOOGLE_DYNAMIC_MAP_WARNING ? "warning" : "safe";
   const blockedBySoftLimit = used >= Math.max(1, softLimit);
@@ -28,7 +55,20 @@ export function googleDynamicMapSafetyState(monthlyLoads: number, softLimit = go
         : level === "warning"
           ? "WARNING — approximately 80% of the monthly Dynamic Maps free usage target is used."
           : "SAFE";
-  return { used, target, percent, level, message, softLimit, blockedBySoftLimit, requiresConfirmation };
+  return {
+    used,
+    target,
+    freeLimit,
+    remaining,
+    resetAt,
+    resetTimezone,
+    percent,
+    level,
+    message,
+    softLimit,
+    blockedBySoftLimit,
+    requiresConfirmation,
+  };
 }
 
 export function googleExternalMapsUrl(input: { lat: number; lng: number; label?: string }) {
