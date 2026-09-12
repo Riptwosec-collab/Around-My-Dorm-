@@ -1,11 +1,10 @@
-import { PLACES as EMBEDDED_PLACES } from "@/data/places";
 import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import type { Place } from "@/types/place";
 import { prepareProvenancePatch } from "@/lib/field-provenance";
 import { applyGoogleCloudPlaceLayer } from "@/lib/google-cloud-enrichment";
 import { loadRouteCache, mergeRouteCacheIntoPlaces } from "@/lib/route-cache";
 
-export type PlaceDatabaseSource = "supabase" | "embedded";
+export type PlaceDatabaseSource = "supabase";
 export type PlaceDatabaseResult = { places: Place[]; source: PlaceDatabaseSource; loadedAt: string; warning: string | null };
 export type LocalPlaceHistory = { id: string; placeId: string; placeName: string; changedAt: string; source: string; previousData: Partial<Place>; newData: Partial<Place> };
 export type ApplyLocalPlacePatchResult = { appliedFields: string[]; blockedFields: string[] };
@@ -19,12 +18,12 @@ function isPlaceRecord(value: unknown): value is Place {
   return typeof record.id === "string" && typeof record.name === "string" && typeof record.slug === "string" && Array.isArray(record.categories);
 }
 
-async function loadCanonicalCloudPlaces(): Promise<Place[] | null> {
+async function loadCanonicalCloudPlaces(): Promise<Place[]> {
   if (runtimeCanonicalCache && Date.now() - runtimeCanonicalCache.at < RUNTIME_CACHE_MS) return runtimeCanonicalCache.places;
   const { data, error } = await supabase.from("amd_places").select("record").order("name", { ascending: true });
   if (error) throw error;
   const places = (data || []).map((row: any) => row.record).filter(isPlaceRecord);
-  if (!places.length) return null;
+  if (!places.length) throw new Error("Cloud place database is empty");
   runtimeCanonicalCache = { at: Date.now(), places };
   return places;
 }
@@ -45,8 +44,6 @@ async function applyCloudUserLayer(places: Place[]) {
   });
   const known = new Set(base.map((place) => place.id));
   const additions = (additionsResult.data || []).map((row: any) => row.record).filter(isPlaceRecord).filter((place) => !known.has(place.id));
-  // Additions may also have Google cache rows. This function performs Supabase
-  // reads only; normal browsing still never calls Google network APIs.
   return applyGoogleCloudPlaceLayer([...base, ...additions]);
 }
 
@@ -56,24 +53,14 @@ async function applySharedRouteLayer(places: Place[]) {
 }
 
 export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
-  let canonical: Place[] | null = null;
-  let source: PlaceDatabaseSource = "embedded";
+  const canonical = await loadCanonicalCloudPlaces();
   let warning: string | null = null;
-  try {
-    canonical = await loadCanonicalCloudPlaces();
-    if (canonical?.length) source = "supabase";
-  } catch (error) {
-    warning = error instanceof Error ? error.message : "Cloud place database unavailable";
-  }
 
-  const base = canonical?.length ? canonical : EMBEDDED_PLACES;
-
-  let sharedPlaces = base;
+  let sharedPlaces = canonical;
   try {
-    sharedPlaces = await applyGoogleCloudPlaceLayer(base);
+    sharedPlaces = await applyGoogleCloudPlaceLayer(canonical);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Google cloud enrichment unavailable";
-    warning = warning ? `${warning} • ${message}` : message;
+    warning = error instanceof Error ? error.message : "Google cloud enrichment unavailable";
   }
 
   let personalizedPlaces = sharedPlaces;
@@ -91,7 +78,7 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
     warning = warning ? `${warning} • ${message}` : message;
   }
 
-  return { places: personalizedPlaces, source, loadedAt: new Date().toISOString(), warning };
+  return { places: personalizedPlaces, source: "supabase", loadedAt: new Date().toISOString(), warning };
 }
 
 export async function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source = "manual_review"): Promise<ApplyLocalPlacePatchResult> {
@@ -142,5 +129,3 @@ export async function rollbackLocalPlaceHistory(entry: LocalPlaceHistory) {
   const removedHistory = await supabase.from("amd_place_history").delete().eq("user_id", user.id).eq("id", entry.id);
   if (removedHistory.error) throw removedHistory.error;
 }
-
-export function embeddedPlaces(): Place[] { return EMBEDDED_PLACES; }
