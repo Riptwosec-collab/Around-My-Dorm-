@@ -9,7 +9,7 @@ describe("Data Management admin login gate", () => {
 
   it("owns one centralized Supabase admin login at the Data Management boundary", () => {
     expect(dataManagement).toContain('import { AdminGoogleAccess } from "@/components/AdminGoogleAccess";');
-    expect(dataManagement).toContain('type AdminAccessState');
+    expect(dataManagement).toContain('import type { AdminAccessState } from "@/lib/admin-auth";');
     expect(dataManagement).toContain('<AdminGoogleAccess language={language} onStateChange={setAdminAccess} />');
     expect(dataManagement).toContain('adminAccess.admin');
     expect(dataManagement).toContain('data-testid="data-management-admin-locked"');
