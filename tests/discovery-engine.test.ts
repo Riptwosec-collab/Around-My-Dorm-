@@ -46,7 +46,7 @@ describe("shared discovery engine", () => {
     ]));
 
     expect(result.allPlaces).toHaveLength(3);
-    expect(result.visiblePlaces.map((place) => place.id)).toEqual(["near cafe", "near food"]);
+    expect(result.visiblePlaces.map((place) => place.id)).toEqual(["near food", "near cafe"]);
 
     const cafes = deriveDiscoveryState({ ...input(result.allPlaces), category: "cafe", query: "near" });
     expect(cafes.visiblePlaces.map((place) => place.id)).toEqual(["near cafe"]);
