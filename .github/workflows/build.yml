@@ -5,9 +5,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,21 +12,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Apply one-shot V2 integration patch
-        shell: bash
-        run: |
-          if [[ "$(git log -1 --pretty=%B)" == "chore: run v2 integration now" ]]; then
-            python scripts/phase1-integrate.py
-            git diff --check
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add components/AroundMyDormApp.tsx
-            git commit -m "refactor: establish v2 stable core and data health"
-            git push origin HEAD:feat/around-my-dorm-v2-phase1-work
-          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
