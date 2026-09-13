@@ -2,6 +2,7 @@ import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import type { Place } from "@/types/place";
 import { prepareProvenancePatch } from "@/lib/field-provenance";
 import { applyGoogleCloudPlaceLayer } from "@/lib/google-cloud-enrichment";
+import { normalizePlaces } from "@/lib/place-data/normalize-place";
 import { loadRouteCache, mergeRouteCacheIntoPlaces } from "@/lib/route-cache";
 
 export type PlaceDatabaseSource = "supabase";
@@ -78,7 +79,7 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
     warning = warning ? `${warning} • ${message}` : message;
   }
 
-  return { places: personalizedPlaces, source: "supabase", loadedAt: new Date().toISOString(), warning };
+  return { places: normalizePlaces(personalizedPlaces), source: "supabase", loadedAt: new Date().toISOString(), warning };
 }
 
 export async function applyLocalPlacePatch(place: Place, patch: Partial<Place>, source = "manual_review"): Promise<ApplyLocalPlacePatchResult> {

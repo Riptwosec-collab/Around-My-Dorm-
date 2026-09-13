@@ -59,8 +59,8 @@ import { ManualGoogleMap } from "@/components/ManualGoogleMap";
 import { MapPlaceRail } from "@/components/MapPlaceRail";
 import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
 import { DataManagement } from "@/components/DataManagement";
-import { loadPlacesFromDatabase } from "@/lib/database/places";
-import { filterPlacesInSearchArea } from "@/lib/hybrid-map-platform";
+import { usePlaceDatabase } from "@/components/app-shell/usePlaceDatabase";
+import { deriveDiscoveryState } from "@/lib/discovery/derive-visible-places";
 import { Toast, type ToastTone } from "@/components/Toast";
 import { getCopy } from "@/locales";
 import { addRecentView, getTodayRecentStats, resolveRecentPlaces } from "@/lib/storage/recent";
@@ -72,9 +72,7 @@ import {
   formatDistance,
   getPlaceOpenStatus,
   googleMapsDirectionsUrl,
-  matchesSearch,
   normalizeText,
-  withDistance,
 } from "@/lib/place-utils";
 import type { CategoryId, Place, SortMode } from "@/types/place";
 import { PageHeader, Toggle, SettingRow, MiniMapArtwork, LoadingCards } from "@/components/AppShellPrimitives";
@@ -99,7 +97,6 @@ import {
 import {
   activeFilterCount,
   explicitPriceCeiling,
-  passesFilters,
   recommendationReasons,
   smartLocalPicks,
   sortPlaces,
@@ -137,9 +134,14 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [originMode, setOriginMode] = useState<OriginMode>("dorm");
   const [locationError, setLocationError] = useState<string | null>(null);
   const [mapLoadState, setMapLoadState] = useState<MapLoadState>(googleMapsApiKey ? "idle" : "missing");
-  const [loadingPlaces, setLoadingPlaces] = useState(true);
-  const [databasePlaces, setDatabasePlaces] = useState<Place[]>([]);
-  const [databaseSource, setDatabaseSource] = useState("supabase");
+  const {
+    places: databasePlaces,
+    databaseSource,
+    loading: loadingPlaces,
+    error: databaseError,
+    warning: databaseWarning,
+    reload: reloadDatabase,
+  } = usePlaceDatabase();
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
   const [googleDiscoveryOpen, setGoogleDiscoveryOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -231,49 +233,40 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     return () => window.clearTimeout(timer);
   }, [settings, cloudReady]);
 
-  async function reloadDatabase() {
-    setLoadingPlaces(true);
-    try {
-      const result = await loadPlacesFromDatabase();
-      setDatabasePlaces(result.places);
-      setDatabaseSource(result.source);
-      setCloudError(null);
-      if (result.warning) showToast(result.warning, "removed");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Supabase cloud database unavailable";
-      setDatabasePlaces([]);
-      setDatabaseSource("supabase");
-      setCloudError(message);
-      showToast(settings.language === "en" ? `Cloud database unavailable: ${message}` : `ฐานข้อมูล Cloud ใช้งานไม่ได้: ${message}`, "removed");
-    } finally {
-      setLoadingPlaces(false);
-    }
-  }
-
-  useEffect(() => {
-    void reloadDatabase();
-  }, []);
-
-  const allPlaces = useMemo(() => databasePlaces.map((place) => withDistance(place, origin)), [databasePlaces, origin]);
-
   const recommendationContext = useMemo<RecommendationContext>(() => ({
     preferredCategories: new Set(settings.preferredCategories || []),
     favoriteIds: new Set(favorites.map((place) => place.id)),
     recentIds: new Set(recentViews.map((view) => view.placeId)),
   }), [settings.preferredCategories, favorites, recentViews]);
 
-  const visiblePlaces = useMemo(() => {
-    const base = allPlaces.filter((place) => {
-      if (category !== "all" && !place.categories.includes(category)) return false;
-      if (!matchesSearch(place, debouncedQuery)) return false;
-      if (!passesFilters(place, filters, settings.verifiedOnly)) return false;
-      if (originMode === "me" && place.distanceKm == null) return false;
-      return true;
-    });
-    const inArea = new Set(filterPlacesInSearchArea(base, mapSearchCenter, radiusMeters).map((place) => place.id));
-    const data = base.filter((place) => place.latitude == null || place.longitude == null || inArea.has(place.id));
-    return sortPlaces(data, sortMode, recommendationContext);
-  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, mapSearchCenter, originMode, sortMode, settings.verifiedOnly, recommendationContext]);
+  const { allPlaces, visiblePlaces } = useMemo(
+    () => deriveDiscoveryState({
+      places: databasePlaces,
+      origin,
+      category,
+      query: debouncedQuery,
+      filters,
+      radiusMeters,
+      mapSearchCenter,
+      originMode,
+      sortMode,
+      verifiedOnly: settings.verifiedOnly,
+      recommendationContext,
+    }),
+    [
+      databasePlaces,
+      origin,
+      category,
+      debouncedQuery,
+      filters,
+      radiusMeters,
+      mapSearchCenter,
+      originMode,
+      sortMode,
+      settings.verifiedOnly,
+      recommendationContext,
+    ],
+  );
 
   const favoritePlaces = useMemo(() => {
     return favorites.map((saved) => allPlaces.find((place) => place.id === saved.id || (saved.googlePlaceId && place.googlePlaceId === saved.googlePlaceId)) || saved);
@@ -312,6 +305,20 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   function showToast(message: string, tone: ToastTone = "success") {
     setToast({ message, tone });
   }
+
+  useEffect(() => {
+    if (databaseError) {
+      setCloudError(databaseError);
+      showToast(
+        settings.language === "en"
+          ? `Cloud database unavailable: ${databaseError}`
+          : `ฐานข้อมูล Cloud ใช้งานไม่ได้: ${databaseError}`,
+        "removed",
+      );
+      return;
+    }
+    if (databaseWarning) showToast(databaseWarning, "removed");
+  }, [databaseError, databaseWarning, settings.language]);
 
   function isFavorite(place: Place) {
     return favorites.some((saved) => saved.id === place.id || (saved.googlePlaceId && place.googlePlaceId === saved.googlePlaceId));

@@ -16,4 +16,11 @@ describe("AroundMyDormApp architecture", () => {
   it("keeps the client shell below the agreed maintenance ceiling", () => {
     expect(source.split(/\r?\n/).length).toBeLessThan(900);
   });
+
+  it("delegates database lifecycle and discovery derivation to V2 core modules", () => {
+    expect(source).toContain('@/components/app-shell/usePlaceDatabase');
+    expect(source).toContain('@/lib/discovery/derive-visible-places');
+    expect(source).not.toContain('async function reloadDatabase()');
+    expect(source).not.toContain('filterPlacesInSearchArea(base');
+  });
 });
