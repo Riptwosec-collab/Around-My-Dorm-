@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import { BarChart3, CheckCircle2, ImageOff, MapPinned, PhoneOff, TimerOff } from "lucide-react";
 import { buildDataCompletenessDashboard } from "@/lib/data-quality";
 import { buildDataHealthSummary } from "@/lib/place-data/data-health";
