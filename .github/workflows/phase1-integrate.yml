@@ -1,0 +1,72 @@
+name: Phase 1 Integration Patch
+
+on:
+  push:
+    branches:
+      - feat/around-my-dorm-v2-phase1-work
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore: apply v2 core integration patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/around-my-dorm-v2-phase1-work
+          fetch-depth: 0
+      - name: Apply exact V2 core wiring patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('components/AroundMyDormApp.tsx')
+          source = path.read_text()
+
+          replacements = [
+              (
+                  'import { loadPlacesFromDatabase } from "@/lib/database/places";\nimport { filterPlacesInSearchArea } from "@/lib/hybrid-map-platform";',
+                  'import { usePlaceDatabase } from "@/components/app-shell/usePlaceDatabase";\nimport { deriveDiscoveryState } from "@/lib/discovery/derive-visible-places";'
+              ),
+              (
+                  '  googleMapsDirectionsUrl,\n  matchesSearch,\n  normalizeText,\n  withDistance,',
+                  '  googleMapsDirectionsUrl,\n  normalizeText,'
+              ),
+              (
+                  '  explicitPriceCeiling,\n  passesFilters,\n  recommendationReasons,',
+                  '  explicitPriceCeiling,\n  recommendationReasons,'
+              ),
+              (
+                  '  const [loadingPlaces, setLoadingPlaces] = useState(true);\n  const [databasePlaces, setDatabasePlaces] = useState<Place[]>([]);\n  const [databaseSource, setDatabaseSource] = useState("supabase");',
+                  '  const {\n    places: databasePlaces,\n    databaseSource,\n    loading: loadingPlaces,\n    error: databaseError,\n    warning: databaseWarning,\n    reload: reloadDatabase,\n  } = usePlaceDatabase();'
+              ),
+              (
+                  '''  async function reloadDatabase() {\n    setLoadingPlaces(true);\n    try {\n      const result = await loadPlacesFromDatabase();\n      setDatabasePlaces(result.places);\n      setDatabaseSource(result.source);\n      setCloudError(null);\n      if (result.warning) showToast(result.warning, "removed");\n    } catch (error) {\n      const message = error instanceof Error ? error.message : "Supabase cloud database unavailable";\n      setDatabasePlaces([]);\n      setDatabaseSource("supabase");\n      setCloudError(message);\n      showToast(settings.language === "en" ? `Cloud database unavailable: ${message}` : `ฐานข้อมูล Cloud ใช้งานไม่ได้: ${message}`, "removed");\n    } finally {\n      setLoadingPlaces(false);\n    }\n  }\n\n  useEffect(() => {\n    void reloadDatabase();\n  }, []);\n\n  const allPlaces = useMemo(() => databasePlaces.map((place) => withDistance(place, origin)), [databasePlaces, origin]);\n\n  const recommendationContext = useMemo<RecommendationContext>(() => ({\n    preferredCategories: new Set(settings.preferredCategories || []),\n    favoriteIds: new Set(favorites.map((place) => place.id)),\n    recentIds: new Set(recentViews.map((view) => view.placeId)),\n  }), [settings.preferredCategories, favorites, recentViews]);\n\n  const visiblePlaces = useMemo(() => {\n    const base = allPlaces.filter((place) => {\n      if (category !== "all" && !place.categories.includes(category)) return false;\n      if (!matchesSearch(place, debouncedQuery)) return false;\n      if (!passesFilters(place, filters, settings.verifiedOnly)) return false;\n      if (originMode === "me" && place.distanceKm == null) return false;\n      return true;\n    });\n    const inArea = new Set(filterPlacesInSearchArea(base, mapSearchCenter, radiusMeters).map((place) => place.id));\n    const data = base.filter((place) => place.latitude == null || place.longitude == null || inArea.has(place.id));\n    return sortPlaces(data, sortMode, recommendationContext);\n  }, [allPlaces, category, debouncedQuery, filters, radiusMeters, mapSearchCenter, originMode, sortMode, settings.verifiedOnly, recommendationContext]);''',
+                  '''  const recommendationContext = useMemo<RecommendationContext>(() => ({\n    preferredCategories: new Set(settings.preferredCategories || []),\n    favoriteIds: new Set(favorites.map((place) => place.id)),\n    recentIds: new Set(recentViews.map((view) => view.placeId)),\n  }), [settings.preferredCategories, favorites, recentViews]);\n\n  const { allPlaces, visiblePlaces } = useMemo(\n    () => deriveDiscoveryState({\n      places: databasePlaces,\n      origin,\n      category,\n      query: debouncedQuery,\n      filters,\n      radiusMeters,\n      mapSearchCenter,\n      originMode,\n      sortMode,\n      verifiedOnly: settings.verifiedOnly,\n      recommendationContext,\n    }),\n    [\n      databasePlaces,\n      origin,\n      category,\n      debouncedQuery,\n      filters,\n      radiusMeters,\n      mapSearchCenter,\n      originMode,\n      sortMode,\n      settings.verifiedOnly,\n      recommendationContext,\n    ],\n  );'''
+              ),
+              (
+                  '''  function showToast(message: string, tone: ToastTone = "success") {\n    setToast({ message, tone });\n  }\n\n  function isFavorite(place: Place) {''',
+                  '''  function showToast(message: string, tone: ToastTone = "success") {\n    setToast({ message, tone });\n  }\n\n  useEffect(() => {\n    if (databaseError) {\n      setCloudError(databaseError);\n      showToast(\n        settings.language === "en"\n          ? `Cloud database unavailable: ${databaseError}`\n          : `ฐานข้อมูล Cloud ใช้งานไม่ได้: ${databaseError}`,\n        "removed",\n      );\n      return;\n    }\n    if (databaseWarning) showToast(databaseWarning, "removed");\n  }, [databaseError, databaseWarning, settings.language]);\n\n  function isFavorite(place: Place) {'''
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f'Expected patch anchor not found:\n{old[:180]}')
+              source = source.replace(old, new, 1)
+
+          path.write_text(source)
+          PY
+          git diff --check
+          git diff -- components/AroundMyDormApp.tsx
+      - name: Commit integration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/AroundMyDormApp.tsx
+          git commit -m "refactor: establish v2 stable core and data health"
+          git push origin HEAD:feat/around-my-dorm-v2-phase1-work
