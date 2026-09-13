@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,19 +16,31 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         run: npm install
 
-      - name: Unit tests
-        run: npm test
+      - name: Lint
+        run: npm run lint
 
       - name: Type check
         run: npm run typecheck
 
+      - name: Validate canonical data
+        run: npm run validate:data
+
+      - name: Unit tests
+        run: npm test
+
       - name: Build production
         run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Targeted Playwright regressions
+        run: npx playwright test e2e/manual-google-maps.spec.ts e2e/map-functional.spec.ts e2e/p0-google-api-lock.spec.ts
 
       - name: Validate Cloudflare Workers bundle
         run: npx wrangler deploy --dry-run
