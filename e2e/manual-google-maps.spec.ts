@@ -15,10 +15,16 @@ test("normal browsing and opening Map initialize zero Google Maps or Places requ
   expect(places).toBe(0);
 
   await page.goto("/map/");
-  await expect(page.getByTestId("google-map-placeholder")).toBeVisible();
-  await expect(page.getByText(/Interactive map not loaded|ยังไม่ได้โหลดแผนที่แบบ Interactive/)).toBeVisible();
+  await expect(page.getByTestId("saved-cloud-map")).toBeVisible();
+  await expect(page.getByTestId("map-provider-toggle")).toBeVisible();
   await page.getByLabel("รัศมีแผนที่").selectOption("2000");
   await page.waitForTimeout(400);
+  expect(mapsJs).toBe(0);
+  expect(places).toBe(0);
+
+  await page.getByTestId("map-provider-toggle").getByRole("button", { name: "Google", exact: true }).click();
+  await expect(page.getByTestId("google-map-placeholder")).toBeVisible();
+  await expect(page.getByTestId("load-google-map")).toBeDisabled();
   expect(mapsJs).toBe(0);
   expect(places).toBe(0);
 
@@ -34,7 +40,7 @@ test("opening Data Management sends zero Google requests before explicit confirm
   });
   await page.goto("/settings/");
   await page.getByRole("button", { name: "จัดการ", exact: true }).click();
-  await expect(page.getByTestId("google-maps-usage-dashboard")).toBeVisible();
-  await expect(page.getByTestId("manual-google-request-shortcuts")).toBeVisible();
+  await expect(page.getByTestId("data-management-admin-locked")).toBeVisible();
+  await expect(page.getByText(/Admin login required|ต้องเข้าสู่ระบบ Admin/)).toBeVisible();
   expect(googleRequests).toBe(0);
 });

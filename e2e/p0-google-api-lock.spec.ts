@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("Google request emergency lock stays safe across reload and makes zero Places calls", async ({ page }) => {
+test("Google maintenance remains fail-closed behind admin gate across reload and makes zero Places calls", async ({ page }) => {
   let googlePlacesRequests = 0;
   page.on("request", (request) => {
     const url = request.url();
@@ -9,29 +9,18 @@ test("Google request emergency lock stays safe across reload and makes zero Plac
 
   await page.goto("/settings");
   await page.getByRole("button", { name: "จัดการ", exact: true }).click();
-  const lock = page.getByTestId("google-api-request-lock");
-  await expect(lock).toBeVisible();
-  // Cloud-only control intentionally starts fail-closed until policy hydration succeeds.
-  await expect(lock.getByText("LOCKED", { exact: true })).toBeVisible();
-
-  await page.getByTestId("google-api-lock-toggle").click();
-  await expect(lock.getByText("UNLOCKED", { exact: true })).toBeVisible();
+  const locked = page.getByTestId("data-management-admin-locked");
+  await expect(locked).toBeVisible();
+  await expect(locked.getByText(/Admin login required|ต้องเข้าสู่ระบบ Admin/)).toBeVisible();
+  await expect(page.getByTestId("google-api-request-lock")).toHaveCount(0);
   await page.waitForTimeout(1200);
 
   await page.reload();
   await page.getByRole("button", { name: "จัดการ", exact: true }).click();
-  const reloadedLock = page.getByTestId("google-api-request-lock");
-  await expect(reloadedLock).toBeVisible();
-  // If cloud auth/persistence is available the UNLOCKED policy is restored; if not,
-  // the app must fail closed to LOCKED rather than falling back to browser storage.
-  const cloudPersisted = await reloadedLock.getByText("UNLOCKED", { exact: true }).isVisible().catch(() => false);
-  if (!cloudPersisted) await expect(reloadedLock.getByText("LOCKED", { exact: true })).toBeVisible();
-
-  // Always leave the test session locked.
-  if (cloudPersisted) {
-    await page.getByTestId("google-api-lock-toggle").click();
-    await expect(reloadedLock.getByText("LOCKED", { exact: true })).toBeVisible();
-  }
+  const reloadedLocked = page.getByTestId("data-management-admin-locked");
+  await expect(reloadedLocked).toBeVisible();
+  await expect(reloadedLocked.getByText(/Admin login required|ต้องเข้าสู่ระบบ Admin/)).toBeVisible();
+  await expect(page.getByTestId("google-api-request-lock")).toHaveCount(0);
   await page.waitForTimeout(300);
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

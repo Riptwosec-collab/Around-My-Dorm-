@@ -7,8 +7,13 @@ test("map keeps premium layout and exposes full radius controls without API key"
   const radius = page.getByLabel("รัศมีแผนที่");
   await expect(radius).toBeVisible();
   await expect(radius.locator("option[value='5000']")).toHaveCount(1);
+  await expect(page.getByTestId("saved-cloud-map")).toBeVisible();
+  await expect(page.getByTestId("map-provider-toggle")).toBeVisible();
+
+  await page.getByTestId("map-provider-toggle").getByRole("button", { name: "Google", exact: true }).click();
   await expect(page.getByTestId("google-map-placeholder")).toBeVisible();
-  await expect(page.getByText(/Interactive map not loaded|ยังไม่ได้โหลดแผนที่แบบ Interactive/)).toBeVisible();
+  await expect(page.getByTestId("load-google-map")).toBeDisabled();
+
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
