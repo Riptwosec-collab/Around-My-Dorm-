@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_FILTERS } from "@/components/FilterSheet";
 import { PLACES } from "@/data/places";
-import { deriveDiscoveryState } from "@/lib/discovery/derive-visible-places";
+import { deriveDiscoveryState, type DiscoveryInput } from "@/lib/discovery/derive-visible-places";
+import type { Place } from "@/types/place";
 
 const seed = PLACES[0]!;
 const origin = { lat: 13.82, lng: 100.58 };
 
-function candidate(id: string, overrides = {}) {
+function candidate(id: string, overrides: Partial<Place> = {}): Place {
   return {
     ...seed,
     id,
     slug: id,
     name: id,
-    category: "cafe" as const,
-    categories: ["cafe" as const],
+    category: "cafe",
+    categories: ["cafe"],
     latitude: 13.82,
     longitude: 100.58,
     verified: true,
@@ -21,17 +22,17 @@ function candidate(id: string, overrides = {}) {
   };
 }
 
-function input(places = [candidate("near")]) {
+function input(places: Place[] = [candidate("near")]): DiscoveryInput {
   return {
     places,
     origin,
-    category: "all" as const,
+    category: "all",
     query: "",
     filters: EMPTY_FILTERS,
     radiusMeters: 500,
     mapSearchCenter: origin,
-    originMode: "dorm" as const,
-    sortMode: "distanceAsc" as const,
+    originMode: "dorm",
+    sortMode: "distanceAsc",
     verifiedOnly: false,
     recommendationContext: {},
   };
@@ -42,7 +43,7 @@ describe("shared discovery engine", () => {
     const result = deriveDiscoveryState(input([
       candidate("near cafe", { latitude: 13.8201, longitude: 100.5801 }),
       candidate("far cafe", { latitude: 13.90, longitude: 100.70 }),
-      candidate("near food", { category: "food" as const, categories: ["food" as const] }),
+      candidate("near food", { category: "food", categories: ["food"] }),
     ]));
 
     expect(result.allPlaces).toHaveLength(3);
