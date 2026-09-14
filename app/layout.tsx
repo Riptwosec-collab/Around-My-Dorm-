@@ -5,6 +5,7 @@ import "./premium-liquid-glass-geometry.css";
 import "./premium-interactions.css";
 import "./premium-map-sheets.css";
 import "./app-frame-sizing.css";
+import "./render-stability.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
 import { GoogleBulkPhotoRuntimeControl } from "@/components/GoogleBulkPhotoRuntimeControl";
 import { PreciseGeolocationRuntime } from "@/components/PreciseGeolocationRuntime";
