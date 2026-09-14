@@ -69,6 +69,26 @@ describe("ReviewQueuePanel", () => {
     expect(screen.getByRole("button", { name: /Publish|เผยแพร่/i })).toBeDisabled();
   });
 
+  it("filters locally by source without network requests", () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    render(React.createElement(ReviewQueuePanel, {
+      items,
+      candidates: [duplicate],
+      places: [existing],
+      language: "en",
+      onPublishCandidate: vi.fn(),
+      onRejectCandidate: vi.fn(),
+      onKeepSeparate: vi.fn(),
+      onReviewLater: vi.fn(),
+    }));
+
+    fireEvent.change(screen.getByTestId("review-source-filter"), { target: { value: "approved_import" } });
+    expect(screen.getByTestId("review-visible-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("candidate-publish-blocked")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
   it("routes explicit decisions through callbacks", () => {
     const onRejectCandidate = vi.fn();
     const onKeepSeparate = vi.fn();
