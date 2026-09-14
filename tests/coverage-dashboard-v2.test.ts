@@ -54,10 +54,12 @@ describe("CoverageDashboard V2", () => {
     fetchSpy.mockRestore();
   });
 
-  it("is mounted only inside the existing Data Management admin surface", () => {
-    const source = fs.readFileSync("components/DataManagement.tsx", "utf8");
-    expect(source).toContain('import { CoverageDashboard } from "@/components/CoverageDashboard";');
-    expect(source).toContain("<CoverageDashboard");
-    expect(source.indexOf("<CoverageDashboard")).toBeGreaterThan(source.indexOf("adminAccess.admin"));
+  it("is hosted by the existing admin-only data quality surface", () => {
+    const adminSource = fs.readFileSync("components/DataManagement.tsx", "utf8");
+    const hostSource = fs.readFileSync("components/DataQualityDashboard.tsx", "utf8");
+    expect(adminSource).toContain("<DataQualityDashboard");
+    expect(adminSource.indexOf("<DataQualityDashboard")).toBeGreaterThan(adminSource.indexOf("adminAccess.admin"));
+    expect(hostSource).toContain('import { CoverageDashboard } from "@/components/CoverageDashboard";');
+    expect(hostSource).toContain("<CoverageDashboard");
   });
 });
