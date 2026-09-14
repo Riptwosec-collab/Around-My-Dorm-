@@ -1,10 +1,31 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, GitMerge, ShieldAlert } from "lucide-react";
+import { COVERAGE_RINGS } from "@/lib/coverage/coverage";
 import { canPublishCandidate, type PlaceCandidate } from "@/lib/maintenance/place-candidates";
-import type { ReviewQueueItem } from "@/lib/maintenance/review-queue";
+import {
+  filterReviewQueue,
+  type ReviewPriority,
+  type ReviewQueueItem,
+  type ReviewReason,
+} from "@/lib/maintenance/review-queue";
 import type { Place } from "@/types/place";
+
+const REVIEW_REASONS: ReviewReason[] = [
+  "new_place",
+  "invalid_coordinates",
+  "identity_conflict",
+  "possible_duplicate",
+  "category_mismatch",
+  "local_chain_ambiguity",
+  "missing_maps",
+  "missing_hours",
+  "stale_record",
+  "missing_photo",
+  "missing_price",
+  "high_risk_change",
+];
 
 function priorityTone(priority: ReviewQueueItem["priority"]) {
   if (priority === "p0") return "text-rose-200 border-rose-300/15 bg-rose-300/[0.05]";
@@ -13,8 +34,8 @@ function priorityTone(priority: ReviewQueueItem["priority"]) {
   return "text-white/60 border-white/[0.08] bg-white/[0.03]";
 }
 
-function reasonLabel(reason: ReviewQueueItem["reasons"][number], language: "th" | "en") {
-  const labels: Record<typeof reason, { th: string; en: string }> = {
+function reasonLabel(reason: ReviewReason, language: "th" | "en") {
+  const labels: Record<ReviewReason, { th: string; en: string }> = {
     new_place: { th: "ร้านใหม่", en: "New place" },
     invalid_coordinates: { th: "พิกัดไม่ถูกต้อง", en: "Invalid coordinates" },
     identity_conflict: { th: "ข้อมูลตัวตนขัดแย้ง", en: "Identity conflict" },
@@ -50,9 +71,26 @@ export function ReviewQueuePanel({
   onKeepSeparate: (candidateId: string) => void;
   onReviewLater: (candidateId: string) => void;
 }) {
+  const [priority, setPriority] = useState<ReviewPriority | "">("");
+  const [reason, setReason] = useState<ReviewReason | "">("");
+  const [category, setCategory] = useState("");
+  const [ringId, setRingId] = useState("");
+  const [source, setSource] = useState("");
+
   const candidatesById = useMemo(() => new Map(candidates.map((candidate) => [candidate.id, candidate])), [candidates]);
   const placesById = useMemo(() => new Map(places.map((place) => [place.id, place])), [places]);
-  const visible = items.slice(0, 40);
+  const categories = useMemo(() => [...new Set(items.map((item) => item.category).filter((value): value is string => Boolean(value)))].sort(), [items]);
+  const sources = useMemo(() => [...new Set(items.map((item) => item.source).filter((value): value is string => Boolean(value)))].sort(), [items]);
+  const filtered = useMemo(() => filterReviewQueue(items, {
+    priorities: priority ? [priority] : undefined,
+    reasons: reason ? [reason] : undefined,
+    category: category || null,
+    ringId: ringId ? (ringId as ReviewQueueItem["ringId"]) : null,
+    source: source || null,
+  }), [items, priority, reason, category, ringId, source]);
+  const visible = filtered.slice(0, 40);
+
+  const selectClass = "amd-input h-10 min-w-0 rounded-xl bg-[#07111f] px-2 text-[8px] outline-none";
 
   return (
     <section data-testid="review-queue" className="amd-glass amd-card mt-4 p-4">
@@ -61,7 +99,30 @@ export function ReviewQueuePanel({
           <div className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-amber-200" /><p className="text-[12px] font-bold">{language === "en" ? "Review Queue" : "คิวตรวจสอบข้อมูล"}</p></div>
           <p className="mt-1 text-[9px] leading-4 text-[var(--amd-text-3)]">{language === "en" ? "Deterministic queue from canonical health, staged candidates and review blockers." : "รวมรายการจาก Data Health, Candidate และตัวบล็อกการ Publish แบบ deterministic"}</p>
         </div>
-        <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-2.5 py-1.5 text-[8px] text-white/60">{items.length}</span>
+        <span data-testid="review-visible-count" className="rounded-full border border-white/[0.08] bg-white/[0.035] px-2.5 py-1.5 text-[8px] text-white/60">{filtered.length} / {items.length}</span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <select aria-label="Review priority" value={priority} onChange={(event) => setPriority(event.target.value as ReviewPriority | "")} className={selectClass}>
+          <option value="">{language === "en" ? "All priorities" : "ทุก Priority"}</option>
+          {(["p0", "p1", "p2", "p3"] as ReviewPriority[]).map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+        </select>
+        <select aria-label="Review reason" value={reason} onChange={(event) => setReason(event.target.value as ReviewReason | "")} className={selectClass}>
+          <option value="">{language === "en" ? "All reasons" : "ทุกเหตุผล"}</option>
+          {REVIEW_REASONS.map((value) => <option key={value} value={value}>{reasonLabel(value, language)}</option>)}
+        </select>
+        <select aria-label="Review category" value={category} onChange={(event) => setCategory(event.target.value)} className={selectClass}>
+          <option value="">{language === "en" ? "All categories" : "ทุกหมวด"}</option>
+          {categories.map((value) => <option key={value} value={value}>{value}</option>)}
+        </select>
+        <select aria-label="Review ring" value={ringId} onChange={(event) => setRingId(event.target.value)} className={selectClass}>
+          <option value="">{language === "en" ? "All rings" : "ทุกระยะ"}</option>
+          {COVERAGE_RINGS.map((ring) => <option key={ring.id} value={ring.id}>{ring.label}</option>)}
+        </select>
+        <select data-testid="review-source-filter" aria-label="Review source" value={source} onChange={(event) => setSource(event.target.value)} className={selectClass}>
+          <option value="">{language === "en" ? "All sources" : "ทุก Source"}</option>
+          {sources.map((value) => <option key={value} value={value}>{value}</option>)}
+        </select>
       </div>
 
       <div className="mt-4 space-y-2">
@@ -79,7 +140,7 @@ export function ReviewQueuePanel({
                 {item.priority === "p0" || item.priority === "p1" ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-200" /> : <Clock3 className="h-4 w-4 shrink-0 text-white/30" />}
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-1.5">{item.reasons.map((reason) => <span key={reason} className="rounded-full bg-white/[0.04] px-2 py-1 text-[8px] text-white/55">{reasonLabel(reason, language)}</span>)}</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">{item.reasons.map((itemReason) => <span key={itemReason} className="rounded-full bg-white/[0.04] px-2 py-1 text-[8px] text-white/55">{reasonLabel(itemReason, language)}</span>)}</div>
 
               {candidate && (
                 <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
@@ -106,7 +167,7 @@ export function ReviewQueuePanel({
             </article>
           );
         })}
-        {!visible.length && <p className="rounded-xl border border-emerald-300/10 bg-emerald-300/[0.04] p-3 text-[9px] text-emerald-100">{language === "en" ? "Review queue is clear." : "ไม่มีรายการรอตรวจในคิว"}</p>}
+        {!visible.length && <p className="rounded-xl border border-emerald-300/10 bg-emerald-300/[0.04] p-3 text-[9px] text-emerald-100">{language === "en" ? "No review items match these filters." : "ไม่มีรายการที่ตรงกับตัวกรองนี้"}</p>}
       </div>
     </section>
   );
