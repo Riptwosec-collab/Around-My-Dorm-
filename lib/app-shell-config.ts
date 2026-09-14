@@ -74,7 +74,7 @@ export const FOOD_CATEGORIES = new Set<CategoryId>([
 ]);
 
 export const SORT_OPTIONS: { id: SortMode; label: string }[] = [
-  { id: "recommended", label: "แนะนำ" },
+  { id: "recommended", label: "แนะนำตอนนี้" },
   { id: "distanceAsc", label: "ใกล้ที่สุด" },
   { id: "distanceDesc", label: "ไกลที่สุด" },
   { id: "rating", label: "คะแนนสูงสุด" },
