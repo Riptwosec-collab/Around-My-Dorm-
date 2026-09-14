@@ -51,6 +51,7 @@ export type TrackedGoogleRequestInput = {
   placeName?: string;
   googlePlaceId?: string;
   status: "success" | "failed";
+  resultCode?: "photo_loaded" | "no_photo" | "failed";
   attempted?: number;
   retryCount?: number;
   durationMs?: number;
@@ -164,6 +165,7 @@ export async function recordTrackedGoogleRequest(input: TrackedGoogleRequestInpu
     google_place_id: input.googlePlaceId || null,
     query: null,
     status: input.status,
+    result_code: input.resultCode || null,
     attempted: Math.max(0, input.attempted ?? 1),
     retry_count: Math.max(0, input.retryCount ?? 0),
     duration_ms: input.durationMs ?? null,
@@ -179,6 +181,7 @@ export async function recordTrackedGoogleRequest(input: TrackedGoogleRequestInpu
         persisted: true,
         placeId: input.placeId || null,
         status: input.status,
+        resultCode: input.resultCode || null,
       },
     }));
   }
