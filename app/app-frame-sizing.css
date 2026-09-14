@@ -21,3 +21,15 @@
   right: max(var(--amd-page-gutter), env(safe-area-inset-right));
   max-width: calc(var(--amd-app-max-w) - (var(--amd-page-gutter) * 2));
 }
+
+/* A fixed element is positioned against the viewport, not the centered shell.
+   On viewports wider than the 519px app frame, explicitly center the nav on
+   the same axis as the shell. Mobile keeps the original safe-area insets. */
+@media (min-width: 520px) {
+  .amd-nav {
+    left: 50%;
+    right: auto;
+    width: calc(var(--amd-app-max-w) - (var(--amd-page-gutter) * 2));
+    transform: translateX(-50%);
+  }
+}

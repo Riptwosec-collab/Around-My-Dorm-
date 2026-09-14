@@ -30,6 +30,14 @@ describe("mobile app shell sizing", () => {
     expect(rule(".amd-nav")).toContain("max-width: calc(var(--amd-app-max-w) - (var(--amd-page-gutter) * 2));");
   });
 
+  it("centers the fixed bottom navigation inside the 519px shell on wider viewports", () => {
+    expect(css).toContain("@media (min-width: 520px)");
+    expect(css).toContain("left: 50%;");
+    expect(css).toContain("right: auto;");
+    expect(css).toContain("transform: translateX(-50%);");
+    expect(css).toContain("width: calc(var(--amd-app-max-w) - (var(--amd-page-gutter) * 2));");
+  });
+
   it("keeps height content-driven rather than locking to the 921px reference", () => {
     expect(rule(".amd-shell")).toContain("min-height: 100dvh;");
     expect(css).not.toContain("height: 921px");
