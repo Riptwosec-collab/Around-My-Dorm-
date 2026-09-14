@@ -1,5 +1,13 @@
 import type { FilterState } from "@/components/FilterSheet";
 import type { OriginMode } from "@/lib/app-shell-config";
+import {
+  effectiveIntentCategories,
+  mergeIntentFilters,
+} from "@/lib/discovery/intent-filters";
+import {
+  parseDiscoveryQuery,
+  type DiscoveryIntent,
+} from "@/lib/discovery/query-intent";
 import { filterPlacesInSearchArea, type GeoPoint } from "@/lib/hybrid-map-platform";
 import { matchesSearch, withDistance } from "@/lib/place-utils";
 import { passesFilters, sortPlaces, type RecommendationContext } from "@/lib/place-ranking";
@@ -10,6 +18,12 @@ export type DiscoveryInput = {
   origin: GeoPoint;
   category: "all" | CategoryId;
   query: string;
+  /**
+   * Optional during the Phase 2B rollout so existing call sites keep working.
+   * UI surfaces can parse once and pass the memoized intent; otherwise the
+   * shared engine derives it locally from `query` with no network access.
+   */
+  queryIntent?: DiscoveryIntent;
   filters: FilterState;
   radiusMeters: number;
   mapSearchCenter: GeoPoint;
@@ -25,11 +39,18 @@ export type DiscoveryResult = {
 };
 
 export function deriveDiscoveryState(input: DiscoveryInput): DiscoveryResult {
+  const intent = input.queryIntent ?? parseDiscoveryQuery(input.query);
+  const effectiveFilters = mergeIntentFilters(input.filters, intent);
+  const effectiveCategories = effectiveIntentCategories(input.category, intent);
   const allPlaces = input.places.map((place) => withDistance(place, input.origin));
+
   const base = allPlaces.filter((place) => {
-    if (input.category !== "all" && !place.categories.includes(input.category)) return false;
-    if (!matchesSearch(place, input.query)) return false;
-    if (!passesFilters(place, input.filters, input.verifiedOnly)) return false;
+    if (
+      effectiveCategories
+      && !effectiveCategories.some((category) => place.categories.includes(category))
+    ) return false;
+    if (!matchesSearch(place, intent.freeText)) return false;
+    if (!passesFilters(place, effectiveFilters, input.verifiedOnly)) return false;
     if (input.originMode === "me" && place.distanceKm == null) return false;
     return true;
   });
