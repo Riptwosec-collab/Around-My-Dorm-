@@ -1,7 +1,8 @@
 import type { Place } from "@/types/place";
 import { PROVIDER_CAPABILITIES } from "@/lib/data-governance";
+import { resolveCandidateMatch } from "@/lib/maintenance/candidate-matching";
 import { diffPlace, possibleDuplicate, type PlaceUpdateDiff } from "@/lib/place-update-engine";
-import { haversineKm, normalizeText } from "@/lib/place-utils";
+import { normalizeText } from "@/lib/place-utils";
 
 export type ImportCandidate = Partial<Place> & {
   name: string;
@@ -24,39 +25,6 @@ export type ImportPlan = {
   diffs: PlaceUpdateDiff[];
   rejected: Array<{ candidate: ImportCandidate; reason: string }>;
 };
-
-function candidateCoordinates(candidate: ImportCandidate) {
-  if (candidate.latitude == null || candidate.longitude == null) return null;
-  return { lat: candidate.latitude, lng: candidate.longitude };
-}
-
-function identityScore(existing: Place, candidate: ImportCandidate) {
-  let score = 0;
-  if (candidate.sourceId && (existing.sourceId === candidate.sourceId || existing.googlePlaceId === candidate.sourceId)) score += 100;
-  if (normalizeText(existing.name) === normalizeText(candidate.name)) score += 45;
-  else if (normalizeText(existing.name).includes(normalizeText(candidate.name)) || normalizeText(candidate.name).includes(normalizeText(existing.name))) score += 22;
-  const coords = candidateCoordinates(candidate);
-  if (coords && existing.latitude != null && existing.longitude != null) {
-    const distance = haversineKm({ lat: existing.latitude, lng: existing.longitude }, coords);
-    if (distance <= 0.05) score += 40;
-    else if (distance <= 0.15) score += 24;
-    else if (distance <= 0.5) score += 8;
-    else score -= 35;
-  }
-  if (candidate.address && existing.address && normalizeText(candidate.address) === normalizeText(existing.address)) score += 20;
-  if (candidate.phone && existing.phone && candidate.phone.replace(/\D/g, "") === existing.phone.replace(/\D/g, "")) score += 25;
-  if (candidate.website && existing.website && normalizeText(candidate.website) === normalizeText(existing.website)) score += 20;
-  return score;
-}
-
-function matchExisting(places: Place[], candidate: ImportCandidate) {
-  const ranked = places.map((place) => ({ place, score: identityScore(place, candidate) })).sort((a, b) => b.score - a.score);
-  const first = ranked[0];
-  const second = ranked[1];
-  if (!first || first.score < 65) return null;
-  if (second && first.score - second.score < 10 && first.score < 100) return null;
-  return first.place;
-}
 
 function persistablePatch(candidate: ImportCandidate) {
   const policy = PROVIDER_CAPABILITIES[candidate.sourceProvider];
@@ -104,7 +72,11 @@ export function buildImportPlan(places: Place[], candidates: ImportCandidate[], 
       plan.rejected.push({ candidate, reason: "Provider persistence policy rejected this record." });
       continue;
     }
-    const existing = matchExisting(places, candidate);
+
+    const resolution = resolveCandidateMatch(places, candidate);
+    const existing = resolution.matchedPlaceId
+      ? places.find((place) => place.id === resolution.matchedPlaceId) ?? null
+      : null;
     if (existing) {
       plan.matched += 1;
       const diff = diffPlace(existing, patch, provider);

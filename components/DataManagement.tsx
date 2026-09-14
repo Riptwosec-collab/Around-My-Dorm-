@@ -17,8 +17,12 @@ import { DataQualityDashboard } from "@/components/DataQualityDashboard";
 import { auditPlaces, findDuplicatePairs, selectPlacesForUpdate, type UpdateMode } from "@/lib/place-update-engine";
 import { freshnessState } from "@/lib/data-governance";
 import { addReviewedLocalPlace, applyLocalPlacePatch, loadLocalPlaceHistory, rollbackLocalPlaceHistory, type LocalPlaceHistory } from "@/lib/database/places";
-import { buildImportPlan, type ImportCandidate, type ImportPlan, type NewPlaceCandidate } from "@/lib/maintenance/import-plan";
+import { buildImportPlan, type ImportCandidate, type ImportPlan } from "@/lib/maintenance/import-plan";
+import { candidateFromGoogle, candidateFromImport, canPublishCandidate, materializeReviewedPlace, type PlaceCandidate } from "@/lib/maintenance/place-candidates";
+import { resolveCandidateAsSeparate } from "@/lib/maintenance/candidate-decisions";
+import { loadPlaceCandidates, updatePlaceCandidateDecision, upsertPlaceCandidate, upsertPlaceCandidates } from "@/lib/storage/place-candidates";
 import { loadPendingPlaceChanges, savePendingPlaceChanges } from "@/lib/storage/place-updates";
+import type { GoogleDiscoveryCandidate } from "@/lib/google-live";
 import type { CategoryId, Place } from "@/types/place";
 
 const EMPTY_HOURS = { monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null };
@@ -114,14 +118,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   const [auditDone, setAuditDone] = useState(false);
   const [pending, setPending] = useState<Awaited<ReturnType<typeof loadPendingPlaceChanges>>>([]);
   const [history, setHistory] = useState<LocalPlaceHistory[]>([]);
-  useEffect(() => {
-    if (!adminAccess.admin) {
-      setPending([]);
-      setHistory([]);
-      return;
-    }
-    void Promise.all([loadPendingPlaceChanges(), loadLocalPlaceHistory()]).then(([nextPending, nextHistory]) => { setPending(nextPending); setHistory(nextHistory); }).catch((error) => setMessage(error instanceof Error ? error.message : "Cloud state unavailable"));
-  }, [adminAccess.admin]);
+  const [stagedCandidates, setStagedCandidates] = useState<PlaceCandidate[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
@@ -130,10 +127,30 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   const [scopeCategory, setScopeCategory] = useState<CategoryId>("cafe");
   const [scopeArea, setScopeArea] = useState("");
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<string[]>([]);
-  const [googleCandidate, setGoogleCandidate] = useState<any>(() => {
-    if (typeof window === "undefined") return null;
-    try { return JSON.parse(sessionStorage.getItem("around-dorm-google-candidate-review-v1") || "null"); } catch { return null; }
-  });
+
+  async function reloadStagedCandidates() {
+    const next = await loadPlaceCandidates(["new", "needs_review"]);
+    setStagedCandidates(next);
+    return next;
+  }
+
+  useEffect(() => {
+    if (!adminAccess.admin) {
+      setPending([]);
+      setHistory([]);
+      setStagedCandidates([]);
+      return;
+    }
+    void Promise.all([
+      loadPendingPlaceChanges(),
+      loadLocalPlaceHistory(),
+      loadPlaceCandidates(["new", "needs_review"]),
+    ]).then(([nextPending, nextHistory, nextCandidates]) => {
+      setPending(nextPending);
+      setHistory(nextHistory);
+      setStagedCandidates(nextCandidates);
+    }).catch((error) => setMessage(error instanceof Error ? error.message : "Cloud state unavailable"));
+  }, [adminAccess.admin]);
 
   const summary = useMemo(() => auditPlaces(places), [places]);
   const duplicates = useMemo(() => findDuplicatePairs(places).slice(0, 20), [places]);
@@ -245,27 +262,60 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
       const nextPending = [...pending, ...plan.diffs].filter((item, index, array) => array.findIndex((candidate) => candidate.id === item.id) === index);
       setPending(nextPending);
       savePendingPlaceChanges(nextPending);
-      setMessage(language === "en" ? `Import scanned ${plan.scanned}: ${plan.diffs.length} changes, ${plan.newPlaces.length} new candidates, ${plan.rejected.length} rejected by policy.` : `ตรวจไฟล์ ${plan.scanned} รายการ: เปลี่ยนแปลง ${plan.diffs.length}, ร้านใหม่ ${plan.newPlaces.length}, ถูก Policy ปฏิเสธ ${plan.rejected.length}`);
+
+      const staged = plan.newPlaces.map((item) => candidateFromImport(item.candidate, places));
+      if (staged.length) await upsertPlaceCandidates(staged);
+      await reloadStagedCandidates();
+
+      setMessage(language === "en"
+        ? `Import scanned ${plan.scanned}: ${plan.diffs.length} existing-place changes, ${staged.length} new candidates staged, ${plan.rejected.length} rejected by policy.`
+        : `ตรวจไฟล์ ${plan.scanned} รายการ: Diff ร้านเดิม ${plan.diffs.length}, ส่ง Candidate ใหม่เข้าคิว ${staged.length}, ถูก Policy ปฏิเสธ ${plan.rejected.length}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Invalid import file");
     }
   }
 
-  async function addCandidate(item: NewPlaceCandidate, keepSeparate = false) {
-    const candidate = item.candidate;
-    if (item.duplicateIds.length && !keepSeparate) {
-      setMessage(language === "en" ? "Possible duplicate: review before adding." : "อาจเป็นรายการซ้ำ กรุณาตรวจสอบก่อนเพิ่ม");
+  async function stageGoogleCandidate(result: GoogleDiscoveryCandidate) {
+    const candidate = candidateFromGoogle(result, places, scopeCategory);
+    await upsertPlaceCandidate(candidate);
+    await reloadStagedCandidates();
+    setGoogleSearchOpen(false);
+    setMessage(language === "en" ? `${candidate.proposedPlace.name} staged for review. No canonical place was published.` : `${candidate.proposedPlace.name} ถูกส่งเข้าคิวตรวจแล้ว • ยังไม่ได้ Publish เป็นร้านจริง`);
+  }
+
+  async function rejectCandidate(candidateId: string) {
+    await updatePlaceCandidateDecision(candidateId, { status: "rejected", reviewedBy: adminAccess.email, reviewedAt: new Date().toISOString() });
+    await reloadStagedCandidates();
+  }
+
+  async function reviewCandidateLater(candidateId: string) {
+    await updatePlaceCandidateDecision(candidateId, { status: "needs_review", reviewedBy: adminAccess.email });
+    await reloadStagedCandidates();
+  }
+
+  async function keepCandidateSeparate(candidateId: string) {
+    const candidate = stagedCandidates.find((item) => item.id === candidateId);
+    if (!candidate) return;
+    const reviewed = resolveCandidateAsSeparate(candidate, adminAccess.email, new Date().toISOString());
+    await upsertPlaceCandidate(reviewed);
+    await reloadStagedCandidates();
+    setMessage(language === "en" ? "Duplicate match cleared by explicit Keep Separate decision." : "ยืนยัน Keep Separate แล้ว • เคลียร์เฉพาะ duplicate blocker");
+  }
+
+  async function publishCandidate(candidateId: string) {
+    const candidate = stagedCandidates.find((item) => item.id === candidateId);
+    if (!candidate) return;
+    const gate = canPublishCandidate(candidate);
+    if (!gate.allowed) {
+      setMessage(language === "en" ? `Publish blocked: ${gate.blockers.join(", ")}` : `ยัง Publish ไม่ได้: ${gate.blockers.join(", ")}`);
       return;
     }
-    if (!candidate.category || candidate.latitude == null || candidate.longitude == null) {
-      setMessage(language === "en" ? "Candidate is missing category or coordinates." : "Candidate ไม่มีหมวดหรือพิกัดที่จำเป็น");
-      return;
-    }
-    const place = makeReviewedPlace({ name: candidate.name, category: candidate.category, latitude: candidate.latitude, longitude: candidate.longitude, address: candidate.address, area: candidate.area }, candidate.sourceProvider, candidate);
+    const place = materializeReviewedPlace({ ...candidate, reviewedAt: new Date().toISOString(), reviewedBy: adminAccess.email });
     await addReviewedLocalPlace(place, candidate.sourceProvider);
-    setImportPlan((current) => current ? { ...current, newPlaces: current.newPlaces.filter((candidateItem) => candidateItem !== item) } : current);
-    setHistory(await loadLocalPlaceHistory());
+    await updatePlaceCandidateDecision(candidate.id, { status: "approved", reviewedBy: adminAccess.email, reviewedAt: new Date().toISOString() });
+    await Promise.all([reloadStagedCandidates(), loadLocalPlaceHistory().then(setHistory)]);
     onReload();
+    setMessage(language === "en" ? `${place.name} published to canonical user additions.` : `Publish ${place.name} เข้าฐานข้อมูลแล้ว`);
   }
 
   async function addManualPlace() {
@@ -304,71 +354,74 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
         ) : (
           <>
             <section data-testid="data-management-admin-ready" className="mt-4 rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.04] p-3 text-[9px] text-emerald-100">
-              <strong>{language === "en" ? "Supabase admin connected" : "เชื่อม Supabase Admin แล้ว"}</strong> • {places.length} {language === "en" ? "places" : "ร้าน"} • {databaseSource}
+              <strong>{language === "en" ? "Supabase admin connected" : "เชื่อม Supabase Admin แล้ว"}</strong> • {places.length} {language === "en" ? "places" : "ร้าน"} • {databaseSource} • {stagedCandidates.length} staged
             </section>
 
-        <DataQualityDashboard places={places} language={language} />
+            <DataQualityDashboard
+              places={places}
+              language={language}
+              candidates={stagedCandidates}
+              pendingChanges={pending}
+              onPublishCandidate={(id) => void publishCandidate(id)}
+              onRejectCandidate={(id) => void rejectCandidate(id)}
+              onKeepSeparate={(id) => void keepCandidateSeparate(id)}
+              onReviewLater={(id) => void reviewCandidateLater(id)}
+            />
 
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[{ label: language === "en" ? "Places" : "สถานที่", value: summary.scanned }, { label: language === "en" ? "Verified" : "ยืนยันแล้ว", value: summary.verified }, { label: language === "en" ? "Stale" : "ข้อมูลเก่า", value: summary.stale + summary.staleSoon }, { label: language === "en" ? "Review" : "ต้องตรวจ", value: summary.needsReview }].map((item) => <div key={item.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-3"><p className="text-[9px] text-[var(--amd-text-3)]">{item.label}</p><p className="mt-1 text-[24px] font-semibold">{item.value}</p></div>)}
-        </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[{ label: language === "en" ? "Places" : "สถานที่", value: summary.scanned }, { label: language === "en" ? "Verified" : "ยืนยันแล้ว", value: summary.verified }, { label: language === "en" ? "Stale" : "ข้อมูลเก่า", value: summary.stale + summary.staleSoon }, { label: language === "en" ? "Review" : "ต้องตรวจ", value: summary.needsReview }].map((item) => <div key={item.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-3"><p className="text-[9px] text-[var(--amd-text-3)]">{item.label}</p><p className="mt-1 text-[24px] font-semibold">{item.value}</p></div>)}
+            </div>
 
-        <section className="amd-glass amd-card mt-4 p-4">
-          <div className="flex items-start gap-3"><Database className="mt-0.5 h-5 w-5 text-[#00D9FF]" /><div><p className="text-[13px] font-semibold">Database-first runtime</p><p className="mt-1 text-[10px] leading-5 text-[var(--amd-text-2)]">{language === "en" ? `Current source: ${databaseSource}. Normal browsing does not query an external POI provider.` : `แหล่งข้อมูลปัจจุบัน: ${databaseSource} • การเปิดแอปปกติจะไม่ยิง External POI API`}</p><p className="mt-1 text-[9px] text-[var(--amd-text-3)]">{language === "en" ? `Last data timestamp: ${lastUpdated || "Unknown"}` : `ข้อมูลล่าสุด: ${lastUpdated || "ยังไม่มีข้อมูล"}`} • External calls: {externalUsage}</p></div></div>
-        </section>
+            <section className="amd-glass amd-card mt-4 p-4">
+              <div className="flex items-start gap-3"><Database className="mt-0.5 h-5 w-5 text-[#00D9FF]" /><div><p className="text-[13px] font-semibold">Database-first runtime</p><p className="mt-1 text-[10px] leading-5 text-[var(--amd-text-2)]">{language === "en" ? `Current source: ${databaseSource}. Normal browsing does not query an external POI provider.` : `แหล่งข้อมูลปัจจุบัน: ${databaseSource} • การเปิดแอปปกติจะไม่ยิง External POI API`}</p><p className="mt-1 text-[9px] text-[var(--amd-text-3)]">{language === "en" ? `Last data timestamp: ${lastUpdated || "Unknown"}` : `ข้อมูลล่าสุด: ${lastUpdated || "ยังไม่มีข้อมูล"}`} • External calls: {externalUsage}</p></div></div>
+            </section>
 
-        <section className="amd-glass amd-card mt-4 p-4">
-          <p className="text-[11px] font-bold">{language === "en" ? "Update mode" : "โหมดตรวจอัปเดต"}</p>
-          <select value={mode} onChange={(event) => setMode(event.target.value as UpdateMode)} className="amd-input mt-3 h-12 w-full rounded-2xl bg-[#07111f] px-3 text-[11px] outline-none">
-            <option value="all">{language === "en" ? "All places" : "ทุกสถานที่"}</option><option value="older30">{language === "en" ? "Older than 30 days" : "เก่ากว่า 30 วัน"}</option><option value="older60">{language === "en" ? "Older than 60 days" : "เก่ากว่า 60 วัน"}</option><option value="older90">{language === "en" ? "Older than 90 days" : "เก่ากว่า 90 วัน"}</option><option value="restaurants">{language === "en" ? "Restaurants only" : "ร้านอาหารเท่านั้น"}</option><option value="cafes">{language === "en" ? "Cafes only" : "คาเฟ่เท่านั้น"}</option><option value="restaurants_cafes">{language === "en" ? "Restaurants & cafes" : "ร้านอาหารและคาเฟ่"}</option><option value="parking">{language === "en" ? "Parking only" : "ที่จอดรถเท่านั้น"}</option><option value="category">{language === "en" ? "Selected category" : "เลือกหมวด"}</option><option value="area">{language === "en" ? "Selected area" : "เลือกพื้นที่"}</option><option value="selected">{language === "en" ? "Selected places only" : "เลือกเฉพาะร้าน"}</option>
-          </select>
-          {mode === "category" && <select value={scopeCategory} onChange={(event) => setScopeCategory(event.target.value as CategoryId)} className="amd-input mt-2 h-11 w-full rounded-xl bg-[#07111f] px-3 text-[10px]">{CATEGORIES.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
-          {mode === "area" && <input value={scopeArea} onChange={(event) => setScopeArea(event.target.value)} placeholder={language === "en" ? "Area / soi / address" : "พื้นที่ / ซอย / ที่อยู่"} className="amd-input mt-2 h-11 w-full rounded-xl px-3 text-[10px]" />}
-          {mode === "selected" && <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-white/[0.07] bg-black/10 p-2">{places.map((place) => { const checked = selectedPlaceIds.includes(place.id); return <label key={place.id} className="flex min-h-10 cursor-pointer items-center gap-2 border-b border-white/[0.04] px-2 text-[9px] last:border-0"><input type="checkbox" checked={checked} onChange={() => setSelectedPlaceIds((current) => checked ? current.filter((id) => id !== place.id) : [...current, place.id])} /><span className="min-w-0 flex-1 truncate">{place.name}</span><span className="text-[var(--amd-text-3)]">{place.area}</span></label>; })}</div>}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={runLocalAudit} disabled={Boolean(progress)} className="amd-btn amd-btn-primary flex min-h-11 items-center gap-2 rounded-xl px-4 text-[10px] font-bold"><RefreshCw className={`h-4 w-4 ${progress ? "animate-spin" : ""}`} />{language === "en" ? "Check Existing Places" : "ตรวจร้านเดิม"}</button>
-            <label className="amd-btn flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><FileUp className="h-4 w-4" />{language === "en" ? "Review Import File" : "ตรวจไฟล์ Import"}<input type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importProviderFile(file); event.currentTarget.value = ""; }} /></label>
-            <button type="button" onClick={() => setManualOpen((value) => !value)} className="amd-btn flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><Plus className="h-4 w-4" />{language === "en" ? "Add Manual Place" : "เพิ่มร้านเอง"}</button>
-            <button type="button" onClick={() => setMessage(language === "en" ? "External discovery is maintenance-only. Run an approved provider scan outside normal browsing, then import its normalized JSON here." : "External Discovery เป็น Maintenance-only ให้รัน Approved Provider Scan แล้วนำไฟล์ JSON ที่ Normalize แล้วมาตรวจที่นี่")} className="amd-btn flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><Search className="h-4 w-4" />{language === "en" ? "Find New Places" : "ค้นหาร้านใหม่"}</button>
-            <button data-testid="search-nearby-places-admin" type="button" onClick={() => setGoogleSearchOpen(true)} className="amd-btn flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold text-[#8ecbff]"><Search className="h-4 w-4" />{language === "en" ? "Search Nearby Places" : "Search Nearby Places"}</button>
-            {progress && <button type="button" onClick={() => { cancelRef.current = true; setCancelRequested(true); }} className="amd-btn min-h-11 rounded-xl border border-rose-300/15 px-4 text-[10px] font-bold text-rose-200">{language === "en" ? "Cancel" : "ยกเลิก"}</button>}
-          </div>
-          {progress && <div className="mt-3"><div className="flex justify-between text-[9px] text-[var(--amd-text-3)]"><span>{language === "en" ? "Checking places" : "กำลังตรวจข้อมูล"}</span><span>{progress.current} / {progress.total}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full bg-[#149CFF] transition-all" style={{ width: `${progress.total ? (progress.current / progress.total) * 100 : 0}%` }} /></div></div>}
-          {message && <p className="mt-3 rounded-xl border border-cyan-300/10 bg-cyan-300/[0.05] px-3 py-2 text-[9px] leading-4 text-cyan-100">{message}</p>}
+            <section className="amd-glass amd-card mt-4 p-4">
+              <p className="text-[11px] font-bold">{language === "en" ? "Update mode" : "โหมดตรวจอัปเดต"}</p>
+              <select value={mode} onChange={(event) => setMode(event.target.value as UpdateMode)} className="amd-input mt-3 h-12 w-full rounded-2xl bg-[#07111f] px-3 text-[11px] outline-none">
+                <option value="all">{language === "en" ? "All places" : "ทุกสถานที่"}</option><option value="older30">{language === "en" ? "Older than 30 days" : "เก่ากว่า 30 วัน"}</option><option value="older60">{language === "en" ? "Older than 60 days" : "เก่ากว่า 60 วัน"}</option><option value="older90">{language === "en" ? "Older than 90 days" : "เก่ากว่า 90 วัน"}</option><option value="restaurants">{language === "en" ? "Restaurants only" : "ร้านอาหารเท่านั้น"}</option><option value="cafes">{language === "en" ? "Cafes only" : "คาเฟ่เท่านั้น"}</option><option value="restaurants_cafes">{language === "en" ? "Restaurants & cafes" : "ร้านอาหารและคาเฟ่"}</option><option value="parking">{language === "en" ? "Parking only" : "ที่จอดรถเท่านั้น"}</option><option value="category">{language === "en" ? "Selected category" : "เลือกหมวด"}</option><option value="area">{language === "en" ? "Selected area" : "เลือกพื้นที่"}</option><option value="selected">{language === "en" ? "Selected places only" : "เลือกเฉพาะร้าน"}</option>
+              </select>
+              {mode === "category" && <select value={scopeCategory} onChange={(event) => setScopeCategory(event.target.value as CategoryId)} className="amd-input mt-2 h-11 w-full rounded-xl bg-[#07111f] px-3 text-[10px]">{CATEGORIES.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+              {mode === "area" && <input value={scopeArea} onChange={(event) => setScopeArea(event.target.value)} placeholder={language === "en" ? "Area / soi / address" : "พื้นที่ / ซอย / ที่อยู่"} className="amd-input mt-2 h-11 w-full rounded-xl px-3 text-[10px]" />}
+              {mode === "selected" && <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-white/[0.07] bg-black/10 p-2">{places.map((place) => { const checked = selectedPlaceIds.includes(place.id); return <label key={place.id} className="flex min-h-10 cursor-pointer items-center gap-2 border-b border-white/[0.04] px-2 text-[9px] last:border-0"><input type="checkbox" checked={checked} onChange={() => setSelectedPlaceIds((current) => checked ? current.filter((id) => id !== place.id) : [...current, place.id])} /><span className="min-w-0 flex-1 truncate">{place.name}</span><span className="text-[var(--amd-text-3)]">{place.area}</span></label>; })}</div>}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={runLocalAudit} disabled={Boolean(progress)} className="amd-btn amd-btn-primary flex min-h-11 items-center gap-2 rounded-xl px-4 text-[10px] font-bold"><RefreshCw className={`h-4 w-4 ${progress ? "animate-spin" : ""}`} />{language === "en" ? "Check Existing Places" : "ตรวจร้านเดิม"}</button>
+                <label className="amd-btn flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><FileUp className="h-4 w-4" />{language === "en" ? "Review Import File" : "ตรวจไฟล์ Import"}<input type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importProviderFile(file); event.currentTarget.value = ""; }} /></label>
+                <button type="button" onClick={() => setManualOpen((value) => !value)} className="amd-btn flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><Plus className="h-4 w-4" />{language === "en" ? "Add Manual Place" : "เพิ่มร้านเอง"}</button>
+                <button type="button" onClick={() => setMessage(language === "en" ? "External discovery is maintenance-only. Run an approved provider scan outside normal browsing, then import its normalized JSON here." : "External Discovery เป็น Maintenance-only ให้รัน Approved Provider Scan แล้วนำไฟล์ JSON ที่ Normalize แล้วมาตรวจที่นี่")} className="amd-btn flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><Search className="h-4 w-4" />{language === "en" ? "Find New Places" : "ค้นหาร้านใหม่"}</button>
+                <button data-testid="search-nearby-places-admin" type="button" onClick={() => setGoogleSearchOpen(true)} className="amd-btn flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold text-[#8ecbff]"><Search className="h-4 w-4" />{language === "en" ? "Search Nearby Places" : "Search Nearby Places"}</button>
+                {progress && <button type="button" onClick={() => { cancelRef.current = true; setCancelRequested(true); }} className="amd-btn min-h-11 rounded-xl border border-rose-300/15 px-4 text-[10px] font-bold text-rose-200">{language === "en" ? "Cancel" : "ยกเลิก"}</button>}
+              </div>
+              {progress && <div className="mt-3"><div className="flex justify-between text-[9px] text-[var(--amd-text-3)]"><span>{language === "en" ? "Checking places" : "กำลังตรวจข้อมูล"}</span><span>{progress.current} / {progress.total}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full bg-[#149CFF] transition-all" style={{ width: `${progress.total ? (progress.current / progress.total) * 100 : 0}%` }} /></div></div>}
+              {cancelRequested && !progress && <p className="mt-2 text-[8px] text-amber-100">{language === "en" ? "Audit cancellation requested." : "ยกเลิกการตรวจแล้ว"}</p>}
+              {message && <p className="mt-3 rounded-xl border border-cyan-300/10 bg-cyan-300/[0.05] px-3 py-2 text-[9px] leading-4 text-cyan-100">{message}</p>}
 
-          {manualOpen && <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/10 p-3"><p className="text-[11px] font-semibold">{language === "en" ? "Manual place" : "เพิ่มสถานที่ด้วยตนเอง"}</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><input value={manual.name} onChange={(event) => setManual((current) => ({ ...current, name: event.target.value }))} placeholder={language === "en" ? "Name" : "ชื่อร้าน"} className="amd-input h-11 rounded-xl px-3 text-[10px]" /><select value={manual.category} onChange={(event) => setManual((current) => ({ ...current, category: event.target.value as CategoryId }))} className="amd-input h-11 rounded-xl bg-[#07111f] px-3 text-[10px]">{CATEGORIES.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input value={manual.latitude} onChange={(event) => setManual((current) => ({ ...current, latitude: event.target.value }))} placeholder="Latitude" inputMode="decimal" className="amd-input h-11 rounded-xl px-3 text-[10px]" /><input value={manual.longitude} onChange={(event) => setManual((current) => ({ ...current, longitude: event.target.value }))} placeholder="Longitude" inputMode="decimal" className="amd-input h-11 rounded-xl px-3 text-[10px]" /><input value={manual.address} onChange={(event) => setManual((current) => ({ ...current, address: event.target.value }))} placeholder={language === "en" ? "Address (optional)" : "ที่อยู่ (ถ้ามี)"} className="amd-input h-11 rounded-xl px-3 text-[10px] sm:col-span-2" /><input value={manual.area} onChange={(event) => setManual((current) => ({ ...current, area: event.target.value }))} placeholder={language === "en" ? "Area (optional)" : "พื้นที่ (ถ้ามี)"} className="amd-input h-11 rounded-xl px-3 text-[10px] sm:col-span-2" /></div><button type="button" onClick={addManualPlace} className="amd-btn amd-btn-primary mt-3 min-h-11 rounded-xl px-4 text-[10px] font-bold">{language === "en" ? "Add as unverified manual record" : "เพิ่มเป็นข้อมูล Manual ที่ยังไม่ Verified"}</button></div>}
-        </section>
+              {manualOpen && <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/10 p-3"><p className="text-[11px] font-semibold">{language === "en" ? "Manual place" : "เพิ่มสถานที่ด้วยตนเอง"}</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><input value={manual.name} onChange={(event) => setManual((current) => ({ ...current, name: event.target.value }))} placeholder={language === "en" ? "Name" : "ชื่อร้าน"} className="amd-input h-11 rounded-xl px-3 text-[10px]" /><select value={manual.category} onChange={(event) => setManual((current) => ({ ...current, category: event.target.value as CategoryId }))} className="amd-input h-11 rounded-xl bg-[#07111f] px-3 text-[10px]">{CATEGORIES.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input value={manual.latitude} onChange={(event) => setManual((current) => ({ ...current, latitude: event.target.value }))} placeholder="Latitude" inputMode="decimal" className="amd-input h-11 rounded-xl px-3 text-[10px]" /><input value={manual.longitude} onChange={(event) => setManual((current) => ({ ...current, longitude: event.target.value }))} placeholder="Longitude" inputMode="decimal" className="amd-input h-11 rounded-xl px-3 text-[10px]" /><input value={manual.address} onChange={(event) => setManual((current) => ({ ...current, address: event.target.value }))} placeholder={language === "en" ? "Address (optional)" : "ที่อยู่ (ถ้ามี)"} className="amd-input h-11 rounded-xl px-3 text-[10px] sm:col-span-2" /><input value={manual.area} onChange={(event) => setManual((current) => ({ ...current, area: event.target.value }))} placeholder={language === "en" ? "Area (optional)" : "พื้นที่ (ถ้ามี)"} className="amd-input h-11 rounded-xl px-3 text-[10px] sm:col-span-2" /></div><button type="button" onClick={addManualPlace} className="amd-btn amd-btn-primary mt-3 min-h-11 rounded-xl px-4 text-[10px] font-bold">{language === "en" ? "Add as unverified manual record" : "เพิ่มเป็นข้อมูล Manual ที่ยังไม่ Verified"}</button></div>}
+            </section>
 
-        {googleSearchOpen && <GoogleDiscoverySheet initialQuery="" center={DORM_CENTER} radiusMeters={2000} language={language} onClose={() => setGoogleSearchOpen(false)} onReviewCandidate={(candidate) => { setGoogleCandidate(candidate); setGoogleSearchOpen(false); }} />}
+            {googleSearchOpen && <GoogleDiscoverySheet initialQuery={CATEGORIES.find((item) => item.id === scopeCategory)?.name || ""} center={DORM_CENTER} radiusMeters={2000} language={language} onClose={() => setGoogleSearchOpen(false)} onStageCandidate={stageGoogleCandidate} />}
 
-        {googleCandidate && <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#00D9FF]">NEW PLACE CANDIDATE</p><p className="mt-1 text-[13px] font-semibold">{googleCandidate.name || "Google candidate"}</p><p className="mt-1 text-[8px] leading-4 text-[var(--amd-text-3)]">{googleCandidate.address || "—"}</p><p className="mt-1 text-[8px] text-[var(--amd-text-3)]">Google Place ID: {googleCandidate.googlePlaceId || "—"}</p></div><button type="button" onClick={() => { try { sessionStorage.removeItem("around-dorm-google-candidate-review-v1"); } catch {} setGoogleCandidate(null); }} className="amd-chip h-9 min-h-0 px-3 text-[8px]">{language === "en" ? "Ignore" : "ไม่ใช้"}</button></div><div className="mt-3 rounded-xl border border-amber-300/10 bg-amber-300/[0.05] p-3 text-[8px] leading-4 text-amber-100">{language === "en" ? "Temporary Google discovery candidate. Verify with an owned/authorized source before creating or updating a permanent internal record. Google Place ID may remain as the external identity link." : "Candidate ชั่วคราวจาก Google • ให้ตรวจด้วยแหล่ง Owned/Authorized ก่อนเพิ่มหรือแก้ข้อมูลถาวร โดยเก็บ Google Place ID เป็นตัวเชื่อมภายนอกได้"}</div></section>}
+            <GoogleMapsUsageDashboard language={language} />
+            <GoogleCloudAutoEnrichment places={places} language={language} onReload={onReload} adminAccess={adminAccess} />
+            <GoogleRouteRefresh places={places} language={language} onReload={onReload} adminAllowed={adminAccess.admin} />
+            <AdminPlatformDiagnostics places={places} language={language} />
+            <GooglePlaceIdManager places={places} language={language} onReload={onReload} />
+            <GoogleMaintenancePanel places={places} language={language} />
 
-        <GoogleMapsUsageDashboard language={language} />
+            {auditDone && <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-emerald-300" /><p className="text-[12px] font-semibold">{language === "en" ? "Local audit complete" : "ตรวจฐานข้อมูลเสร็จแล้ว"}</p></div><div className="mt-3 grid grid-cols-5 gap-1 text-center text-[8px] text-[var(--amd-text-3)]">{Object.entries(summary.freshness).map(([state, count]) => <div key={state} className="rounded-xl bg-white/[0.035] p-2"><p className="uppercase">{state}</p><p className="mt-1 text-[14px] font-semibold text-[var(--amd-text)]">{count}</p></div>)}</div></section>}
 
-        <GoogleCloudAutoEnrichment places={places} language={language} onReload={onReload} adminAccess={adminAccess} />
+            {importPlan && <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center justify-between"><p className="text-[12px] font-semibold">{language === "en" ? "Import staging summary" : "สรุป Candidate จาก Import"}</p><span className="text-[9px] text-[var(--amd-text-3)]">{importPlan.newPlaces.length}</span></div><p className="mt-3 text-[9px] leading-5 text-[var(--amd-text-3)]">{language === "en" ? "All new-place rows from this scan were staged to the Review Queue. Nothing was published automatically." : "ร้านใหม่จากการสแกนรอบนี้ถูกส่งเข้า Review Queue แล้วทั้งหมด • ไม่มีการ Publish อัตโนมัติ"}</p></section>}
 
-        <GoogleRouteRefresh places={places} language={language} onReload={onReload} adminAllowed={adminAccess.admin} />
+            <section className="amd-glass amd-card mt-4 p-4">
+              <div className="flex items-center justify-between"><div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-[#00D9FF]" /><p className="text-[12px] font-semibold">{language === "en" ? "Review Existing-Place Changes" : "ตรวจการเปลี่ยนแปลงร้านเดิม"}</p></div><span className="rounded-full bg-white/[0.06] px-2 py-1 text-[9px]">{pending.length}</span></div>
+              {!pending.length ? <p className="mt-3 text-[10px] leading-5 text-[var(--amd-text-3)]">{language === "en" ? "No approved provider diffs are waiting for review." : "ยังไม่มี Diff จาก Approved Importer รอตรวจ ระบบจะไม่เขียนทับ Production โดยตรง"}</p> : <div className="mt-3 space-y-2">{pending.slice(0, 30).map((change) => <div key={change.id} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold">{change.placeName}</p><p className="mt-1 text-[8px] uppercase text-[var(--amd-text-3)]">{change.risk} • {change.source}</p></div>{change.risk === "high" && <AlertTriangle className="h-4 w-4 text-amber-300" />}</div><div className="mt-2 space-y-1">{change.fields.slice(0, 6).map((field) => <div key={String(field.field)} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-2"><p className="text-[9px] font-semibold text-[var(--amd-text-2)]">{String(field.field)} <span className={`ml-1 uppercase ${field.risk === "high" ? "text-amber-200" : field.risk === "review" ? "text-[#8ecbff]" : "text-emerald-200"}`}>{field.risk}</span></p><p className="mt-1 break-all text-[8px] text-white/40">{String(field.previousValue ?? "—")} → <span className="text-white/75">{String(field.incomingValue ?? "—")}</span></p><div className="mt-2 flex gap-1.5"><button type="button" onClick={() => applySingleField(change.id, String(field.field))} className="amd-chip h-8 min-h-0 px-2 text-[8px] text-emerald-200">{language === "en" ? "Use New" : "ใช้ข้อมูลใหม่"}</button><button type="button" onClick={() => resolveFieldDecision(change.id, String(field.field))} className="amd-chip h-8 min-h-0 px-2 text-[8px]">{language === "en" ? "Keep Existing" : "ใช้ข้อมูลเดิม"}</button></div></div>)}</div><div className="mt-3 flex gap-2"><button type="button" onClick={() => applySafeChange(change.id)} className="amd-chip h-9 min-h-0 px-3 text-[9px] text-emerald-200">{language === "en" ? "Apply Safe Fields" : "ใช้เฉพาะ Safe Fields"}</button><button type="button" onClick={() => ignoreChange(change.id)} className="amd-chip h-9 min-h-0 px-3 text-[9px]">{language === "en" ? "Ignore" : "ข้าม"}</button></div></div>)}</div>}
+            </section>
 
-        <AdminPlatformDiagnostics places={places} language={language} />
+            <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-300" /><p className="text-[12px] font-semibold">{language === "en" ? "Possible duplicates" : "รายการที่อาจซ้ำ"}</p></div><p className="mt-1 text-[9px] text-[var(--amd-text-3)]">{duplicates.length} {language === "en" ? "pairs flagged by similar name + coordinate proximity" : "คู่ที่พบจากชื่อใกล้เคียง + พิกัดใกล้กัน"}</p>{duplicates.slice(0, 5).map(({ a, b }) => <div key={`${a.id}-${b.id}`} className="mt-2 rounded-xl bg-white/[0.035] p-3 text-[9px]"><p className="font-semibold">{a.name}</p><p className="mt-1 text-[var(--amd-text-3)]">↔ {b.name}</p></div>)}</section>
 
-        <GooglePlaceIdManager places={places} language={language} onReload={onReload} />
+            <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><History className="h-5 w-5 text-[#00D9FF]" /><p className="text-[12px] font-semibold">{language === "en" ? "Update History" : "ประวัติการอัปเดต"}</p></div>{!history.length ? <p className="mt-3 text-[10px] text-[var(--amd-text-3)]">{language === "en" ? "No approved updates applied yet." : "ยังไม่มีการ Apply ข้อมูลที่ผ่านการอนุมัติ"}</p> : history.slice(0, 12).map((entry) => <div key={entry.id} className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white/[0.035] p-3"><div className="min-w-0"><p className="truncate text-[10px] font-semibold">{entry.placeName}</p><p className="mt-1 text-[8px] text-[var(--amd-text-3)]">{new Date(entry.changedAt).toLocaleString()} • {entry.source}</p></div><button type="button" onClick={() => undo(entry)} className="amd-chip flex h-9 min-h-0 items-center gap-1 px-3 text-[9px]"><RotateCcw className="h-3.5 w-3.5" />{language === "en" ? "Undo" : "ย้อนกลับ"}</button></div>)}</section>
 
-        <GoogleMaintenancePanel places={places} language={language} />
-
-        {auditDone && <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-emerald-300" /><p className="text-[12px] font-semibold">{language === "en" ? "Local audit complete" : "ตรวจฐานข้อมูลเสร็จแล้ว"}</p></div><div className="mt-3 grid grid-cols-5 gap-1 text-center text-[8px] text-[var(--amd-text-3)]">{Object.entries(summary.freshness).map(([state, count]) => <div key={state} className="rounded-xl bg-white/[0.035] p-2"><p className="uppercase">{state}</p><p className="mt-1 text-[14px] font-semibold text-[var(--amd-text)]">{count}</p></div>)}</div></section>}
-
-        {importPlan && <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center justify-between"><p className="text-[12px] font-semibold">{language === "en" ? "New Place Candidates" : "ร้านใหม่ที่รอตรวจ"}</p><span className="text-[9px] text-[var(--amd-text-3)]">{importPlan.newPlaces.length}</span></div>{!importPlan.newPlaces.length ? <p className="mt-3 text-[9px] text-[var(--amd-text-3)]">{language === "en" ? "No new candidates in this import." : "ไม่มี Candidate ใหม่ในไฟล์นี้"}</p> : <div className="mt-3 space-y-2">{importPlan.newPlaces.slice(0, 30).map((item, index) => <div key={`${item.candidate.name}-${index}`} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><p className="text-[11px] font-semibold">{item.candidate.name}</p><p className="mt-1 text-[8px] text-[var(--amd-text-3)]">{item.candidate.category || "unknown"} • {item.candidate.latitude ?? "?"}, {item.candidate.longitude ?? "?"} • {item.candidate.sourceProvider}</p>{item.duplicateIds.length > 0 && <p className="mt-2 text-[9px] text-amber-200">Possible duplicate: {item.duplicateIds.join(", ")}</p>}<div className="mt-3 flex gap-2">{item.duplicateIds.length === 0 ? <button type="button" onClick={() => addCandidate(item)} className="amd-chip h-9 min-h-0 px-3 text-[9px] text-emerald-200">{language === "en" ? "Add" : "เพิ่ม"}</button> : <button type="button" onClick={() => addCandidate(item, true)} className="amd-chip h-9 min-h-0 px-3 text-[9px] text-amber-100">{language === "en" ? "Keep Separate" : "ยืนยันว่าแยกสาขา"}</button>}<button type="button" onClick={() => setImportPlan((current) => current ? { ...current, newPlaces: current.newPlaces.filter((candidateItem) => candidateItem !== item) } : current)} className="amd-chip h-9 min-h-0 px-3 text-[9px]">{language === "en" ? "Ignore" : "ข้าม"}</button></div></div>)}</div>}</section>}
-
-        <section className="amd-glass amd-card mt-4 p-4">
-          <div className="flex items-center justify-between"><div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-[#00D9FF]" /><p className="text-[12px] font-semibold">{language === "en" ? "Review Changes" : "ตรวจการเปลี่ยนแปลง"}</p></div><span className="rounded-full bg-white/[0.06] px-2 py-1 text-[9px]">{pending.length}</span></div>
-          {!pending.length ? <p className="mt-3 text-[10px] leading-5 text-[var(--amd-text-3)]">{language === "en" ? "No approved provider diffs are waiting for review." : "ยังไม่มี Diff จาก Approved Importer รอตรวจ ระบบจะไม่เขียนทับ Production โดยตรง"}</p> : <div className="mt-3 space-y-2">{pending.slice(0, 30).map((change) => <div key={change.id} className="rounded-2xl border border-white/[0.07] bg-black/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold">{change.placeName}</p><p className="mt-1 text-[8px] uppercase text-[var(--amd-text-3)]">{change.risk} • {change.source}</p></div>{change.risk === "high" && <AlertTriangle className="h-4 w-4 text-amber-300" />}</div><div className="mt-2 space-y-1">{change.fields.slice(0, 6).map((field) => <div key={String(field.field)} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-2"><p className="text-[9px] font-semibold text-[var(--amd-text-2)]">{String(field.field)} <span className={`ml-1 uppercase ${field.risk === "high" ? "text-amber-200" : field.risk === "review" ? "text-[#8ecbff]" : "text-emerald-200"}`}>{field.risk}</span></p><p className="mt-1 break-all text-[8px] text-white/40">{String(field.previousValue ?? "—")} → <span className="text-white/75">{String(field.incomingValue ?? "—")}</span></p><div className="mt-2 flex gap-1.5"><button type="button" onClick={() => applySingleField(change.id, String(field.field))} className="amd-chip h-8 min-h-0 px-2 text-[8px] text-emerald-200">{language === "en" ? "Use New" : "ใช้ข้อมูลใหม่"}</button><button type="button" onClick={() => resolveFieldDecision(change.id, String(field.field))} className="amd-chip h-8 min-h-0 px-2 text-[8px]">{language === "en" ? "Keep Existing" : "ใช้ข้อมูลเดิม"}</button></div></div>)}</div><div className="mt-3 flex gap-2"><button type="button" onClick={() => applySafeChange(change.id)} className="amd-chip h-9 min-h-0 px-3 text-[9px] text-emerald-200">{language === "en" ? "Apply Safe Fields" : "ใช้เฉพาะ Safe Fields"}</button><button type="button" onClick={() => ignoreChange(change.id)} className="amd-chip h-9 min-h-0 px-3 text-[9px]">{language === "en" ? "Ignore" : "ข้าม"}</button></div></div>)}</div>}
-        </section>
-
-        <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-300" /><p className="text-[12px] font-semibold">{language === "en" ? "Possible duplicates" : "รายการที่อาจซ้ำ"}</p></div><p className="mt-1 text-[9px] text-[var(--amd-text-3)]">{duplicates.length} {language === "en" ? "pairs flagged by similar name + coordinate proximity" : "คู่ที่พบจากชื่อใกล้เคียง + พิกัดใกล้กัน"}</p>{duplicates.slice(0, 5).map(({ a, b }) => <div key={`${a.id}-${b.id}`} className="mt-2 rounded-xl bg-white/[0.035] p-3 text-[9px]"><p className="font-semibold">{a.name}</p><p className="mt-1 text-[var(--amd-text-3)]">↔ {b.name}</p></div>)}</section>
-
-        <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><History className="h-5 w-5 text-[#00D9FF]" /><p className="text-[12px] font-semibold">{language === "en" ? "Update History" : "ประวัติการอัปเดต"}</p></div>{!history.length ? <p className="mt-3 text-[10px] text-[var(--amd-text-3)]">{language === "en" ? "No approved updates applied yet." : "ยังไม่มีการ Apply ข้อมูลที่ผ่านการอนุมัติ"}</p> : history.slice(0, 12).map((entry) => <div key={entry.id} className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white/[0.035] p-3"><div className="min-w-0"><p className="truncate text-[10px] font-semibold">{entry.placeName}</p><p className="mt-1 text-[8px] text-[var(--amd-text-3)]">{new Date(entry.changedAt).toLocaleString()} • {entry.source}</p></div><button type="button" onClick={() => undo(entry)} className="amd-chip flex h-9 min-h-0 items-center gap-1 px-3 text-[9px]"><RotateCcw className="h-3.5 w-3.5" />{language === "en" ? "Undo" : "ย้อนกลับ"}</button></div>)}</section>
-
-        <section className="mt-4 rounded-[20px] border border-white/[0.06] bg-black/10 p-4 text-[9px] leading-5 text-[var(--amd-text-3)]"><p>{language === "en" ? "Google Maps is used as the map engine only. Permanent business data stays in the Around My Dorm database. External discovery must be run intentionally through an approved maintenance importer." : "Google Maps ใช้เป็น Map Engine เท่านั้น ข้อมูลร้านถาวรอยู่ในฐานข้อมูล Around My Dorm และ External Discovery ต้องเรียกแบบตั้งใจผ่าน Approved Maintenance Importer เท่านั้น"}</p><p className="mt-2">{language === "en" ? `Refresh candidates in current mode: ${selected.length}` : `จำนวนรายการตามโหมดปัจจุบัน: ${selected.length}`}</p><p className="mt-1">{language === "en" ? `Sample freshness: ${places[0] ? freshnessState(places[0]) : "n/a"}` : `ตัวอย่าง Freshness: ${places[0] ? freshnessState(places[0]) : "ไม่มี"}`}</p></section>
+            <section className="mt-4 rounded-[20px] border border-white/[0.06] bg-black/10 p-4 text-[9px] leading-5 text-[var(--amd-text-3)]"><p>{language === "en" ? "Google Maps is used as the map engine only. Permanent business data stays in the Around My Dorm database. External discovery must be run intentionally through an approved maintenance importer." : "Google Maps ใช้เป็น Map Engine เท่านั้น ข้อมูลร้านถาวรอยู่ในฐานข้อมูล Around My Dorm และ External Discovery ต้องเรียกแบบตั้งใจผ่าน Approved Maintenance Importer เท่านั้น"}</p><p className="mt-2">{language === "en" ? `Refresh candidates in current mode: ${selected.length}` : `จำนวนรายการตามโหมดปัจจุบัน: ${selected.length}`}</p><p className="mt-1">{language === "en" ? `Sample freshness: ${places[0] ? freshnessState(places[0]) : "n/a"}` : `ตัวอย่าง Freshness: ${places[0] ? freshnessState(places[0]) : "ไม่มี"}`}</p></section>
           </>
         )}
       </section>

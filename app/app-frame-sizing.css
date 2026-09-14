@@ -1,0 +1,23 @@
+:root {
+  --amd-app-max-w: 519px;
+  --amd-page-gutter: clamp(16px, 4.6vw, 24px);
+}
+
+/* Keep the whole app in the approved phone-like frame on wider screens.
+   Height remains content-driven so long pages continue to scroll normally. */
+.amd-shell {
+  width: min(100%, var(--amd-app-max-w));
+  min-height: 100dvh;
+}
+
+.amd-page {
+  max-width: var(--amd-app-max-w);
+  padding-left: max(var(--amd-page-gutter), env(safe-area-inset-left));
+  padding-right: max(var(--amd-page-gutter), env(safe-area-inset-right));
+}
+
+.amd-nav {
+  left: max(var(--amd-page-gutter), env(safe-area-inset-left));
+  right: max(var(--amd-page-gutter), env(safe-area-inset-right));
+  max-width: calc(var(--amd-app-max-w) - (var(--amd-page-gutter) * 2));
+}
