@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import { AlertTriangle, Crosshair, Search } from "lucide-react";
 import { buildCoverageReport, type CoverageGap } from "@/lib/coverage/coverage";
 import type { Place } from "@/types/place";
