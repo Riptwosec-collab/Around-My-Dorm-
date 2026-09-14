@@ -92,10 +92,12 @@ describe("ReviewQueuePanel", () => {
     expect(onReviewLater).toHaveBeenCalledWith(duplicate.id);
   });
 
-  it("is mounted only after the centralized Data Management admin gate", () => {
-    const source = fs.readFileSync("components/DataManagement.tsx", "utf8");
-    expect(source).toContain('import { ReviewQueuePanel } from "@/components/ReviewQueuePanel";');
-    expect(source).toContain("<ReviewQueuePanel");
-    expect(source.indexOf("<ReviewQueuePanel")).toBeGreaterThan(source.indexOf("adminAccess.admin"));
+  it("is hosted by the existing admin-only data quality surface", () => {
+    const adminSource = fs.readFileSync("components/DataManagement.tsx", "utf8");
+    const hostSource = fs.readFileSync("components/DataQualityDashboard.tsx", "utf8");
+    expect(adminSource).toContain("<DataQualityDashboard");
+    expect(adminSource.indexOf("<DataQualityDashboard")).toBeGreaterThan(adminSource.indexOf("adminAccess.admin"));
+    expect(hostSource).toContain('import { ReviewQueuePanel } from "@/components/ReviewQueuePanel";');
+    expect(hostSource).toContain("<ReviewQueuePanel");
   });
 });
