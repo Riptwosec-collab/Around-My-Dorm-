@@ -1,4 +1,5 @@
 import type { FilterState } from "@/components/FilterSheet";
+import { buildRecommendationReasonLine } from "@/lib/discovery/recommendation-reasons";
 import { getPlaceOpenStatus, normalizeText } from "@/lib/place-utils";
 import type { CategoryId, Place, SortMode } from "@/types/place";
 
@@ -158,7 +159,9 @@ export function recommendationReasons(place: Place, context: RecommendationConte
   const now = context.now ?? new Date();
   const status = getPlaceOpenStatus(place, now);
   const hour = bangkokHour(now);
+  const knownFactsLine = buildRecommendationReasonLine(place, context, language);
 
+  if (knownFactsLine) reasons.push(knownFactsLine);
   if (status.isOpen === true) reasons.push(language === "en" ? "Open now" : "เปิดอยู่ตอนนี้");
   if (place.distanceKm != null && place.distanceKm <= 0.5) reasons.push(language === "en" ? "Very close" : "ใกล้มาก");
   if (preferred.has(place.category) || place.categories.some((category) => preferred.has(category))) reasons.push(language === "en" ? "Matches your interests" : "ตรงกับหมวดที่ชอบ");
