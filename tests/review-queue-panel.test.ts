@@ -65,7 +65,7 @@ describe("ReviewQueuePanel", () => {
     expect(screen.getByText(/P1/)).toBeInTheDocument();
     expect(screen.getByTestId("candidate-publish-blocked")).toBeInTheDocument();
     expect(screen.getAllByText("Same Cafe").length).toBeGreaterThan(0);
-    expect(screen.getByText(/0812345678/)).toBeInTheDocument();
+    expect(screen.getAllByText(/0812345678/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole("button", { name: /Publish|เผยแพร่/i })).toBeDisabled();
   });
 
