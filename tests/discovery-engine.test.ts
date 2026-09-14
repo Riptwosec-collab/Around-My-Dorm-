@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_FILTERS } from "@/components/FilterSheet";
 import { PLACES } from "@/data/places";
 import { deriveDiscoveryState, type DiscoveryInput } from "@/lib/discovery/derive-visible-places";
+import { parseDiscoveryQuery } from "@/lib/discovery/query-intent";
 import type { Place } from "@/types/place";
 
 const seed = PLACES[0]!;
@@ -28,6 +29,7 @@ function input(places: Place[] = [candidate("near")]): DiscoveryInput {
     origin,
     category: "all",
     query: "",
+    queryIntent: parseDiscoveryQuery(""),
     filters: EMPTY_FILTERS,
     radiusMeters: 500,
     mapSearchCenter: origin,
@@ -35,7 +37,7 @@ function input(places: Place[] = [candidate("near")]): DiscoveryInput {
     sortMode: "distanceAsc",
     verifiedOnly: false,
     recommendationContext: {},
-  };
+  } as DiscoveryInput;
 }
 
 describe("shared discovery engine", () => {
@@ -49,7 +51,12 @@ describe("shared discovery engine", () => {
     expect(result.allPlaces).toHaveLength(3);
     expect(result.visiblePlaces.map((place) => place.id)).toEqual(["near food", "near cafe"]);
 
-    const cafes = deriveDiscoveryState({ ...input(result.allPlaces), category: "cafe", query: "near" });
+    const cafes = deriveDiscoveryState({
+      ...input(result.allPlaces),
+      category: "cafe",
+      query: "near",
+      queryIntent: parseDiscoveryQuery("near"),
+    } as DiscoveryInput);
     expect(cafes.visiblePlaces.map((place) => place.id)).toEqual(["near cafe"]);
   });
 
@@ -66,5 +73,37 @@ describe("shared discovery engine", () => {
       filters: { ...EMPTY_FILTERS, verifiedOnly: true },
     });
     expect(result.visiblePlaces.map((place) => place.id)).toEqual(["verified"]);
+  });
+
+  it("applies natural query intent locally", () => {
+    const cheap = candidate("cheap open cafe", {
+      pricing: { ...seed.pricing, min: 50, max: 80, fixed: null, displayText: "฿50–80" },
+    });
+    const expensive = candidate("expensive cafe", {
+      pricing: { ...seed.pricing, min: 150, max: 180, fixed: null, displayText: "฿150–180" },
+    });
+    const query = "กาแฟไม่เกิน 100";
+    const result = deriveDiscoveryState({
+      ...input([cheap, expensive]),
+      query,
+      queryIntent: parseDiscoveryQuery(query),
+    } as DiscoveryInput);
+    expect(result.visiblePlaces.map((place) => place.id)).toEqual(["cheap open cafe"]);
+  });
+
+  it("uses only remaining free text and never fabricates walking data", () => {
+    const unknownWalking = candidate("ร้านป้าสมใจ", {
+      walkingMinutes: null,
+      distance: { ...seed.distance, walkingMinutes: null },
+    });
+    const query = "กาแฟ ร้านป้าสมใจ";
+    const result = deriveDiscoveryState({
+      ...input([unknownWalking]),
+      query,
+      queryIntent: parseDiscoveryQuery(query),
+    } as DiscoveryInput);
+    expect(result.visiblePlaces.map((place) => place.id)).toEqual(["ร้านป้าสมใจ"]);
+    expect(result.visiblePlaces[0]?.walkingMinutes).toBeNull();
+    expect(result.visiblePlaces[0]?.distance?.walkingMinutes).toBeNull();
   });
 });
