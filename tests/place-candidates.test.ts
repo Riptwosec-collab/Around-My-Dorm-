@@ -7,8 +7,8 @@ import {
   canPublishCandidate,
   createPlaceCandidate,
   materializeReviewedPlace,
-  resolveCandidateAsSeparate,
 } from "@/lib/maintenance/place-candidates";
+import { resolveCandidateAsSeparate } from "@/lib/maintenance/candidate-decisions";
 import { DORM_CENTER } from "@/lib/place-utils";
 
 const seed = PLACES[0]!;
