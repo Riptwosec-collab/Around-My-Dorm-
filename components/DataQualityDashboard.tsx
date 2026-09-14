@@ -5,14 +5,35 @@ import { BarChart3, CheckCircle2, ImageOff, MapPinned, PhoneOff, TimerOff } from
 import { CoverageDashboard } from "@/components/CoverageDashboard";
 import { ReviewQueuePanel } from "@/components/ReviewQueuePanel";
 import { buildDataCompletenessDashboard } from "@/lib/data-quality";
+import type { PlaceCandidate } from "@/lib/maintenance/place-candidates";
 import { buildReviewQueue } from "@/lib/maintenance/review-queue";
 import { buildDataHealthSummary } from "@/lib/place-data/data-health";
 import type { Place } from "@/types/place";
 
-export function DataQualityDashboard({ places, language }: { places: Place[]; language: "th" | "en" }) {
+type PendingChanges = Parameters<typeof buildReviewQueue>[0]["pendingChanges"];
+
+export function DataQualityDashboard({
+  places,
+  language,
+  candidates = [],
+  pendingChanges = [],
+  onPublishCandidate = () => undefined,
+  onRejectCandidate = () => undefined,
+  onKeepSeparate = () => undefined,
+  onReviewLater = () => undefined,
+}: {
+  places: Place[];
+  language: "th" | "en";
+  candidates?: PlaceCandidate[];
+  pendingChanges?: PendingChanges;
+  onPublishCandidate?: (candidateId: string) => void;
+  onRejectCandidate?: (candidateId: string) => void;
+  onKeepSeparate?: (candidateId: string) => void;
+  onReviewLater?: (candidateId: string) => void;
+}) {
   const quality = useMemo(() => buildDataCompletenessDashboard(places), [places]);
   const health = useMemo(() => buildDataHealthSummary(places), [places]);
-  const reviewItems = useMemo(() => buildReviewQueue({ places, candidates: [] }), [places]);
+  const reviewItems = useMemo(() => buildReviewQueue({ places, candidates, pendingChanges }), [places, candidates, pendingChanges]);
   const [phase2Message, setPhase2Message] = useState<string | null>(null);
   const tone = quality.average >= 85 ? "text-emerald-200" : quality.average >= 70 ? "text-cyan-200" : quality.average >= 50 ? "text-amber-100" : "text-rose-200";
   const cards = [
@@ -61,13 +82,13 @@ export function DataQualityDashboard({ places, language }: { places: Place[]; la
 
     <ReviewQueuePanel
       items={reviewItems}
-      candidates={[]}
+      candidates={candidates}
       places={places}
       language={language}
-      onPublishCandidate={() => undefined}
-      onRejectCandidate={() => undefined}
-      onKeepSeparate={() => undefined}
-      onReviewLater={() => undefined}
+      onPublishCandidate={onPublishCandidate}
+      onRejectCandidate={onRejectCandidate}
+      onKeepSeparate={onKeepSeparate}
+      onReviewLater={onReviewLater}
     />
   </>;
 }
