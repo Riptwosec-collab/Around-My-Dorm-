@@ -6,9 +6,15 @@ describe("Phase 2A candidate staging flow", () => {
   const googleSheet = fs.readFileSync("components/GoogleDiscoverySheet.tsx", "utf8");
 
   it("loads staged candidates only in the admin maintenance flow", () => {
-    expect(dataManagement).toContain('loadPlaceCandidates(["new", "needs_review"])');
+    const adminGuardIndex = dataManagement.indexOf("if (!adminAccess.admin)");
+    const adminCandidateLoadIndex = dataManagement.indexOf(
+      'loadPlaceCandidates(["new", "needs_review"])',
+      adminGuardIndex,
+    );
+
+    expect(adminGuardIndex).toBeGreaterThan(-1);
     expect(dataManagement).toContain("setStagedCandidates([])");
-    expect(dataManagement.indexOf("loadPlaceCandidates")).toBeGreaterThan(dataManagement.indexOf("adminAccess.admin"));
+    expect(adminCandidateLoadIndex).toBeGreaterThan(adminGuardIndex);
   });
 
   it("stages approved-import new places instead of publishing during import review", () => {
