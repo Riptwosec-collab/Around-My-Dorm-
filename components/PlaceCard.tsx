@@ -53,6 +53,7 @@ export function PlaceCard({
   onDetail,
   onMap,
   contextMeta,
+  recommendationReason,
   language = "th",
 }: {
   place: Place;
@@ -61,6 +62,7 @@ export function PlaceCard({
   onDetail: () => void;
   onMap: () => void;
   contextMeta?: string;
+  recommendationReason?: string;
   language?: "th" | "en";
 }) {
   const category = CATEGORY_MAP[place.category];
@@ -127,6 +129,11 @@ export function PlaceCard({
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[var(--amd-text-2)]">
               <span className="font-medium">{price}</span><span className="text-[var(--amd-text-3)]">•</span><span>{formatDistance(place.distanceKm)}</span>
             </div>
+            {recommendationReason && (
+              <p data-testid="place-recommendation-reason" className="text-[10px] font-medium leading-4 text-[#8ecbff]">
+                {recommendationReason}
+              </p>
+            )}
             {(place.walkingMinutes != null || place.distance?.motorcycleMinutes != null || place.drivingMinutes != null) && (
               <div className="flex flex-wrap items-center gap-2 text-[9px] leading-4 text-[var(--amd-text-3)]">
                 {place.walkingMinutes != null && <span>{language === "en" ? "Walk" : "เดิน"} {place.walkingMinutes} {language === "en" ? "min" : "นาที"}</span>}
