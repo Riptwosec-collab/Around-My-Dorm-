@@ -7,6 +7,7 @@ import {
   canPublishCandidate,
   createPlaceCandidate,
   materializeReviewedPlace,
+  resolveCandidateAsSeparate,
 } from "@/lib/maintenance/place-candidates";
 import { DORM_CENTER } from "@/lib/place-utils";
 
@@ -102,6 +103,30 @@ describe("staged place candidate domain", () => {
     expect(candidate.possibleMatchIds).toContain("existing");
     expect(candidate.validationIssues.some((issue) => issue.code === "possible_duplicate")).toBe(true);
     expect(canPublishCandidate(candidate).allowed).toBe(false);
+  });
+
+  it("can record an explicit keep-separate decision without mutating canonical matches", () => {
+    const places = [canonical("existing", { name: "Same Cafe", latitude: DORM_CENTER.lat + 0.001, longitude: DORM_CENTER.lng })];
+    const candidate = createPlaceCandidate({
+      places,
+      sourceProvider: "approved_import",
+      proposedPlace: {
+        name: "Same Cafe",
+        category: "cafe",
+        categories: ["cafe"],
+        latitude: DORM_CENTER.lat + 0.0011,
+        longitude: DORM_CENTER.lng,
+        source: ["approved_import"],
+      },
+      now: "2026-09-14T03:00:00.000Z",
+    });
+
+    const reviewed = resolveCandidateAsSeparate(candidate, "admin@example.com", "2026-09-14T04:00:00.000Z");
+    expect(reviewed.possibleMatchIds).toEqual([]);
+    expect(reviewed.validationIssues.some((issue) => issue.code === "possible_duplicate")).toBe(false);
+    expect(reviewed.reviewedBy).toBe("admin@example.com");
+    expect(reviewed.reviewedAt).toBe("2026-09-14T04:00:00.000Z");
+    expect(canPublishCandidate(reviewed).allowed).toBe(true);
   });
 
   it("blocks invalid coordinates and missing category", () => {
