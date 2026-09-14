@@ -75,6 +75,9 @@ export function PlaceCard({
   const copy = getCopy(language);
   const dataQuality = scorePlaceDataQuality(place);
   const ageLabel = dataAgeLabel(place, language);
+  const contextualRecommendationReason = !recommendationReason && contextMeta?.includes(" • ") ? contextMeta : undefined;
+  const reasonLine = recommendationReason ?? contextualRecommendationReason;
+  const displayContextMeta = contextualRecommendationReason ? undefined : contextMeta;
 
   const statusClass =
     status.tone === "green" || status.tone === "cyan"
@@ -111,7 +114,7 @@ export function PlaceCard({
                 {category?.name || (language === "en" ? "Place" : "สถานที่")}{place.area ? ` • ${place.area}` : ""}
               </p>
             </div>
-            {contextMeta && <span className="shrink-0 text-[9px] text-[var(--amd-text-3)]">{contextMeta}</span>}
+            {displayContextMeta && <span className="shrink-0 text-[9px] text-[var(--amd-text-3)]">{displayContextMeta}</span>}
           </div>
 
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -129,9 +132,9 @@ export function PlaceCard({
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[var(--amd-text-2)]">
               <span className="font-medium">{price}</span><span className="text-[var(--amd-text-3)]">•</span><span>{formatDistance(place.distanceKm)}</span>
             </div>
-            {recommendationReason && (
+            {reasonLine && (
               <p data-testid="place-recommendation-reason" className="text-[10px] font-medium leading-4 text-[#8ecbff]">
-                {recommendationReason}
+                {reasonLine}
               </p>
             )}
             {(place.walkingMinutes != null || place.distance?.motorcycleMinutes != null || place.drivingMinutes != null) && (
