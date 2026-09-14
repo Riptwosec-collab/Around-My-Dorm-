@@ -48,21 +48,21 @@ describe("Google photo cloud metadata", () => {
   it("loads persisted metadata in the manual Google Photos control and records a result code", () => {
     const control = read("components/GoogleBulkPhotoRuntimeControl.tsx");
     const budget = read("lib/google-api-budget.ts");
-    const schema = read("supabase/schema.sql");
+    const migration = read("supabase/google-photo-cloud-metadata.sql");
 
     expect(control).toContain("loadGooglePhotoCloudMetadata");
     expect(control).toContain("resultCode:");
     expect(control).toContain("Cloud metadata");
     expect(budget).toContain("resultCode?:");
-    expect(schema).toContain("result_code text");
+    expect(migration).toContain("result_code text");
   });
 
   it("does not add persistent Google photo URI, photo name, or binary fields", () => {
-    const schema = read("supabase/schema.sql");
+    const migration = read("supabase/google-photo-cloud-metadata.sql");
     const cloudMetadata = read("lib/google-photo-cloud-metadata.ts");
 
-    expect(schema).not.toContain("google_photo_uri");
-    expect(schema).not.toContain("google_photo_name");
+    expect(migration).not.toContain("google_photo_uri");
+    expect(migration).not.toContain("google_photo_name");
     expect(cloudMetadata).not.toContain("photoUri");
     expect(cloudMetadata).not.toContain("photoName");
     expect(cloudMetadata).not.toContain("Blob");
