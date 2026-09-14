@@ -1,46 +1,42 @@
 # Around My Dorm V2 Phase 2A — Coverage, Candidate Pipeline, and Review Queue Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Every task follows RED → GREEN → regression → commit.
 
-**Goal:** Add a production-ready, admin-only Phase 2A maintenance pipeline that measures coverage around Baan Supar, stages new place candidates separately from published places, derives a unified review queue, and connects explicit Google/Admin discovery to that staging flow without changing public browsing or Google request behavior.
+**Goal:** Add an admin-only Phase 2A maintenance pipeline that measures coverage around Baan Supar, stages new place candidates separately from published places, derives a unified review queue, and connects explicit Google/Admin discovery to staging without changing public browsing or Google request behavior.
 
-**Architecture:** Keep Phase 1 normalization/data-health as the source of truth for canonical records. Add pure coverage/review modules under `lib/`, cloud candidate persistence under `lib/storage`, and focused admin UI components instead of growing `DataManagement.tsx` further. Reuse the current import plan, provenance protection, Google request manager, Admin gate, and reviewed-place persistence; candidate records remain invisible to public Home/Explore/Map until explicitly published.
+**Architecture:** Keep Phase 1 normalization and data-health as the canonical diagnostics layer. Add pure coverage/review modules under `lib/`, cloud candidate persistence under `lib/storage`, and focused admin components instead of expanding `DataManagement.tsx` with more business logic. Reuse current import matching behavior, provenance protection, Google request manager, centralized Admin gate, reviewed-place writes, history, and rollback paths.
 
 **Tech Stack:** Next.js 15.5+, React 19.1+, TypeScript 5.8+, Vitest 3.2+, Testing Library, Playwright 1.55+, Supabase JS 2.116+, Cloudflare Workers/Wrangler 4.68+. No new npm dependency is required.
 
-**Spec:** `docs/superpowers/specs/2026-09-14-around-my-dorm-v2-phases-2-6-design.md`
+**Approved Spec:** `docs/superpowers/specs/2026-09-14-around-my-dorm-v2-phases-2-6-design.md`
 
 ## Global Constraints
 
-- Normal Home, Explore, Map, Saved, Recent, Place Detail, search, filters, scrolling, and marker selection remain stored-data-first and must not trigger Google Places discovery.
-- Saved Cloud Map remains the default map provider; this plan does not change Map V2 behavior.
-- Google search remains an explicit Admin action protected by the existing request estimate, confirmation, usage tracking, and request caps.
-- Search results must enter Candidate Staging first; they must not become public `Place` records automatically.
-- Do not auto-request Google details or photos after search. Details/photos remain separate explicit actions.
-- Unknown hours, price, photo, phone, parking, rating, route time, or amenity data remains unknown; never fabricate values to satisfy completeness targets.
-- Existing canonical IDs, slugs, favorites, collections, recent views, curated metadata, provenance, and high-confidence values must be preserved.
-- Candidate matching assists review only. Never auto-merge a possible duplicate.
-- Lower-confidence provider data must not silently overwrite stronger curated/verified fields; continue using `prepareProvenancePatch()` / `applyLocalPlacePatch()` for canonical mutations.
-- Candidate persistence is cloud-only. Do not add `localStorage` persistence; transient Google response state may remain memory/session-scoped until explicitly staged.
-- Public components must never query the candidate table.
-- The first 150–200-place curation wave is a separate operational/data plan after this infrastructure is merged; this implementation plan builds the safe pipeline that wave will use.
-- No production deployment in this plan. Use `wrangler deploy --dry-run` only for final verification.
-- Each task follows TDD: write a failing test, confirm RED, implement the smallest coherent change, confirm GREEN, run relevant regressions, then commit.
+- Home, Explore, Map, Saved, Recent, Place Detail, search, filters, scrolling, and marker selection remain stored-data-first and must not trigger Google Places discovery.
+- Saved Cloud Map remains the default provider. Phase 2A does not implement Map V2.
+- Google discovery remains an explicit Admin action behind the existing estimate, confirmation, usage, and cap controls.
+- Search results enter Candidate Staging first and never become public `Place` records automatically.
+- Google details/photos are separate explicit actions; no fan-out enrichment after search.
+- Unknown hours, prices, images, phone, parking, rating, route time, or amenities stay unknown.
+- Existing canonical IDs/slugs, Favorites, Collections, Recent, curated metadata, source/provenance, and stronger verified values must remain intact.
+- Matching assists review only. No automatic destructive duplicate merge.
+- Canonical mutations continue through `prepareProvenancePatch()`, `applyLocalPlacePatch()`, and `addReviewedLocalPlace()` so weaker provider data cannot silently replace stronger values.
+- Candidate persistence is cloud-only. Do not use `localStorage` for app records.
+- Public app modules must never query or import candidate storage.
+- Candidate storage must be admin-only at **both UI and Supabase RLS levels**.
+- The actual 150–200-place curation wave is a separate operational/data plan after this infrastructure is merged.
+- No production deploy in Phase 2A. Final deployment check is `wrangler deploy --dry-run` only.
 
----
+## New Files
 
-## File Structure Locked by This Plan
-
-### New files
-
-- `lib/coverage/coverage.ts` — pure coverage rings, metrics, and gap derivation.
-- `lib/maintenance/candidate-matching.ts` — reusable deterministic candidate-to-place identity scoring.
-- `lib/maintenance/place-candidates.ts` — candidate domain model, validation, publish gate, and Google/import adapters.
-- `lib/maintenance/review-queue.ts` — unified P0–P3 review item derivation/filtering.
-- `lib/storage/place-candidates.ts` — Supabase persistence for staged candidates.
-- `components/CoverageDashboard.tsx` — admin-only coverage matrix/gap UI.
-- `components/ReviewQueuePanel.tsx` — admin-only review list and candidate decisions.
-- `supabase/place-candidates.sql` — idempotent candidate staging table/index/RLS setup.
+- `lib/coverage/coverage.ts`
+- `lib/maintenance/candidate-matching.ts`
+- `lib/maintenance/place-candidates.ts`
+- `lib/maintenance/review-queue.ts`
+- `lib/storage/place-candidates.ts`
+- `components/CoverageDashboard.tsx`
+- `components/ReviewQueuePanel.tsx`
+- `supabase/place-candidates.sql`
 - `tests/coverage-analyzer.test.ts`
 - `tests/candidate-matching.test.ts`
 - `tests/place-candidates.test.ts`
@@ -48,30 +44,25 @@
 - `tests/coverage-dashboard-v2.test.tsx`
 - `tests/review-queue-panel.test.tsx`
 - `tests/place-candidate-storage-policy.test.ts`
+- `e2e/data-management-coverage.spec.ts`
 
-### Modified files
+## Modified Files
 
-- `lib/maintenance/import-plan.ts` — delegate identity scoring to shared matcher and expose new candidates for staging.
-- `components/DataManagement.tsx` — load staged candidates, add Coverage/Review surfaces, stage imports/Google results, publish/reject/keep-separate decisions.
-- `components/GoogleDiscoverySheet.tsx` — preserve explicit request behavior but change the review handoff to staging-friendly callback metadata.
-- `lib/storage/place-updates.ts` — unchanged public behavior; only reuse where existing-place field diffs remain appropriate.
-- `lib/database/places.ts` — reuse `addReviewedLocalPlace()` / `applyLocalPlacePatch()`; do not mix candidates into `loadPlacesFromDatabase()`.
-- `supabase/schema.sql` — include the same candidate table definition for clean project bootstrap.
-- `tests/cloud-only-storage.test.ts` — add candidate storage module to cloud-only policy coverage.
-- `tests/data-management-admin-gate.test.ts` — assert candidate/review tools remain behind the centralized Admin gate.
-- `e2e/p0-google-api-lock.spec.ts` — keep zero Google Places calls before explicit Admin action.
+- `lib/maintenance/import-plan.ts`
+- `components/DataManagement.tsx`
+- `components/GoogleDiscoverySheet.tsx`
+- `supabase/schema.sql`
+- `tests/cloud-only-storage.test.ts`
+- `tests/data-management-admin-gate.test.ts`
+- `e2e/p0-google-api-lock.spec.ts`
 
 ---
 
-### Task 1: Build the pure Coverage Analyzer
+## Task 1 — Pure Coverage Analyzer
 
-**Files:**
-- Create: `lib/coverage/coverage.ts`
-- Create: `tests/coverage-analyzer.test.ts`
+**Files:** create `lib/coverage/coverage.ts`, create `tests/coverage-analyzer.test.ts`.
 
-**Interfaces:**
-- Consumes: `Place[]`, `DORM_CENTER`, `haversineKm()`, `scorePlaceDataQuality()`, `buildDataHealthSummary()`.
-- Produces:
+### Public interfaces
 
 ```ts
 export type CoverageRingId = "r1" | "r2" | "r3" | "r4" | "r5";
@@ -132,7 +123,7 @@ export function buildCoverageReport(
 ): CoverageReport;
 ```
 
-Use fixed rings exactly:
+Use exactly these rings:
 
 ```ts
 export const COVERAGE_RINGS: CoverageRing[] = [
@@ -144,7 +135,7 @@ export const COVERAGE_RINGS: CoverageRing[] = [
 ];
 ```
 
-Coverage gap rules in this task are deterministic and configurable, not provider-backed:
+Initial low-count thresholds are deliberately conservative and configurable:
 
 ```ts
 export const COVERAGE_CATEGORY_MINIMUMS: Partial<Record<CoverageRingId, Record<string, number>>> = {
@@ -154,89 +145,21 @@ export const COVERAGE_CATEGORY_MINIMUMS: Partial<Record<CoverageRingId, Record<s
 };
 ```
 
-R4/R5 still report counts/completeness but do not emit low-count gaps until real data justifies tuned targets.
+R4/R5 report counts/completeness but do not emit category-minimum gaps until real data supports tuned thresholds.
 
-- [ ] **Step 1: Write failing tests**
+### TDD steps
 
-```ts
-import { describe, expect, it } from "vitest";
-import { PLACES } from "@/data/places";
-import { buildCoverageReport } from "@/lib/coverage/coverage";
-import { DORM_CENTER } from "@/lib/place-utils";
-
-const seed = PLACES[0]!;
-const place = (id: string, latitude: number, longitude: number, overrides = {}) => ({
-  ...seed,
-  id,
-  slug: id,
-  name: id,
-  category: "cafe" as const,
-  categories: ["cafe" as const],
-  latitude,
-  longitude,
-  verified: true,
-  lastChecked: "2026-09-01T00:00:00.000Z",
-  ...overrides,
-});
-
-describe("coverage analyzer", () => {
-  it("assigns a place to exactly one distance ring", () => {
-    const report = buildCoverageReport([
-      place("near", DORM_CENTER.lat + 0.001, DORM_CENTER.lng),
-      place("far", DORM_CENTER.lat + 0.012, DORM_CENTER.lng),
-    ]);
-    expect(report.rings.find((ring) => ring.ring.id === "r1")?.placeIds).toContain("near");
-    expect(report.rings.flatMap((ring) => ring.placeIds).filter((id) => id === "near")).toHaveLength(1);
-  });
-
-  it("computes completeness percentages without network access", () => {
-    const report = buildCoverageReport([
-      place("a", DORM_CENTER.lat + 0.001, DORM_CENTER.lng, { image: null, images: [], googleMapsUrl: null }),
-      place("b", DORM_CENTER.lat + 0.0015, DORM_CENTER.lng),
-    ]);
-    const r1 = report.rings.find((ring) => ring.ring.id === "r1")!;
-    expect(r1.total).toBe(2);
-    expect(r1.coordinateCoverage).toBe(100);
-    expect(r1.mapsCoverage).toBeLessThanOrEqual(100);
-  });
-
-  it("emits an actionable low-category gap instead of fabricating places", () => {
-    const report = buildCoverageReport([place("only-cafe", DORM_CENTER.lat + 0.001, DORM_CENTER.lng)]);
-    expect(report.gaps.some((gap) => gap.code === "low_category_count" && gap.ringId === "r1")).toBe(true);
-  });
-});
-```
-
-- [ ] **Step 2: Confirm RED**
-
-Run:
-
-```bash
-npm test -- tests/coverage-analyzer.test.ts
-```
-
-Expected: FAIL because `@/lib/coverage/coverage` does not exist.
-
-- [ ] **Step 3: Implement the minimal analyzer**
-
-Implementation rules:
-- Use `haversineKm()` only; no route estimates.
-- Ignore coordinate-less places for ring assignment but keep them in the global total.
-- Use `scorePlaceDataQuality()` for `photo`, `openingHours`, and `price` missing state instead of duplicating those checks.
-- Use `buildDataHealthSummary()` to derive stale/duplicate counts for each ring subset.
-- Percentage helper returns `0` for an empty ring.
-- Gap derivation never calls Google and only emits diagnostics.
-
-- [ ] **Step 4: Confirm GREEN and regressions**
+- [ ] Write tests proving a place belongs to one ring only, coordinate-less places stay outside ring counts, completeness percentages are local-only, and low-count gaps are diagnostic only.
+- [ ] Run `npm test -- tests/coverage-analyzer.test.ts`; confirm RED because the module does not exist.
+- [ ] Implement with `DORM_CENTER`, `haversineKm()`, `scorePlaceDataQuality()`, and `buildDataHealthSummary()`. Never derive route time.
+- [ ] Run:
 
 ```bash
 npm test -- tests/coverage-analyzer.test.ts tests/data-health.test.ts tests/data-quality.test.ts
 npm run typecheck
 ```
 
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
+- [ ] Commit:
 
 ```bash
 git add lib/coverage/coverage.ts tests/coverage-analyzer.test.ts
@@ -245,14 +168,11 @@ git commit -m "feat: add coverage analyzer and gap detection"
 
 ---
 
-### Task 2: Extract reusable candidate identity matching
+## Task 2 — Shared Candidate Identity Matching
 
-**Files:**
-- Create: `lib/maintenance/candidate-matching.ts`
-- Create: `tests/candidate-matching.test.ts`
-- Modify: `lib/maintenance/import-plan.ts`
+**Files:** create `lib/maintenance/candidate-matching.ts`, create `tests/candidate-matching.test.ts`, modify `lib/maintenance/import-plan.ts`.
 
-**Interfaces:**
+### Interfaces
 
 ```ts
 export type CandidateIdentity = {
@@ -282,57 +202,23 @@ export function resolveCandidateMatch(places: Place[], candidate: CandidateIdent
 };
 ```
 
-Preserve current import matching weights exactly to avoid behavior drift:
-- provider/source ID or Google Place ID match: +100
-- exact normalized name: +45
-- name contains other normalized name: +22
-- distance ≤50 m: +40
-- distance ≤150 m: +24
-- distance ≤500 m: +8
-- farther than 500 m when both coordinates exist: -35
-- exact normalized address: +20
-- normalized phone match: +25
-- normalized website match: +20
-- confident existing match threshold: 65
-- if top two scores differ by <10 and top score <100, mark ambiguous instead of auto-matching.
+Preserve the current `import-plan.ts` scoring exactly: source/Google identity +100; exact normalized name +45; containment +22; distance ≤50m +40, ≤150m +24, ≤500m +8, farther than 500m -35; exact address +20; phone +25; website +20; confident-match threshold 65; top-two delta <10 with top <100 is ambiguous.
 
-- [ ] **Step 1: Write failing matcher tests**
+### TDD steps
 
-Include tests for exact Google identity, nearby exact-name scoring, far-away penalty, and ambiguous top-two results. Also test that an ambiguous result returns possible IDs but never a merged/published decision.
-
-- [ ] **Step 2: Confirm RED**
-
-```bash
-npm test -- tests/candidate-matching.test.ts
-```
-
-- [ ] **Step 3: Move matching logic out of `import-plan.ts`**
-
-`buildImportPlan()` must call `resolveCandidateMatch()` and preserve its existing output shape for existing consumers.
-
-- [ ] **Step 4: Confirm GREEN and import regression**
-
-```bash
-npm test -- tests/candidate-matching.test.ts
-npm run typecheck
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/maintenance/candidate-matching.ts lib/maintenance/import-plan.ts tests/candidate-matching.test.ts
-git commit -m "refactor: centralize candidate identity matching"
-```
+- [ ] Write RED tests for exact Google identity, nearby same-name, far-away penalty, and ambiguous top-two results. Ambiguity must never yield merge/publication.
+- [ ] Run `npm test -- tests/candidate-matching.test.ts`; confirm RED.
+- [ ] Extract scoring from `import-plan.ts`; make `buildImportPlan()` call `resolveCandidateMatch()` while preserving current consumer output.
+- [ ] Run `npm test -- tests/candidate-matching.test.ts && npm run typecheck`.
+- [ ] Commit `refactor: centralize candidate identity matching`.
 
 ---
 
-### Task 3: Add the staged candidate domain and publish gate
+## Task 3 — Staged Candidate Domain + Publish Gate
 
-**Files:**
-- Create: `lib/maintenance/place-candidates.ts`
-- Create: `tests/place-candidates.test.ts`
+**Files:** create `lib/maintenance/place-candidates.ts`, create `tests/place-candidates.test.ts`.
 
-**Interfaces:**
+### Interfaces
 
 ```ts
 export type PlaceCandidateStatus = "new" | "needs_review" | "approved" | "rejected" | "merged";
@@ -360,7 +246,14 @@ export type PlaceCandidate = {
   reviewedBy: string | null;
 };
 
-export function buildCandidateKey(sourceProvider: string, sourceId: string | null, name: string, latitude?: number | null, longitude?: number | null): string;
+export function buildCandidateKey(
+  sourceProvider: string,
+  sourceId: string | null,
+  name: string,
+  latitude?: number | null,
+  longitude?: number | null,
+): string;
+
 export function createPlaceCandidate(input: {
   places: Place[];
   sourceProvider: string;
@@ -368,64 +261,35 @@ export function createPlaceCandidate(input: {
   proposedPlace: Partial<Place> & { name: string };
   now?: string;
 }): PlaceCandidate;
-export function canPublishCandidate(candidate: PlaceCandidate): { allowed: boolean; blockers: string[] };
-```
 
-Adapters:
+export function candidateFromGoogle(
+  result: GoogleDiscoveryCandidate,
+  places: Place[],
+  category?: CategoryId | null,
+): PlaceCandidate;
 
-```ts
-export function candidateFromGoogle(result: GoogleDiscoveryCandidate, places: Place[], category?: CategoryId | null): PlaceCandidate;
 export function candidateFromImport(result: ImportCandidate, places: Place[]): PlaceCandidate;
+export function canPublishCandidate(candidate: PlaceCandidate): { allowed: boolean; blockers: string[] };
+export function materializeReviewedPlace(candidate: PlaceCandidate): Place;
 ```
 
-Rules:
-- Candidate is not a `Place` and must never be inserted into public arrays.
-- `candidateFromGoogle()` maps search-response fields only; do not invent hours, price, phone, photos, or amenities.
-- Google search rating/review count may remain in the staged payload if provider policy permits review display, but no automatic canonical persistence happens here.
-- Missing name/category or invalid present coordinates create blockers.
-- Any possible identity match sets status `needs_review`; no auto-merge.
-- `canPublishCandidate()` requires name, valid category, valid coordinates for this Phase 2A flow, provenance/source, no P0 blockers, and no unresolved possible duplicate.
+Rules: Candidate is never a public `Place`; Google adapter maps only fields from search response; missing/invalid required identity data blocks publication; possible match makes status `needs_review`; completeness is informational and never bypasses blockers.
 
-- [ ] **Step 1: Write failing candidate tests**
+### TDD steps
 
-Test Google adaptation, import adaptation, possible-duplicate status, invalid-coordinate blocker, and publish gate.
-
-- [ ] **Step 2: Confirm RED**
-
-```bash
-npm test -- tests/place-candidates.test.ts
-```
-
-- [ ] **Step 3: Implement the domain module**
-
-Use `scorePlaceDataQuality()` on a temporary normalized candidate-shaped `Place` only for completeness scoring; completeness never grants publish permission by itself.
-
-- [ ] **Step 4: Confirm GREEN**
-
-```bash
-npm test -- tests/place-candidates.test.ts tests/candidate-matching.test.ts
-npm run typecheck
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/maintenance/place-candidates.ts tests/place-candidates.test.ts
-git commit -m "feat: add staged place candidate domain"
-```
+- [ ] Write tests for Google/import adapters, duplicate status, invalid coordinates, source provenance, publish blockers, and unknown field preservation.
+- [ ] Confirm RED with `npm test -- tests/place-candidates.test.ts`.
+- [ ] Implement domain functions; use existing `scorePlaceDataQuality()` only for completeness display.
+- [ ] Run `npm test -- tests/place-candidates.test.ts tests/candidate-matching.test.ts && npm run typecheck`.
+- [ ] Commit `feat: add staged place candidate domain`.
 
 ---
 
-### Task 4: Persist candidates in Supabase without exposing them to public browsing
+## Task 4 — Admin-Only Candidate Persistence in Supabase
 
-**Files:**
-- Create: `supabase/place-candidates.sql`
-- Modify: `supabase/schema.sql`
-- Create: `lib/storage/place-candidates.ts`
-- Create: `tests/place-candidate-storage-policy.test.ts`
-- Modify: `tests/cloud-only-storage.test.ts`
+**Files:** create `supabase/place-candidates.sql`, modify `supabase/schema.sql`, create `lib/storage/place-candidates.ts`, create `tests/place-candidate-storage-policy.test.ts`, modify `tests/cloud-only-storage.test.ts`.
 
-**Database shape:**
+### Database model
 
 ```sql
 create table if not exists public.amd_place_candidates (
@@ -453,18 +317,26 @@ create index if not exists amd_place_candidates_user_status_idx
 alter table public.amd_place_candidates enable row level security;
 revoke all on table public.amd_place_candidates from anon;
 grant select, insert, update, delete on table public.amd_place_candidates to authenticated;
+```
 
+### Database-level Admin authorization — mandatory
+
+Do **not** use a policy that checks only `auth.uid() = user_id`.
+
+Refactor the **exact existing Admin authorization predicate currently embedded in `public.amd_google_usage_summary()`** into a shared `public.amd_is_admin()` security-definer boolean helper, without changing any of its current authorization conditions. Replace the duplicated predicate inside `amd_google_usage_summary()` with a call to the helper, then use the same helper in candidate RLS:
+
+```sql
 do $$ begin
-  create policy "amd own place candidates" on public.amd_place_candidates
+  create policy "amd admin place candidates" on public.amd_place_candidates
   for all to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (auth.uid() = user_id and public.amd_is_admin())
+  with check (auth.uid() = user_id and public.amd_is_admin());
 exception when duplicate_object then null; end $$;
 ```
 
-This table is additionally guarded in-app by the existing centralized `AdminGoogleAccess` gate; public app code never imports the storage module.
+This keeps current Admin-login compatibility while ensuring a normal authenticated user cannot read/write candidate staging directly through Supabase.
 
-**Storage interfaces:**
+### Storage interfaces
 
 ```ts
 export async function loadPlaceCandidates(status?: PlaceCandidateStatus[]): Promise<PlaceCandidate[]>;
@@ -477,47 +349,34 @@ export async function updatePlaceCandidateDecision(
 export async function deletePlaceCandidate(candidateId: string): Promise<void>;
 ```
 
-- [ ] **Step 1: Write policy/storage source tests first**
+Map rows explicitly; reject malformed payload/status values instead of trusting arbitrary JSON.
 
-The test should assert:
-- `lib/storage/place-candidates.ts` does not contain `localStorage`.
-- It references `amd_place_candidates`.
-- `AroundMyDormApp.tsx`, discovery modules, and public map modules do not import `place-candidates`.
-- `supabase/place-candidates.sql` enables RLS and revokes anon access.
+### TDD steps
 
-- [ ] **Step 2: Confirm RED**
+- [ ] Write source/policy tests first. Assert candidate storage is cloud-only, references `amd_place_candidates`, public modules do not import it, SQL enables RLS/revokes anon, policy includes `public.amd_is_admin()`, and a user-only policy is not present.
+- [ ] Confirm RED:
 
 ```bash
 npm test -- tests/place-candidate-storage-policy.test.ts tests/cloud-only-storage.test.ts
 ```
 
-- [ ] **Step 3: Implement SQL and storage adapter**
-
-Map DB rows explicitly to `PlaceCandidate`; never trust arbitrary row payload without checking `payload.name`, status membership, and arrays.
-
-- [ ] **Step 4: Confirm GREEN**
+- [ ] Implement SQL/helper refactor + storage adapter.
+- [ ] Run:
 
 ```bash
 npm test -- tests/place-candidate-storage-policy.test.ts tests/cloud-only-storage.test.ts
 npm run typecheck
 ```
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add supabase/place-candidates.sql supabase/schema.sql lib/storage/place-candidates.ts tests/place-candidate-storage-policy.test.ts tests/cloud-only-storage.test.ts
-git commit -m "feat: persist staged place candidates in cloud"
-```
+- [ ] Commit `feat: persist admin-only staged place candidates`.
 
 ---
 
-### Task 5: Build the unified Review Queue derivation
+## Task 5 — Unified P0–P3 Review Queue
 
-**Files:**
-- Create: `lib/maintenance/review-queue.ts`
-- Create: `tests/review-queue.test.ts`
+**Files:** create `lib/maintenance/review-queue.ts`, create `tests/review-queue.test.ts`.
 
-**Interfaces:**
+### Interfaces
 
 ```ts
 export type ReviewPriority = "p0" | "p1" | "p2" | "p3";
@@ -566,54 +425,23 @@ export function buildReviewQueue(input: {
 export function filterReviewQueue(items: ReviewQueueItem[], filters: ReviewQueueFilters): ReviewQueueItem[];
 ```
 
-Priority mapping is fixed:
-- P0: invalid coordinates/identity-critical conflict/duplicate internal identity diagnostics.
-- P1: possible duplicate, category mismatch affecting identity, LOCAL/CHAIN ambiguity, high-risk field conflict.
-- P2: missing Maps, missing hours, stale record.
-- P3: missing photo, missing price, optional metadata.
+Priority: P0 invalid/identity-critical; P1 possible duplicate/category/local-chain/high-risk change; P2 missing Maps/hours/stale; P3 missing photo/price. One entity appears once with all reasons and its highest priority. Reuse `buildDataHealthSummary()` and `scorePlaceDataQuality()`.
 
-Use `buildDataHealthSummary()` and `scorePlaceDataQuality()` rather than creating a second data-health engine.
+### TDD steps
 
-- [ ] **Step 1: Write failing queue tests**
-
-Test deterministic priority order (`p0` before `p1` before `p2` before `p3`), candidate `new_place`, possible duplicate, stale/missing data reasons, and filtering.
-
-- [ ] **Step 2: Confirm RED**
-
-```bash
-npm test -- tests/review-queue.test.ts
-```
-
-- [ ] **Step 3: Implement queue derivation**
-
-A single entity may carry multiple reasons but should appear once at its highest priority. Stable sort by priority, then oldest/least-recently-checked where applicable, then title.
-
-- [ ] **Step 4: Confirm GREEN**
-
-```bash
-npm test -- tests/review-queue.test.ts tests/data-health.test.ts tests/data-quality.test.ts
-npm run typecheck
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/maintenance/review-queue.ts tests/review-queue.test.ts
-git commit -m "feat: derive unified place review queue"
-```
+- [ ] Write RED tests for deterministic priority order, new candidate, possible duplicate, stale/missing data, high-risk change, and filtering.
+- [ ] Confirm RED: `npm test -- tests/review-queue.test.ts`.
+- [ ] Implement stable ordering by priority, then oldest/review urgency, then title.
+- [ ] Run `npm test -- tests/review-queue.test.ts tests/data-health.test.ts tests/data-quality.test.ts && npm run typecheck`.
+- [ ] Commit `feat: derive unified place review queue`.
 
 ---
 
-### Task 6: Add Coverage Dashboard and Review Queue admin UI
+## Task 6 — Coverage Dashboard + Review Queue Admin UI
 
-**Files:**
-- Create: `components/CoverageDashboard.tsx`
-- Create: `components/ReviewQueuePanel.tsx`
-- Create: `tests/coverage-dashboard-v2.test.tsx`
-- Create: `tests/review-queue-panel.test.tsx`
-- Modify: `components/DataManagement.tsx`
+**Files:** create `components/CoverageDashboard.tsx`, `components/ReviewQueuePanel.tsx`, tests; modify `components/DataManagement.tsx`.
 
-**Component interfaces:**
+### Interfaces
 
 ```ts
 export function CoverageDashboard(props: {
@@ -635,82 +463,57 @@ export function ReviewQueuePanel(props: {
 }): React.ReactElement;
 ```
 
-UI requirements:
-- Coverage shows R1–R5 counts and completeness percentages.
-- Each gap has only local `Review existing` and explicit `Search candidates` actions.
-- Review Queue filters by priority/reason/category/ring/source.
-- Candidate possible-duplicate item shows side-by-side identity evidence: name, distance if both coordinates exist, Google/source ID, address, phone, category.
-- Decisions available: Publish (only when gate allows), Reject, Keep Separate, Review Later. `Merge` remains a reviewed canonical-field workflow; do not implement destructive automatic merge in this task.
-- Use `data-testid="coverage-dashboard"`, `data-testid="review-queue"`, and `data-testid="candidate-publish-blocked"` for regression coverage.
+Requirements: R1–R5 metrics; gap actions only `Review existing` and explicit `Search candidates`; queue filters priority/reason/category/ring/source; duplicate evidence side-by-side; Publish disabled when gate blocks; Reject/Keep Separate/Review Later available; no auto merge. Add test IDs `coverage-dashboard`, `review-queue`, `candidate-publish-blocked`.
 
-- [ ] **Step 1: Write failing render tests**
+Do **not** perform the later Phase 5B Admin rewrite. Add a small local segmented view `overview | coverage | review` inside the existing `adminAccess.admin` branch.
 
-Coverage test asserts R1/R2 labels, data completeness text, and that rendering the component triggers no external request API. Review Queue test asserts priority label and publish blocker for a duplicate candidate.
+### TDD steps
 
-- [ ] **Step 2: Confirm RED**
+- [ ] Write failing Testing Library tests.
+- [ ] Confirm RED:
 
 ```bash
 npm test -- tests/coverage-dashboard-v2.test.tsx tests/review-queue-panel.test.tsx
 ```
 
-- [ ] **Step 3: Implement components without moving the full Admin workspace yet**
-
-Do not perform the Phase 5B `DataManagement` rewrite here. Mount the new components inside the existing `adminAccess.admin` branch, above existing maintenance tools, using a small local segmented view: `overview | coverage | review`.
-
-- [ ] **Step 4: Confirm GREEN and Admin gate regression**
+- [ ] Implement components and integrate only behind Admin gate.
+- [ ] Run:
 
 ```bash
 npm test -- tests/coverage-dashboard-v2.test.tsx tests/review-queue-panel.test.tsx tests/data-management-admin-gate.test.ts
 npm run typecheck
 ```
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add components/CoverageDashboard.tsx components/ReviewQueuePanel.tsx components/DataManagement.tsx tests/coverage-dashboard-v2.test.tsx tests/review-queue-panel.test.tsx
-git commit -m "feat: add coverage and review queue admin views"
-```
+- [ ] Commit `feat: add coverage and review queue admin views`.
 
 ---
 
-### Task 7: Stage Import and Google discovery results instead of publishing them directly
+## Task 7 — Stage Import + Google Discovery Results
 
-**Files:**
-- Modify: `components/DataManagement.tsx`
-- Modify: `components/GoogleDiscoverySheet.tsx`
-- Modify: `lib/maintenance/import-plan.ts`
-- Modify/Create tests: `tests/place-candidates.test.ts`, `tests/data-management-admin-gate.test.ts`
+**Files:** modify `DataManagement.tsx`, `GoogleDiscoverySheet.tsx`, `import-plan.ts`, related tests.
 
-**Required flow:**
+Required flow:
 
 ```text
 Approved import or explicit Google search
-  -> createPlaceCandidate()/candidateFromGoogle()/candidateFromImport()
-  -> upsertPlaceCandidate(s)
+  -> candidateFromImport()/candidateFromGoogle()
+  -> upsertPlaceCandidate()/upsertPlaceCandidates()
   -> reload staged candidates
   -> Review Queue
-  -> explicit publish/reject/keep-separate decision
+  -> explicit decision
 ```
 
-Google sheet callback becomes semantically staging-oriented while keeping the external request behavior unchanged:
+Change Google callback semantics to:
 
 ```ts
 onStageCandidate: (candidate: GoogleDiscoveryCandidate) => Promise<void> | void;
 ```
 
-Do not change:
-- request estimation,
-- confirm-before-network behavior,
-- daily request limit,
-- result count bound,
-- no automatic paging,
-- no automatic details/photo fetch.
+Do not change request estimate, confirmation-before-network, daily cap, max-result bound, no-auto-paging, or no-auto-details/photos.
 
-Import behavior:
-- Existing-place diffs continue into `pending` changes as before.
-- `plan.newPlaces` are converted to staged candidates and persisted; do not call `addReviewedLocalPlace()` from the import scan step.
+For imports: existing-place diffs continue to `pending`; `plan.newPlaces` become staged candidates and do not call `addReviewedLocalPlace()` during import scanning.
 
-DataManagement loading effect after Admin authentication should load in parallel:
+Admin load effect:
 
 ```ts
 Promise.all([
@@ -720,144 +523,78 @@ Promise.all([
 ]);
 ```
 
-When Admin logs out, clear staged candidate state from React memory.
+On Admin logout, clear candidate React state.
 
-- [ ] **Step 1: Add failing source/behavior assertions**
+### TDD steps
 
-Assert that `DataManagement.tsx` imports candidate storage, loads candidates only inside the Admin branch, and Google result handling calls staging instead of direct place publication.
-
-- [ ] **Step 2: Confirm RED**
-
-```bash
-npm test -- tests/place-candidates.test.ts tests/data-management-admin-gate.test.ts
-```
-
-- [ ] **Step 3: Implement staging handoff**
-
-Keep `addReviewedLocalPlace()` only in the explicit publish decision handler.
-
-- [ ] **Step 4: Confirm GREEN**
+- [ ] Add RED source/behavior assertions that candidate storage is loaded only in Admin flow and Google/import results stage rather than publish.
+- [ ] Run `npm test -- tests/place-candidates.test.ts tests/data-management-admin-gate.test.ts`; confirm RED.
+- [ ] Implement staging handoff; keep `addReviewedLocalPlace()` only in explicit publication handler.
+- [ ] Run:
 
 ```bash
 npm test -- tests/place-candidates.test.ts tests/data-management-admin-gate.test.ts tests/google-api-control.test.ts tests/google-api-lock.test.ts
 npm run typecheck
 ```
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add components/DataManagement.tsx components/GoogleDiscoverySheet.tsx lib/maintenance/import-plan.ts tests/place-candidates.test.ts tests/data-management-admin-gate.test.ts
-git commit -m "feat: stage discovery candidates before publication"
-```
+- [ ] Commit `feat: stage discovery candidates before publication`.
 
 ---
 
-### Task 8: Implement explicit candidate review decisions and safe publication
+## Task 8 — Explicit Review Decisions + Safe Publication
 
-**Files:**
-- Modify: `components/DataManagement.tsx`
-- Modify: `components/ReviewQueuePanel.tsx`
-- Modify: `lib/maintenance/place-candidates.ts`
-- Modify: `lib/storage/place-candidates.ts`
-- Reuse: `lib/database/places.ts`
-- Extend: `tests/place-candidates.test.ts`, `tests/review-queue-panel.test.tsx`
+**Files:** modify `DataManagement.tsx`, `ReviewQueuePanel.tsx`, candidate domain/storage, tests; reuse `lib/database/places.ts`.
 
-**Decision behavior:**
+### Decision semantics
 
-`Publish`:
-1. Reload/find candidate by ID.
-2. Run `canPublishCandidate()` again at action time.
-3. Build a reviewed `Place` using the existing `makeReviewedPlace` logic moved from `DataManagement.tsx` into `lib/maintenance/place-candidates.ts` as:
+**Publish**: reload candidate → rerun `canPublishCandidate()` → `materializeReviewedPlace()` → `addReviewedLocalPlace()` → mark candidate approved with actor/time → reload places/candidates/history.
 
-```ts
-export function materializeReviewedPlace(candidate: PlaceCandidate): Place;
-```
+**Keep Separate**: record reviewed duplicate decision and clear only that unresolved duplicate blocker; never mutate the existing canonical place. Candidate may publish only if all other blockers pass.
 
-4. Call `addReviewedLocalPlace(place, candidate.sourceProvider)`.
-5. Mark candidate `approved` with review timestamp/actor.
-6. Reload places/candidates/history.
+**Reject**: mark rejected, no canonical write.
 
-`Keep Separate`:
-- Clears only the unresolved duplicate blocker for the staged candidate by recording a reviewed decision in candidate payload/validation state.
-- Does not mutate the existing canonical place.
-- Candidate can then pass the publish gate if all other blockers are clear.
+**Review Later**: remain `needs_review`, no canonical write.
 
-`Reject`:
-- Marks candidate `rejected`; never writes canonical place data.
+Existing-place field conflicts stay on `applyLocalPlacePatch()` so provenance protections remain intact. Bulk duplicate merge is prohibited. Optional safe batch approval may include only candidates where `canPublishCandidate()` is already true and `possibleMatchIds.length === 0`.
 
-`Review Later`:
-- Leaves status `needs_review` and makes no canonical change.
+### TDD steps
 
-Existing-place field conflict workflow continues to use `applyLocalPlacePatch()` so stronger provenance remains protected.
-
-- [ ] **Step 1: Write failing publish/decision tests**
-
-Test:
-- possible duplicate cannot publish before Keep Separate/review decision,
-- rejected candidate never materializes to a public place,
-- materialization preserves known source fields and keeps unknowns null/empty according to existing `Place` conventions,
-- publication uses existing history path through `addReviewedLocalPlace()`.
-
-- [ ] **Step 2: Confirm RED**
+- [ ] Write failing tests: duplicate blocks publish before decision; reject never materializes; unknown fields remain unknown; materialization preserves source; publication uses existing history path.
+- [ ] Confirm RED:
 
 ```bash
 npm test -- tests/place-candidates.test.ts tests/review-queue-panel.test.tsx
 ```
 
-- [ ] **Step 3: Implement reviewed decisions**
-
-Do not add bulk duplicate merge. Safe batch approve can be added only for candidates where `canPublishCandidate()` is already true and `possibleMatchIds.length === 0`; if batch UI is added, process sequentially and stop/report an item that changes state unexpectedly.
-
-- [ ] **Step 4: Confirm GREEN and provenance regression**
+- [ ] Implement reviewed decisions.
+- [ ] Run:
 
 ```bash
 npm test -- tests/place-candidates.test.ts tests/review-queue-panel.test.tsx tests/field-provenance.test.ts
 npm run typecheck
 ```
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add components/DataManagement.tsx components/ReviewQueuePanel.tsx lib/maintenance/place-candidates.ts lib/storage/place-candidates.ts tests/place-candidates.test.ts tests/review-queue-panel.test.tsx
-git commit -m "feat: review and publish staged place candidates"
-```
+- [ ] Commit `feat: review and publish staged place candidates`.
 
 ---
 
-### Task 9: Phase 2A regression gate and Google zero-request protection
+## Task 9 — Phase 2A Regression Gate
 
-**Files:**
-- Modify: `e2e/p0-google-api-lock.spec.ts`
-- Add if useful: `e2e/data-management-coverage.spec.ts`
-- No production workflow changes.
+**Files:** modify `e2e/p0-google-api-lock.spec.ts`, create `e2e/data-management-coverage.spec.ts`.
 
-**Required regression scenarios:**
+### Required E2E behavior
 
-1. Open Home -> zero Google Places requests.
-2. Open Explore/search/filter -> zero Google Places requests.
-3. Open Saved Cloud Map/change radius -> zero Google Places requests.
-4. Open Data Management while logged out -> Admin locked; Coverage/Review/Google candidate tools are not rendered; zero Google Places requests.
-5. Coverage calculations and Review Queue filtering -> zero Google Places requests.
-6. Explicit Google search remains behind the existing confirmation control; merely opening the search sheet/typing/changing scope -> zero requests.
-7. Existing canonical data validation remains clean.
+1. Home → 0 Google Places requests.
+2. Explore/search/filter → 0 Google Places requests.
+3. Saved Cloud Map/radius changes → 0 Google Places requests.
+4. Logged-out Data Management → Admin locked; Coverage/Review/Google candidate controls absent; 0 requests.
+5. Coverage calculation/Review filtering → 0 requests.
+6. Opening Google search sheet, typing, changing scope → 0 requests until explicit confirmed search.
+7. Canonical data validation remains clean.
 
-- [ ] **Step 1: Extend E2E assertions before changing implementation if an uncovered regression is found**
+### Verification commands
 
-Keep the existing request counter pattern:
-
-```ts
-let googlePlacesRequests = 0;
-page.on("request", (request) => {
-  const url = request.url();
-  if (
-    url.includes("places.googleapis.com") ||
-    url.includes("/maps/api/place") ||
-    url.includes("maps.googleapis.com/maps/api/place")
-  ) googlePlacesRequests += 1;
-});
-```
-
-- [ ] **Step 2: Run targeted Vitest suite**
+Targeted unit/integration:
 
 ```bash
 npm test -- \
@@ -876,9 +613,7 @@ npm test -- \
   tests/google-api-lock.test.ts
 ```
 
-Expected: PASS.
-
-- [ ] **Step 3: Run full static/data/unit gate**
+Full gate:
 
 ```bash
 npm run lint
@@ -888,9 +623,7 @@ npm test
 npm run build
 ```
 
-Expected: all PASS. Do not continue on a failure.
-
-- [ ] **Step 4: Run targeted Playwright regressions**
+Playwright:
 
 ```bash
 npx playwright install --with-deps chromium
@@ -901,17 +634,15 @@ npx playwright test \
   e2e/data-management-coverage.spec.ts
 ```
 
-Expected: all PASS and Google Places count remains zero until the explicit confirmed action.
-
-- [ ] **Step 5: Run Cloudflare dry-run only**
+Cloudflare compile/package gate only:
 
 ```bash
 npx wrangler deploy --dry-run
 ```
 
-Expected: PASS. Do not run production deploy.
+Do not proceed past a failing gate and do not run production deploy.
 
-- [ ] **Step 6: Commit regression gate changes**
+Commit regression changes:
 
 ```bash
 git add e2e/p0-google-api-lock.spec.ts e2e/data-management-coverage.spec.ts
@@ -920,29 +651,17 @@ git commit -m "test: lock phase 2a coverage and candidate regressions"
 
 ---
 
-## Plan Self-Review Result
+## Plan Self-Review
 
 ### Spec coverage
 
-This plan covers the Phase 2A infrastructure requirements from the approved V2 spec:
-- fixed R1–R5 coverage rings,
-- coverage completeness and gap diagnostics,
-- hybrid source flow,
-- Candidate != published Place,
-- explicit Google/Admin search handoff,
-- candidate staging persistence,
-- deterministic duplicate assistance with no auto-merge,
-- P0–P3 unified Review Queue,
-- publish gate,
-- safe reviewed publication using existing provenance/history paths,
-- Admin-only UI integration,
-- Google zero-request regression protection.
+The plan covers fixed R1–R5 coverage, completeness/gaps, Hybrid candidate sources, Candidate != Place, explicit Google/Admin staging, cloud candidate persistence, database-level Admin authorization, deterministic duplicate assistance/no auto-merge, P0–P3 Review Queue, publish gate, safe canonical writes through existing provenance/history code, Admin-only UI, and Google zero-request protection.
 
-The 150–200 actual-place expansion wave is intentionally separated into its own operational/data plan after this infrastructure is merged, because candidate sourcing/verification is independently reviewable work and should not be coupled to the application architecture PR.
+The first 150–200 actual-place curation wave is intentionally a separate operational/data plan after this infrastructure is merged, because sourcing and verification are independently reviewable and should not be coupled to the architecture PR.
 
 ### Placeholder scan
 
-No `TBD`, `TODO`, unspecified implementation stubs, or “write tests later” steps are permitted. Every task names its interfaces, behavior, tests, commands, and commit boundary.
+No TBD/TODO or deferred test placeholders remain. Every task has explicit files, interfaces/behavior, test gates, and commit boundaries.
 
 ### Type consistency
 
@@ -950,7 +669,7 @@ The plan consistently uses:
 - `CoverageRingId`, `CoverageGap`, `CoverageReport` from `lib/coverage/coverage.ts`.
 - `PlaceCandidate`, `PlaceCandidateStatus` from `lib/maintenance/place-candidates.ts`.
 - `ReviewQueueItem`, `ReviewQueueFilters` from `lib/maintenance/review-queue.ts`.
-- `loadPlaceCandidates()`, `upsertPlaceCandidate(s)()`, `updatePlaceCandidateDecision()` from `lib/storage/place-candidates.ts`.
+- `loadPlaceCandidates()`, `upsertPlaceCandidate()`, `upsertPlaceCandidates()`, `updatePlaceCandidateDecision()` from `lib/storage/place-candidates.ts`.
 - existing `addReviewedLocalPlace()` / `applyLocalPlacePatch()` for canonical writes.
 
 No public browsing module consumes staged candidates.
