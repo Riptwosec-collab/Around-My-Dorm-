@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const css = fs.readFileSync("app/globals.css", "utf8");
+const css = fs.readFileSync("app/app-frame-sizing.css", "utf8");
+const layout = fs.readFileSync("app/layout.tsx", "utf8");
 
 function rule(selector: string) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -11,6 +12,11 @@ function rule(selector: string) {
 }
 
 describe("mobile app shell sizing", () => {
+  it("loads the frame override after the existing visual styles", () => {
+    expect(layout).toContain('import "./app-frame-sizing.css";');
+    expect(layout.indexOf('import "./app-frame-sizing.css";')).toBeGreaterThan(layout.indexOf('import "./premium-map-sheets.css";'));
+  });
+
   it("caps the app frame at the approved 519px reference width", () => {
     expect(css).toContain("--amd-app-max-w: 519px;");
     expect(rule(".amd-shell")).toContain("width: min(100%, var(--amd-app-max-w));");
