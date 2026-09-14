@@ -64,7 +64,7 @@ describe("ReviewQueuePanel", () => {
     }));
 
     expect(screen.getByTestId("review-queue")).toBeInTheDocument();
-    expect(screen.getByText(/P1/)).toBeInTheDocument();
+    expect(screen.getAllByText(/^P1$/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByTestId("candidate-publish-blocked")).toBeInTheDocument();
     expect(screen.getAllByText("Same Cafe").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/0812345678/).length).toBeGreaterThanOrEqual(2);
