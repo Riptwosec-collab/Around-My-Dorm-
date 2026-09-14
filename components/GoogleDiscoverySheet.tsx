@@ -17,19 +17,20 @@ export function GoogleDiscoverySheet({
   radiusMeters,
   language,
   onClose,
-  onReviewCandidate,
+  onStageCandidate,
 }: {
   initialQuery: string;
   center: { lat: number; lng: number };
   radiusMeters: number;
   language: "th" | "en";
   onClose: () => void;
-  onReviewCandidate: (candidate: GoogleDiscoveryCandidate) => void;
+  onStageCandidate: (candidate: GoogleDiscoveryCandidate) => Promise<void> | void;
 }) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<GoogleDiscoveryCandidate[]>([]);
   const [loading, setLoading] = useState(false);
+  const [stagingId, setStagingId] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSummary, setLastSummary] = useState<{ networkAttempts: number; fromCache: boolean; candidates: number } | null>(null);
@@ -70,6 +71,19 @@ export function GoogleDiscoverySheet({
       setError(reason instanceof Error ? reason.message : (language === "en" ? "Google discovery failed" : "ค้นหา Google ไม่สำเร็จ"));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function stageCandidate(candidate: GoogleDiscoveryCandidate) {
+    if (stagingId) return;
+    setStagingId(candidate.googlePlaceId);
+    setError(null);
+    try {
+      await onStageCandidate(candidate);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : (language === "en" ? "Could not stage candidate" : "ไม่สามารถบันทึก Candidate เข้าคิวได้"));
+    } finally {
+      setStagingId(null);
     }
   }
 
@@ -123,7 +137,7 @@ export function GoogleDiscoverySheet({
               <div className="mt-3 flex flex-wrap gap-2 text-[8px] text-white/42">{candidate.primaryTypeLabel && <span className="amd-chip h-7 min-h-0 px-2">{candidate.primaryTypeLabel}</span>}{distance != null && <span className="amd-chip h-7 min-h-0 px-2"><MapPin className="mr-1 inline h-3 w-3" />{distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}</span>}{candidate.openNow != null && <span className={`amd-chip h-7 min-h-0 px-2 ${candidate.openNow ? "text-emerald-200" : "text-rose-200"}`}>{candidate.openNow ? (language === "en" ? "Open" : "เปิดอยู่") : (language === "en" ? "Closed" : "ปิดแล้ว")}</span>}</div>
               <div className="mt-3 grid grid-cols-3 gap-2">{candidate.googleMapsUrl ? <a href={candidate.googleMapsUrl} target="_blank" rel="noreferrer" className="amd-chip flex min-h-10 items-center justify-center gap-1 text-[8px] font-bold">{language === "en" ? "View" : "ดู"}<ExternalLink className="h-3 w-3" /></a> : <span />}
                 <a href={directionsUrl} target="_blank" rel="noreferrer" className="amd-chip flex min-h-10 items-center justify-center gap-1 text-[8px] font-bold"><Navigation className="h-3 w-3" />{language === "en" ? "Navigate" : "นำทาง"}</a>
-                <button type="button" onClick={() => onReviewCandidate(candidate)} className="amd-chip min-h-10 text-[8px] font-bold text-[#8ecbff]">{language === "en" ? "Review candidate" : "ตรวจ Candidate"}</button>
+                <button type="button" disabled={Boolean(stagingId)} onClick={() => void stageCandidate(candidate)} className="amd-chip min-h-10 text-[8px] font-bold text-[#8ecbff] disabled:opacity-40">{stagingId === candidate.googlePlaceId ? (language === "en" ? "Staging…" : "กำลังเข้าคิว…") : (language === "en" ? "Stage candidate" : "ส่งเข้าคิวตรวจ")}</button>
               </div>
             </article>;
           })}
