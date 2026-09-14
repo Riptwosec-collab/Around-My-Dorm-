@@ -7,6 +7,7 @@ import "./premium-map-sheets.css";
 import "./app-frame-sizing.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
 import { GoogleBulkPhotoRuntimeControl } from "@/components/GoogleBulkPhotoRuntimeControl";
+import { PreciseGeolocationRuntime } from "@/components/PreciseGeolocationRuntime";
 
 export const metadata: Metadata = {
   title: "Around My Dorm",
@@ -30,7 +31,12 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="th" suppressHydrationWarning>
-      <body>{children}<PwaRuntime /><GoogleBulkPhotoRuntimeControl /></body>
+      <body>
+        <PreciseGeolocationRuntime />
+        {children}
+        <PwaRuntime />
+        <GoogleBulkPhotoRuntimeControl />
+      </body>
     </html>
   );
 }
