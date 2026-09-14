@@ -1,3 +1,3 @@
 Cloudflare deploy trigger
 2026-09-14
-Deploy latest main with precise live GPS acquisition. The app now forces high-accuracy, zero-cache location sampling, waits for GPS/Wi-Fi convergence, rejects coarse/stale fixes above 250 m instead of treating them as real location, and keeps the existing 519px app frame and manual-only Google Maps/Places behavior.
+Deploy latest main with app-wide render stability fixes: disable page-entry replay, remove full-surface transitions, avoid fixed-background mobile repaints, lower mobile glass blur cost, stabilize fixed navigation/map compositor layers, and remove cached place-photo fade flashes. Precise live GPS behavior remains enabled.
