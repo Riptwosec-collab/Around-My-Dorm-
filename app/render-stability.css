@@ -1,0 +1,86 @@
+/* App-wide render stability guard.
+   Keeps the premium glass look while avoiding full-page repaints / flashes,
+   especially on iOS Safari and Chromium mobile compositors. */
+
+/* Page/tab content must never replay an entry fade when React remounts a tab. */
+.amd-page,
+.amd-page-enter {
+  animation: none !important;
+}
+
+/* Do not animate full-screen surfaces. Theme changes should swap atomically rather
+   than transition the whole app background and produce a visible flash. */
+html,
+body,
+.amd-app,
+.amd-shell,
+.amd-content {
+  transition-property: none !important;
+}
+
+/* Keep persistent UI on its own stable compositor layer. */
+.amd-nav,
+.amd-map-frame {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+/* Avoid transient white/transparent frames while images are decoded. */
+.amd-place-card-media,
+.amd-place-photo,
+.amd-place-card-photo {
+  background-color: #07111f;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+@media (max-width: 767px) {
+  /* background-attachment: fixed + many backdrop-filter surfaces is a common
+     source of full viewport flashes on mobile browsers. */
+  body,
+  .amd-app {
+    background-attachment: scroll !important;
+  }
+
+  /* The liquid-glass file is loaded after globals.css, so re-apply the intended
+     mobile blur budget here as the final override. */
+  .amd-glass {
+    backdrop-filter: blur(10px) saturate(125%) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(125%) !important;
+  }
+
+  .amd-glass-strong,
+  .amd-nav {
+    backdrop-filter: blur(14px) saturate(130%) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(130%) !important;
+  }
+
+  .amd-input {
+    backdrop-filter: blur(10px) saturate(125%) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(125%) !important;
+  }
+
+  .amd-chip {
+    backdrop-filter: blur(8px) saturate(120%) !important;
+    -webkit-backdrop-filter: blur(8px) saturate(120%) !important;
+  }
+
+  /* Cached place photos should not fade from transparent every time a tab is
+     revisited. This removes the most obvious card-level blink on mobile. */
+  .amd-place-photo,
+  .amd-place-card-photo {
+    opacity: 1 !important;
+    transition-property: transform, filter !important;
+  }
+
+  .amd-place-card .amd-skeleton {
+    display: none !important;
+  }
+
+  /* Nav selection should feel instant without replaying a flash animation. */
+  .amd-nav-indicator {
+    animation: none !important;
+  }
+}
