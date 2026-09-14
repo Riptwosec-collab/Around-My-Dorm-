@@ -65,50 +65,66 @@ function bangkokHour(now: Date) {
   return Number.isFinite(hour) ? hour : now.getHours();
 }
 
+function distanceNowScore(distanceKm: number | null | undefined) {
+  if (distanceKm == null) return 0;
+  if (distanceKm <= 0.25) return 25;
+  if (distanceKm <= 0.5) return 21;
+  if (distanceKm <= 1) return 15;
+  if (distanceKm <= 2) return 8;
+  if (distanceKm <= 3) return 3;
+  return 0;
+}
+
+function qualityNowScore(place: Place) {
+  let score = 0;
+  if (place.verified) score += 6;
+  if (place.dataStatus === "verified") score += 4;
+  else if (place.dataStatus === "partial") score += 1;
+  else if (place.dataStatus === "stale") score -= 3;
+  else if (place.dataStatus === "unverified") score -= 4;
+  return score;
+}
+
+/**
+ * Recommended Now score. Current usefulness dominates social popularity:
+ * open/closed state, distance, preferences and known local quality carry the
+ * meaningful weight; ratings/review volume are bounded tie-break signals.
+ * Unknown values are neutral rather than guessed.
+ */
 export function recommendationScore(place: Place, context: RecommendationContext = {}) {
   const preferred = context.preferredCategories ?? new Set<CategoryId>();
   const favorites = context.favoriteIds ?? new Set<string>();
   const recents = context.recentIds ?? new Set<string>();
   const now = context.now ?? new Date();
-  const status = getPlaceOpenStatus(place);
+  const status = getPlaceOpenStatus(place, now);
   const hour = bangkokHour(now);
-  const distanceKm = place.distanceKm;
 
   let score = 0;
 
-  if (preferred.has(place.category) || place.categories.some((category) => preferred.has(category))) score += 18;
-  if (place.recommended) score += 14;
-  if (place.localFavorite) score += 12;
-  if (place.hiddenGem) score += 8;
-  if (place.placeType === "local" || place.placeType === "independent") score += 7;
-  if (place.verified) score += 8;
-  if (place.dataStatus === "verified") score += 4;
-  if (place.dataStatus === "stale") score -= 5;
-  if (place.dataStatus === "unverified") score -= 7;
-  if (place.studentFriendly === true) score += 4;
-  if (place.goodForWorking === true) score += 3;
-  if (favorites.has(place.id)) score += 4;
-  if (recents.has(place.id)) score += 2;
+  if (status.isOpen === true) score += 30;
+  else if (status.isOpen === false) score -= 35;
 
-  if (status.isOpen === true) score += 15;
-  else if (status.isOpen === false) score -= 10;
+  score += distanceNowScore(place.distanceKm);
 
-  if (hour >= 20 || hour < 5) {
-    if (place.openLate === true || place.is24Hours) score += 9;
-    if (status.isOpen === false) score -= 4;
-  }
+  if (preferred.has(place.category) || place.categories.some((category) => preferred.has(category))) score += 10;
+  if (place.placeType === "local" || place.placeType === "independent" || place.localFavorite) score += 8;
+  if (place.hiddenGem) score += 5;
+  score += qualityNowScore(place);
 
-  if (place.rating != null) score += Math.max(0, Math.min(12, (place.rating - 3) * 6));
-  if (place.reviewCount != null && place.reviewCount > 0) score += Math.min(6, Math.log10(place.reviewCount + 1) * 2);
-  if (place.localScore != null) score += Math.min(10, Math.max(0, place.localScore / 10));
+  // Small continuity signals preserve useful existing personalization without
+  // overpowering "now" fit.
+  if (place.recommended) score += 3;
+  if (favorites.has(place.id)) score += 2;
+  if (recents.has(place.id)) score += 1;
+  if (place.studentFriendly === true) score += 1;
+  if (place.goodForWorking === true) score += 1;
 
-  if (distanceKm != null) {
-    if (distanceKm <= 0.25) score += 14;
-    else if (distanceKm <= 0.5) score += 11;
-    else if (distanceKm <= 1) score += 8;
-    else if (distanceKm <= 2) score += 4;
-    else if (distanceKm > 3) score -= 4;
-  }
+  if ((hour >= 20 || hour < 5) && (place.openLate === true || place.is24Hours)) score += 5;
+
+  // Ratings and volume are deliberately capped as tie-breakers.
+  if (place.rating != null) score += Math.max(0, Math.min(1.5, (place.rating - 3) * 0.75));
+  if (place.reviewCount != null && place.reviewCount > 0) score += Math.min(1, Math.log10(place.reviewCount + 1) / 4);
+  if (place.localScore != null) score += Math.min(2, Math.max(0, place.localScore / 50));
 
   return score;
 }
@@ -122,11 +138,11 @@ export function sortPlaces(places: Place[], mode: SortMode, context: Recommendat
     if (mode === "rating") return (b.rating ?? -1) - (a.rating ?? -1);
     if (mode === "reviews") return (b.reviewCount ?? -1) - (a.reviewCount ?? -1);
     if (mode === "price") return (explicitPriceCeiling(a) ?? 999999) - (explicitPriceCeiling(b) ?? 999999);
-    if (mode === "openNow") return Number(getPlaceOpenStatus(b).isOpen === true) - Number(getPlaceOpenStatus(a).isOpen === true) || distanceA - distanceB;
+    if (mode === "openNow") return Number(getPlaceOpenStatus(b, context.now).isOpen === true) - Number(getPlaceOpenStatus(a, context.now).isOpen === true) || distanceA - distanceB;
     if (mode === "local") return Number(Boolean(b.localFavorite || b.placeType === "local" || b.placeType === "independent")) - Number(Boolean(a.localFavorite || a.placeType === "local" || a.placeType === "independent")) || distanceA - distanceB;
     if (mode === "localScore") return (b.localScore ?? -1) - (a.localScore ?? -1) || distanceA - distanceB;
     if (mode === "late") return Number(b.openLate === true || b.is24Hours) - Number(a.openLate === true || a.is24Hours) || distanceA - distanceB;
-    return recommendationScore(b, context) - recommendationScore(a, context) || distanceA - distanceB;
+    return recommendationScore(b, context) - recommendationScore(a, context) || distanceA - distanceB || a.id.localeCompare(b.id);
   });
 }
 
@@ -139,8 +155,9 @@ export function smartLocalPicks(places: Place[], context: RecommendationContext 
 export function recommendationReasons(place: Place, context: RecommendationContext = {}, language: "th" | "en" = "th") {
   const reasons: string[] = [];
   const preferred = context.preferredCategories ?? new Set<CategoryId>();
-  const status = getPlaceOpenStatus(place);
-  const hour = bangkokHour(context.now ?? new Date());
+  const now = context.now ?? new Date();
+  const status = getPlaceOpenStatus(place, now);
+  const hour = bangkokHour(now);
 
   if (status.isOpen === true) reasons.push(language === "en" ? "Open now" : "เปิดอยู่ตอนนี้");
   if (place.distanceKm != null && place.distanceKm <= 0.5) reasons.push(language === "en" ? "Very close" : "ใกล้มาก");
