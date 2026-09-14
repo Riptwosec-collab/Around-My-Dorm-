@@ -1,3 +1,3 @@
 Cloudflare deploy trigger
 2026-09-14
-Deploy main commit a3e725fe72a596a4646042a74e37ea58f172048d: center the fixed bottom navigation inside the approved 519px app frame on wide viewports while preserving phone safe-area behavior. Phase 2A data workflow remains included from main. Google Maps/Places behavior remains manual-only.
+Deploy latest main with precise live GPS acquisition. The app now forces high-accuracy, zero-cache location sampling, waits for GPS/Wi-Fi convergence, rejects coarse/stale fixes above 250 m instead of treating them as real location, and keeps the existing 519px app frame and manual-only Google Maps/Places behavior.
