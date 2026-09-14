@@ -11,6 +11,7 @@ const cloudOnlyFiles = [
   "lib/storage/settings.ts",
   "lib/storage/place-updates.ts",
   "lib/storage/google-place-matches.ts",
+  "lib/storage/place-candidates.ts",
 ];
 
 describe("cloud-only application persistence", () => {
@@ -21,10 +22,14 @@ describe("cloud-only application persistence", () => {
     }
   });
   it("uses RLS-scoped Around My Dorm cloud tables", () => {
-    const source = fs.readFileSync("lib/cloud/store.ts", "utf8") + fs.readFileSync("lib/database/places.ts", "utf8");
+    const source =
+      fs.readFileSync("lib/cloud/store.ts", "utf8") +
+      fs.readFileSync("lib/database/places.ts", "utf8") +
+      fs.readFileSync("lib/storage/place-candidates.ts", "utf8");
     expect(source).toContain("amd_favorites");
     expect(source).toContain("amd_user_settings");
     expect(source).toContain("amd_recent_views");
     expect(source).toContain("amd_place_overrides");
+    expect(source).toContain("amd_place_candidates");
   });
 });
