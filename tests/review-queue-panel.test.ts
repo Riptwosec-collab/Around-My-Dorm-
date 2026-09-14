@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PLACES } from "@/data/places";
 import { createPlaceCandidate } from "@/lib/maintenance/place-candidates";
 import { buildReviewQueue } from "@/lib/maintenance/review-queue";
@@ -9,6 +9,8 @@ import { DORM_CENTER } from "@/lib/place-utils";
 import { ReviewQueuePanel } from "@/components/ReviewQueuePanel";
 
 const seed = PLACES[0]!;
+
+afterEach(() => cleanup());
 
 const existing = {
   ...seed,
