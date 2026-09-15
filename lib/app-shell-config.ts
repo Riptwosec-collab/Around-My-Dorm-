@@ -19,6 +19,7 @@ export type AppSettings = {
   preferredCategories: CategoryId[];
   homeMode: OriginMode;
   customHomeLocation: { name: string; latitude: number; longitude: number } | null;
+  placesUiVersion: number;
 };
 
 export type SavedCollection = {
@@ -36,10 +37,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   promoAlerts: true,
   parkingAlerts: true,
   verifiedOnly: false,
-  defaultRadius: 500,
+  defaultRadius: 5000,
   preferredCategories: [],
   homeMode: "dorm",
   customHomeLocation: null,
+  placesUiVersion: 1,
 };
 
 export const DEFAULT_COLLECTIONS: SavedCollection[] = [
@@ -55,6 +57,7 @@ export const RADII = [
   { label: "2 กม.", value: 2000 },
   { label: "3 กม.", value: 3000 },
   { label: "5 กม.", value: 5000 },
+  { label: "10 กม.", value: 10000 },
 ] as const;
 
 export const FOOD_CATEGORIES = new Set<CategoryId>([
