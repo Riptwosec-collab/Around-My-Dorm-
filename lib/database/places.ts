@@ -1,3 +1,5 @@
+import { mergePermanentImagesIntoPlaces } from "@/lib/cloud/place-image-model";
+import { getPermanentImagePublicUrl, loadActivePermanentImageRows } from "@/lib/cloud/place-images";
 import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import type { Place } from "@/types/place";
 import { prepareProvenancePatch } from "@/lib/field-provenance";
@@ -48,6 +50,11 @@ async function applyCloudUserLayer(places: Place[]) {
   return applyGoogleCloudPlaceLayer([...base, ...additions]);
 }
 
+async function applyPermanentImageLayer(places: Place[]): Promise<Place[]> {
+  const rows = await loadActivePermanentImageRows(places.map((place) => place.id));
+  return mergePermanentImagesIntoPlaces(places, rows, getPermanentImagePublicUrl);
+}
+
 async function applySharedRouteLayer(places: Place[]) {
   const rows = await loadRouteCache();
   return mergeRouteCacheIntoPlaces(places, rows);
@@ -69,6 +76,13 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
     personalizedPlaces = await applyCloudUserLayer(sharedPlaces);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Cloud profile unavailable";
+    warning = warning ? `${warning} • ${message}` : message;
+  }
+
+  try {
+    personalizedPlaces = await applyPermanentImageLayer(personalizedPlaces);
+  } catch {
+    const message = "Permanent image cloud unavailable";
     warning = warning ? `${warning} • ${message}` : message;
   }
 
