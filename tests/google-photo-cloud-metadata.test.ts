@@ -38,6 +38,7 @@ describe("Google photo cloud metadata", () => {
 
     expect(summarizeGooglePhotoCloudMetadata(rows)).toEqual({
       savedPlaceIds: ["place-a"],
+      restoreTargets: [{ placeId: "place-a", googlePlaceId: "google-a" }],
       savedCount: 1,
       noPhotoCount: 1,
       failedCount: 0,
@@ -66,5 +67,15 @@ describe("Google photo cloud metadata", () => {
     expect(cloudMetadata).not.toContain("photoUri");
     expect(cloudMetadata).not.toContain("photoName");
     expect(cloudMetadata).not.toContain("Blob");
+  });
+
+  it("keeps the permanent image migration rights-based rather than adding a Google photo cache", () => {
+    const permanentMigration = read("supabase/cloud-permanent-images.sql").toLowerCase();
+    expect(permanentMigration).toContain("rights_basis");
+    expect(permanentMigration).toContain("amd-place-images");
+    expect(permanentMigration).not.toContain("google_photo_uri");
+    expect(permanentMigration).not.toContain("google_photo_name");
+    expect(permanentMigration).not.toContain("google_photo_blob");
+    expect(permanentMigration).not.toContain("google_photo_cache");
   });
 });

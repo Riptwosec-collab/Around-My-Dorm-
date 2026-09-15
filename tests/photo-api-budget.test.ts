@@ -19,6 +19,18 @@ describe("manual Google photo runtime publishing", () => {
     expect(panel).not.toContain("void loadPhoto();\n  }, []");
   });
 
+  it("keeps permanent startup restoration independent from Google photo requests", () => {
+    const places = read("lib/database/places.ts");
+    const permanent = read("lib/cloud/place-images.ts");
+    const combined = `${places}\n${permanent}`;
+    expect(places).toContain("applyPermanentImageLayer");
+    expect(places).toContain("loadActivePermanentImageRows");
+    expect(permanent).toContain("getPublicUrl");
+    expect(combined).not.toContain("fetchGoogleTransientPhoto");
+    expect(combined).not.toContain("loadGoogleMaps");
+    expect(combined).not.toContain("manual_places_request");
+  });
+
   it("uses a photo-specific empty label instead of the generic unknown-data label", () => {
     const card = read("components/PlaceCard.tsx");
     const detail = read("components/PlaceDetail.tsx");

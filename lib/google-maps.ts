@@ -19,10 +19,10 @@ declare global {
   }
 }
 
-export type GoogleMapsLoadIntent = "embedded_map_user_click" | "manual_places_request";
+export type GoogleMapsLoadIntent = "embedded_map_user_click" | "manual_places_request" | "visible_photo_restore";
 
 export function loadGoogleMaps(apiKey: string, intent: GoogleMapsLoadIntent) {
-  if (intent !== "embedded_map_user_click" && intent !== "manual_places_request") return Promise.reject(new Error("Explicit Google Maps load intent is required"));
+  if (intent !== "embedded_map_user_click" && intent !== "manual_places_request" && intent !== "visible_photo_restore") return Promise.reject(new Error("Explicit Google Maps load intent is required"));
   if (typeof window === "undefined") return Promise.reject(new Error("Browser only"));
   if (window.google?.maps) return Promise.resolve();
   if (window.__aroundDormMapsPromise) return window.__aroundDormMapsPromise;

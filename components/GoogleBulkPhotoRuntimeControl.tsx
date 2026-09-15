@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Image as ImageIcon, LoaderCircle, ShieldCheck, X } from "lucide-react";
+import { Camera, Image as ImageIcon, LoaderCircle, RotateCcw, ShieldCheck, X } from "lucide-react";
+import { CloudPermanentImageManager } from "@/components/CloudPermanentImageManager";
 import { getAdminAccessState } from "@/lib/admin-auth";
 import { recordTrackedGoogleRequest } from "@/lib/google-api-budget";
 import { supabase } from "@/lib/cloud/supabase";
@@ -12,7 +13,11 @@ import {
   type GooglePhotoCloudResultCode,
 } from "@/lib/google-photo-cloud-metadata";
 import { fetchGoogleTransientPhoto } from "@/lib/google-transient-photo";
-import { getGoogleRuntimePhoto, setGoogleRuntimePhoto } from "@/lib/google-photo-runtime";
+import {
+  getGoogleRuntimePhoto,
+  isGooglePhotoAutoRestoreInFlight,
+  setGoogleRuntimePhoto,
+} from "@/lib/google-photo-runtime";
 import type { Place } from "@/types/place";
 
 const PHOTO_REQUEST_LIMIT = 100;
@@ -33,9 +38,16 @@ type SharedGooglePhotoLink = {
   confidence: number | null;
 };
 
+type PhotoTarget = {
+  place: Place;
+  googlePlaceId: string;
+  verificationStatus: "linked" | "review";
+};
+
 const EMPTY_PROGRESS: Progress = { current: 0, total: 0, loaded: 0, noPhoto: 0, failed: 0, currentName: null };
 const EMPTY_CLOUD_METADATA: GooglePhotoCloudMetadataSummary = {
   savedPlaceIds: [],
+  restoreTargets: [],
   savedCount: 0,
   noPhotoCount: 0,
   failedCount: 0,
@@ -138,7 +150,8 @@ export function GoogleBulkPhotoRuntimeControl() {
     let persisted = 0;
     let runtime = 0;
     const linksByPlace = new Map(sharedGoogleLinks.map((row) => [row.place_id, row]));
-    const targets: Array<{ place: Place; googlePlaceId: string; verificationStatus: "linked" | "review" }> = [];
+    const placesById = new Map(places.map((place) => [place.id, place]));
+    const targets: PhotoTarget[] = [];
 
     for (const place of places) {
       const sharedLink = linksByPlace.get(place.id);
@@ -161,6 +174,20 @@ export function GoogleBulkPhotoRuntimeControl() {
       if (googlePlaceId) targets.push({ place, googlePlaceId, verificationStatus });
     }
 
+    const restoreTargets: PhotoTarget[] = [];
+    for (const saved of cloudMetadata.restoreTargets) {
+      const place = placesById.get(saved.placeId);
+      if (!place || hasPersistedImage(place) || getGoogleRuntimePhoto(place.id)) continue;
+      const sharedLink = linksByPlace.get(place.id);
+      const currentGooglePlaceId = photoGooglePlaceId(place, sharedLink);
+      const verificationStatus: "linked" | "review" = linkedGooglePlaceId(place) || sharedLink?.status === "linked" ? "linked" : "review";
+      restoreTargets.push({
+        place,
+        googlePlaceId: currentGooglePlaceId || saved.googlePlaceId,
+        verificationStatus,
+      });
+    }
+
     return {
       linked,
       reviewPhotoCandidates,
@@ -168,12 +195,13 @@ export function GoogleBulkPhotoRuntimeControl() {
       persisted,
       runtime,
       targets,
+      restoreTargets: restoreTargets.slice(0, PHOTO_REQUEST_LIMIT),
       missingPlaceId: Math.max(0, places.length - availableGoogleIds),
       cappedTargets: targets.slice(0, PHOTO_REQUEST_LIMIT),
     };
-  }, [places, sharedGoogleLinks, progress.loaded]);
+  }, [places, sharedGoogleLinks, cloudMetadata, progress.loaded]);
 
-  async function runBulkPhotos() {
+  async function runPhotoTargets(targets: PhotoTarget[], mode: "bulk" | "restore") {
     if (running || !admin) return;
     if (!apiKey) {
       setConfirmOpen(false);
@@ -181,7 +209,11 @@ export function GoogleBulkPhotoRuntimeControl() {
       return;
     }
 
-    const targets = summary.cappedTargets;
+    const runnableTargets = targets
+      .filter((target) => !getGoogleRuntimePhoto(target.place.id))
+      .filter((target) => mode !== "restore" || !isGooglePhotoAutoRestoreInFlight(target.place.id))
+      .slice(0, PHOTO_REQUEST_LIMIT);
+
     setConfirmOpen(false);
     setRunning(true);
     setMessage(null);
@@ -190,15 +222,15 @@ export function GoogleBulkPhotoRuntimeControl() {
     let noPhoto = 0;
     let failed = 0;
     let firstError: string | null = null;
-    setProgress({ ...EMPTY_PROGRESS, total: targets.length });
+    setProgress({ ...EMPTY_PROGRESS, total: runnableTargets.length });
 
-    for (let index = 0; index < targets.length; index += 1) {
+    for (let index = 0; index < runnableTargets.length; index += 1) {
       if (cancelRef.current) break;
-      const target = targets[index];
+      const target = runnableTargets[index];
       const startedAt = Date.now();
       let requestStatus: "success" | "failed" = "success";
       let resultCode: GooglePhotoCloudResultCode = "no_photo";
-      setProgress({ current: index, total: targets.length, loaded, noPhoto, failed, currentName: target.place.name });
+      setProgress({ current: index, total: runnableTargets.length, loaded, noPhoto, failed, currentName: target.place.name });
 
       try {
         const photo = await fetchGoogleTransientPhoto(apiKey, target.googlePlaceId);
@@ -224,7 +256,7 @@ export function GoogleBulkPhotoRuntimeControl() {
           placeName: target.place.name,
           googlePlaceId: target.googlePlaceId,
           status: requestStatus,
-          resultCode: resultCode,
+          resultCode,
           attempted: 1,
           retryCount: 0,
           durationMs: Math.max(0, Date.now() - startedAt),
@@ -233,7 +265,7 @@ export function GoogleBulkPhotoRuntimeControl() {
         if (!firstError) firstError = `บันทึก Cloud metadata ไม่สำเร็จ: ${errorText(error)}`;
       }
 
-      setProgress({ current: index + 1, total: targets.length, loaded, noPhoto, failed, currentName: target.place.name });
+      setProgress({ current: index + 1, total: runnableTargets.length, loaded, noPhoto, failed, currentName: target.place.name });
     }
 
     try {
@@ -244,13 +276,22 @@ export function GoogleBulkPhotoRuntimeControl() {
 
     const cancelled = cancelRef.current;
     const diagnostic = firstError ? ` • สาเหตุแรก: ${firstError}` : "";
+    const action = mode === "restore" ? "Restore" : "โหลดรูป Google";
     setRunning(false);
     setProgress((current) => ({ ...current, currentName: null }));
     setMessage(
       cancelled
-        ? `หยุดแล้ว • โหลดรูปสำเร็จ ${loaded} ร้าน • ไม่มีรูป ${noPhoto} • ผิดพลาด ${failed} • Cloud metadata บันทึกอัตโนมัติ${diagnostic}`
-        : `โหลดรูป Google ชั่วคราวสำเร็จ ${loaded} ร้าน • ไม่มีรูป ${noPhoto} • ผิดพลาด ${failed} • Cloud metadata บันทึกอัตโนมัติ${diagnostic}`,
+        ? `หยุดแล้ว • ${action} สำเร็จ ${loaded} ร้าน • ไม่มีรูป ${noPhoto} • ผิดพลาด ${failed}${diagnostic}`
+        : `${action} ชั่วคราวสำเร็จ ${loaded} ร้าน • ไม่มีรูป ${noPhoto} • ผิดพลาด ${failed} • Cloud metadata บันทึกอัตโนมัติ${diagnostic}`,
     );
+  }
+
+  async function runBulkPhotos() {
+    await runPhotoTargets(summary.cappedTargets, "bulk");
+  }
+
+  async function runRestoreRemaining() {
+    await runPhotoTargets(summary.restoreTargets, "restore");
   }
 
   if (!admin) return null;
@@ -269,11 +310,11 @@ export function GoogleBulkPhotoRuntimeControl() {
           <Camera className="h-4 w-4" /> Google Photos
         </button>
       ) : (
-        <section data-testid="google-bulk-photo-runtime-control" className="amd-glass-strong w-[min(92vw,410px)] rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl">
+        <section data-testid="google-bulk-photo-runtime-control" className="amd-glass-strong max-h-[78vh] w-[min(92vw,410px)] overflow-y-auto rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /><p className="text-[11px] font-bold">GOOGLE PHOTOS • MANUAL</p></div>
-              <p className="mt-1 text-[8px] leading-4 text-white/45">รูปจาก Google อยู่เฉพาะ memory ของ session นี้ แต่ผลการโหลดและเวลาเก็บเป็น Cloud metadata อัตโนมัติ • ไม่บันทึก Photo URI/Photo Name/blob ลง Supabase และไม่มี background request</p>
+              <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /><p className="text-[11px] font-bold">GOOGLE PHOTOS • HYBRID RESTORE</p></div>
+              <p className="mt-1 text-[8px] leading-4 text-white/45">รูป Google อยู่เฉพาะ memory ของ session • ร้านที่เคยโหลดสำเร็จอาจ Restore อัตโนมัติเมื่อการ์ดเข้าหน้าจอ สูงสุด 20 ร้านต่อ session • ไม่บันทึก Photo URI/Photo Name/blob ลง Supabase</p>
             </div>
             <button type="button" onClick={() => { if (!running) setOpen(false); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/[0.06]"><X className="h-4 w-4" /></button>
           </div>
@@ -285,15 +326,26 @@ export function GoogleBulkPhotoRuntimeControl() {
               <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">ร้าน</p><strong>{places.length}</strong></div>
               <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">Google ID</p><strong>{summary.availableGoogleIds}</strong></div>
               <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">Verified</p><strong>{summary.linked}</strong></div>
-              <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">Review</p><strong>{summary.reviewPhotoCandidates}</strong></div>
+              <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">Restore</p><strong>{summary.restoreTargets.length}</strong></div>
               <div className="rounded-xl bg-white/[0.035] p-2"><p className="text-white/40">จะโหลด</p><strong>{summary.cappedTargets.length}</strong></div>
             </div>
           )}
 
           {!loadingPlaces && (
             <p className="mt-2 rounded-xl border border-emerald-300/10 bg-emerald-300/[0.04] px-3 py-2 text-[8px] leading-4 text-emerald-100">
-              Cloud metadata • โหลดรูปสำเร็จล่าสุด {cloudMetadata.savedCount} ร้าน • ไม่มีรูป {cloudMetadata.noPhotoCount} • Fail {cloudMetadata.failedCount} • ล่าสุด {formatCloudTime(cloudMetadata.lastSavedAt)}
+              Cloud metadata • เคยโหลดรูปสำเร็จ {cloudMetadata.savedCount} ร้าน • ไม่มีรูป {cloudMetadata.noPhotoCount} • Fail {cloudMetadata.failedCount} • ล่าสุด {formatCloudTime(cloudMetadata.lastSavedAt)}
             </p>
+          )}
+
+          {!running && !loadingPlaces && summary.restoreTargets.length > 0 && (
+            <button
+              data-testid="google-photo-restore-remaining"
+              type="button"
+              onClick={() => void runRestoreRemaining()}
+              className="amd-chip mt-3 flex h-10 min-h-0 w-full items-center justify-center gap-2 text-[8px] font-bold text-cyan-100"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Restore All Remaining ({summary.restoreTargets.length})
+            </button>
           )}
 
           {summary.reviewPhotoCandidates > 0 && !loadingPlaces && (
@@ -334,6 +386,10 @@ export function GoogleBulkPhotoRuntimeControl() {
                 <button data-testid="google-bulk-photo-runtime-run" type="button" onClick={() => void runBulkPhotos()} className="amd-btn amd-btn-primary h-10 min-h-0 rounded-xl text-[8px] font-bold">ยืนยันและโหลด</button>
               </div>
             </div>
+          )}
+
+          {!running && !loadingPlaces && (
+            <CloudPermanentImageManager places={places} onChanged={refreshPlaces} />
           )}
 
           {message && <p className="mt-3 rounded-xl border border-white/[0.06] bg-black/10 px-3 py-2 text-[8px] leading-4 text-white/60">{message}</p>}

@@ -41,6 +41,14 @@ export function normalizePlaceImages(place: Place): PlaceImage[] {
   return unique([...metadata, ...legacy].filter((image) => Boolean(image.url || image.photoReference)), (item) => `${item.photoReference ?? ""}|${item.url}`);
 }
 
+function persistedSourceScore(image: PlaceImage) {
+  if (image.source === "cloud_storage") return image.isCover ? 500 : 450;
+  if (image.source === "official_website" || image.source === "official_social") return 350;
+  if (image.source === "seed") return 250;
+  if (image.source === "fallback") return 150;
+  return 100;
+}
+
 export function selectBestPlaceImage(place: Place): PlaceImage | null {
   const images = normalizePlaceImages(place);
   if (!images.length) return null;
@@ -51,9 +59,8 @@ export function selectBestPlaceImage(place: Place): PlaceImage | null {
     const ratio = width > 0 && height > 0 ? width / height : 1.4;
     const landscapeScore = ratio >= 1.15 && ratio <= 2.2 ? 20 : ratio >= 0.9 ? 8 : 0;
     const resolutionScore = Math.min(25, Math.floor((width * height) / 250_000));
-    const sourceScore = image.source === "google_places" ? 30 : image.source === "official_website" || image.source === "official_social" ? 24 : 18;
     const verifiedScore = image.verified ? 15 : 0;
-    return { image, score: sourceScore + verifiedScore + landscapeScore + resolutionScore - index * 0.1 };
+    return { image, score: persistedSourceScore(image) + verifiedScore + landscapeScore + resolutionScore - index * 0.1 };
   });
 
   scored.sort((a, b) => b.score - a.score);
@@ -88,6 +95,7 @@ export function mergePlaceImageData(seed: Place, live: Place): Place {
 }
 
 export function sourceLabel(source: PlaceImage["source"]) {
+  if (source === "cloud_storage") return "Cloud Permanent Image";
   if (source === "google_places") return "Google Places";
   if (source === "official_website") return "Official Website";
   if (source === "official_social") return "Official Social";
