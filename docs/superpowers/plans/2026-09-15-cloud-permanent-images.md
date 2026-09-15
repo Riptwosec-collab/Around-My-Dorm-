@@ -4,7 +4,7 @@
 
 **Goal:** Persist rights-cleared place images in Supabase Storage and automatically restore them across refreshes, browser restarts, and devices without issuing a Google Places photo request.
 
-**Architecture:** Extend the existing `public.amd_place_images` registry and add a public-read/admin-write Supabase Storage bucket named `amd-place-images`. Add a small permanent-image domain layer, a Supabase repository for upload/list/archive/cover operations, merge active Cloud rows into `Place.imageMetadata` during `loadPlacesFromDatabase()`, and expose permanent-image management inside the existing admin photo control. Google Place Photos remain session-only and manual-only fallback content.
+**Architecture:** Extend the existing `public.amd_place_images` registry and add a public-read/admin-write Supabase Storage bucket named `amd-place-images`. Add a focused permanent-image domain layer, a Supabase repository for upload/list/archive/cover operations, merge active Cloud rows into `Place.imageMetadata` during `loadPlacesFromDatabase()`, and expose permanent-image management inside the existing admin photo control. Google Place Photos remain session-only, manual-only fallback content and are never copied into permanent Storage.
 
 **Tech Stack:** Next.js 15, React 19, TypeScript 5.8, Vitest/jsdom, Supabase JS/Postgres/RLS/Storage, Cloudflare Workers static export.
 
@@ -53,10 +53,7 @@ describe("cloud permanent image migration", () => {
     }
     expect(sql).toContain("amd-place-images");
     expect(sql).toContain("8388608");
-    expect(sql).toContain("image/jpeg");
-    expect(sql).toContain("image/png");
-    expect(sql).toContain("image/webp");
-    expect(sql).toContain("image/avif");
+    for (const mime of ["image/jpeg", "image/png", "image/webp", "image/avif"]) expect(sql).toContain(mime);
   });
 
   it("enforces active-only public reads and admin-only writes", () => {
@@ -77,17 +74,15 @@ describe("cloud permanent image migration", () => {
 
 - [ ] **Step 2: Run the test and confirm RED**
 
-Run:
-
 ```bash
 npm test -- tests/cloud-permanent-image-migration.test.ts
 ```
 
 Expected: FAIL because `supabase/cloud-permanent-images.sql` does not exist.
 
-- [ ] **Step 3: Implement the additive migration**
+- [ ] **Step 3: Implement the additive registry migration**
 
-Create `supabase/cloud-permanent-images.sql` with these exact responsibilities:
+Create `supabase/cloud-permanent-images.sql` beginning with:
 
 ```sql
 alter table public.amd_place_images
@@ -105,6 +100,17 @@ alter table public.amd_place_images drop constraint if exists amd_place_images_s
 alter table public.amd_place_images add constraint amd_place_images_status_check
   check (status in ('active','archived'));
 
+alter table public.amd_place_images drop constraint if exists amd_place_images_permanent_source_check;
+alter table public.amd_place_images add constraint amd_place_images_permanent_source_check
+  check (
+    storage_path is null
+    or (
+      storage_bucket = 'amd-place-images'
+      and source in ('user_upload','admin_upload','licensed_import')
+      and nullif(btrim(rights_basis), '') is not null
+    )
+  );
+
 create unique index if not exists amd_place_images_storage_path_uidx
   on public.amd_place_images(storage_path)
   where storage_path is not null;
@@ -114,14 +120,25 @@ create unique index if not exists amd_place_images_active_cover_uidx
   where is_cover = true and status = 'active';
 ```
 
-Then make public table reads active-only and writes authenticated-admin-only. The policy predicate is:
+Replace the current unrestricted public-read policy with active-only read access:
+
+```sql
+drop policy if exists "amd public read images" on public.amd_place_images;
+create policy "amd public read active images"
+  on public.amd_place_images for select to anon, authenticated
+  using (status = 'active');
+```
+
+Grant `authenticated` INSERT/UPDATE/DELETE and create separate policies using this predicate in both `using` and `with check` where applicable:
 
 ```sql
 coalesce((auth.jwt() -> 'app_metadata' ->> 'amd_admin')::boolean, false)
 and not coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)
 ```
 
-Insert/upsert the bucket with:
+- [ ] **Step 4: Create/configure the Storage bucket and Storage policies in the same migration**
+
+Use:
 
 ```sql
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -138,13 +155,21 @@ set public = excluded.public,
     allowed_mime_types = excluded.allowed_mime_types;
 ```
 
-Storage SELECT is public only for bucket `amd-place-images`; INSERT/UPDATE/DELETE require the same admin JWT predicate and must constrain `bucket_id = 'amd-place-images'`.
+Create a public SELECT policy on `storage.objects` constrained to `bucket_id = 'amd-place-images'`. Create authenticated INSERT/UPDATE/DELETE policies constrained to both the same bucket ID and the admin JWT predicate. Drop policies with the same names before recreating them so the migration is repeatable.
 
-Create `public.amd_set_place_image_cover(p_image_id uuid)` as `security invoker`, verify the caller with the JWT predicate, obtain the target `place_id`, set every active row for that place to `is_cover=false`, then set only `p_image_id` to `is_cover=true`. Raise `42501` for unauthorized users and `P0002` when the image is absent/not active.
+- [ ] **Step 5: Add atomic cover replacement RPC**
 
-- [ ] **Step 4: Verify GREEN and SQL contract**
+Create `public.amd_set_place_image_cover(p_image_id uuid)` as `security invoker`. It must:
 
-Run:
+1. reject callers that fail the admin JWT predicate using SQLSTATE `42501`;
+2. select the active target row and its `place_id`, raising `P0002` if missing;
+3. set `is_cover=false` for every active image of the same place;
+4. set the target image to `is_cover=true` and update `updated_at`;
+5. grant execute to `authenticated` and revoke execute from `anon`/`public`.
+
+Because the function runs in one transaction, an exception rolls back both cover updates and preserves the one-active-cover invariant.
+
+- [ ] **Step 6: Verify GREEN**
 
 ```bash
 npm test -- tests/cloud-permanent-image-migration.test.ts
@@ -152,7 +177,7 @@ npm test -- tests/cloud-permanent-image-migration.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add supabase/cloud-permanent-images.sql tests/cloud-permanent-image-migration.test.ts
@@ -202,15 +227,42 @@ Add `"cloud_storage"` to `PlaceImage.source` and add `isCover?: boolean`.
 
 - [ ] **Step 1: Write failing model/priority tests**
 
-Create `tests/cloud-permanent-images.test.ts` covering:
+Create `tests/cloud-permanent-images.test.ts` with an explicit active row:
 
 ```ts
 import { describe, expect, it } from "vitest";
 import { PLACES } from "@/data/places";
-import { cloudPermanentImageToPlaceImage, mergePermanentImagesIntoPlaces, validatePermanentImageMetadata } from "@/lib/cloud/place-image-model";
+import {
+  cloudPermanentImageToPlaceImage,
+  mergePermanentImagesIntoPlaces,
+  validatePermanentImageMetadata,
+  type CloudPermanentImageRow,
+} from "@/lib/cloud/place-image-model";
 import { getPlaceImageCandidates } from "@/lib/place-images";
 
 const seed = PLACES[0]!;
+const row: CloudPermanentImageRow = {
+  id: "11111111-1111-4111-8111-111111111111",
+  place_id: seed.id,
+  source: "admin_upload",
+  source_reference: null,
+  source_url: "https://around.example/source",
+  attribution: "Around My Dorm",
+  width: 1200,
+  height: 800,
+  verified: true,
+  last_checked: "2026-09-15T07:00:00.000Z",
+  created_at: "2026-09-15T07:00:00.000Z",
+  storage_bucket: "amd-place-images",
+  storage_path: `${seed.id}/11111111-1111-4111-8111-111111111111.webp`,
+  rights_basis: "Owned by Around My Dorm",
+  mime_type: "image/webp",
+  byte_size: 2048,
+  is_cover: true,
+  status: "active",
+  created_by: "22222222-2222-4222-8222-222222222222",
+  updated_at: "2026-09-15T07:00:00.000Z",
+};
 
 it("ranks a Cloud cover before every other persisted candidate", () => {
   const place = {
@@ -224,18 +276,29 @@ it("ranks a Cloud cover before every other persisted candidate", () => {
 });
 
 it("merges Cloud rows only into their matching place", () => {
-  const rows = [/* one active row for seed.id */];
-  const merged = mergePermanentImagesIntoPlaces([seed, { ...seed, id: "other" }], rows, () => "https://cloud.test/a.webp");
+  const merged = mergePermanentImagesIntoPlaces(
+    [seed, { ...seed, id: "other" }],
+    [row],
+    () => "https://cloud.test/a.webp",
+  );
   expect(merged[0]?.imageMetadata?.some((image) => image.source === "cloud_storage")).toBe(true);
   expect(merged[1]?.imageMetadata?.some((image) => image.source === "cloud_storage")).toBe(false);
 });
 
 it("rejects Google-backed metadata from the permanent path", () => {
-  expect(() => validatePermanentImageMetadata({ source: "google_places" as any, rightsBasis: "copied", sourceUrl: "https://places.googleapis.com/v1/x/media" })).toThrow();
+  expect(() => validatePermanentImageMetadata({
+    source: "google_places" as any,
+    rightsBasis: "copied",
+    sourceUrl: "https://places.googleapis.com/v1/x/media",
+  })).toThrow();
+});
+
+it("recreates the same Cloud image candidate from the same persisted row", () => {
+  const first = cloudPermanentImageToPlaceImage(row, "https://cloud.test/a.webp");
+  const reopened = cloudPermanentImageToPlaceImage(row, "https://cloud.test/a.webp");
+  expect(reopened).toEqual(first);
 });
 ```
-
-Also assert two calls using the same Cloud row/public URL produce the same `PlaceImage` candidate, proving restart determinism.
 
 - [ ] **Step 2: Run tests and confirm RED**
 
@@ -247,7 +310,7 @@ Expected: FAIL because `cloud_storage` and the model module do not exist.
 
 - [ ] **Step 3: Implement the pure model**
 
-`validatePermanentImageMetadata()` must require a non-empty rights basis and source in the permanent allowlist. Reject explicit Google photo URLs/resource references using guards for `places.googleapis.com`, `maps.googleapis.com`, `googleusercontent.com`, and `places/<id>/photos/<id>`.
+`validatePermanentImageMetadata()` requires a non-empty rights basis and a source in the permanent allowlist. Reject explicit Google photo URLs/resource references using guards for `places.googleapis.com`, `maps.googleapis.com`, `googleusercontent.com`, and `places/<id>/photos/<id>`.
 
 `cloudPermanentImageToPlaceImage()` returns:
 
@@ -266,18 +329,17 @@ Expected: FAIL because `cloud_storage` and the model module do not exist.
 
 `mergePermanentImagesIntoPlaces()` groups only active rows with a usable `storage_path`, maps them to public URLs, prepends them to `imageMetadata`, and leaves unrelated places unchanged.
 
-- [ ] **Step 4: Update image ranking**
+- [ ] **Step 4: Update persisted-image ranking**
 
-In `lib/place-images.ts`, make the ranking explicit:
+In `lib/place-images.ts`, use source/cover scoring that guarantees this order:
 
-- Cloud cover: highest.
-- Other Cloud permanent images: second.
-- Official persisted images: next.
-- Existing seed/other persisted images: next.
-- Persisted Google-reference compatibility remains supported, but a Cloud image always wins.
-- Runtime Google is still outside this persisted ranking and remains fallback in `PlacePhoto`.
+1. Cloud cover.
+2. Other Cloud permanent images.
+3. Official persisted images.
+4. Existing seed/other persisted images.
+5. Persisted Google-reference compatibility images.
 
-Extend `sourceLabel()` so `cloud_storage` becomes `Cloud Permanent Image`.
+Runtime Google remains outside this function and is handled by `PlacePhoto` after persisted candidates. Extend `sourceLabel()` so `cloud_storage` becomes `Cloud Permanent Image`.
 
 - [ ] **Step 5: Verify GREEN and type safety**
 
@@ -318,15 +380,16 @@ export async function archivePermanentPlaceImage(row: CloudPermanentImageRow): P
 
 - [ ] **Step 1: Write failing repository tests**
 
-Mock `@/lib/cloud/supabase` and assert these behaviors independently:
+Mock `@/lib/cloud/supabase` and test these behaviors independently:
 
 1. Unsupported MIME or `file.size > 8 MiB` fails before Storage upload.
 2. Storage upload failure causes no registry INSERT.
 3. Registry INSERT failure calls `storage.from(bucket).remove([path])` before rethrowing.
 4. `isCover=true` calls RPC `amd_set_place_image_cover` after successful row insert.
-5. RPC failure compensates by archiving/removing the just-created image and object.
+5. RPC failure compensates by archiving the just-created row and attempting object removal before rethrowing.
 6. Archive flow updates `status='archived'` before object removal.
 7. Object-removal failure returns `{ objectRemoved:false }` while the row stays archived.
+8. Listing selects only active rows and never imports a Google photo module.
 
 - [ ] **Step 2: Run tests and confirm RED**
 
@@ -338,7 +401,7 @@ Expected: FAIL because the repository does not exist.
 
 - [ ] **Step 3: Implement validation, path generation, upload, and insert**
 
-Use `crypto.randomUUID()` and MIME-to-extension mapping:
+Use:
 
 ```ts
 const EXTENSIONS: Record<string, string> = {
@@ -349,23 +412,31 @@ const EXTENSIONS: Record<string, string> = {
 };
 ```
 
-Object path is `${placeId}/${crypto.randomUUID()}.${extension}`. Insert `verified:true`, `storage_bucket:PERMANENT_IMAGE_BUCKET`, `storage_path`, source/provenance, MIME, byte size, `created_by` from the current authenticated admin, and current timestamps.
+Object path is `${placeId}/${crypto.randomUUID()}.${extension}`. Before upload, call the pure metadata validator and reject files over `PERMANENT_IMAGE_MAX_BYTES` or MIME types outside the map.
 
-Require a real admin session before mutation by calling `getAdminAccessState()` and rejecting when `admin !== true`. RLS remains the ultimate authorization boundary.
+Use `supabase.auth.getUser()` to obtain the authenticated user ID, then `getAdminAccessState()` to require `admin === true`. Upload to Storage first. Insert the registry row second with `verified:true`, `storage_bucket`, `storage_path`, source/provenance, MIME, byte size, `created_by`, and timestamps. If insert fails, remove the object before rethrowing.
 
 - [ ] **Step 4: Implement public listing and URL materialization**
 
-`loadActivePermanentImageRows()` queries `amd_place_images`, filters `status='active'`, and limits to the provided IDs using `.in("place_id", placeIds)` in bounded chunks when needed.
+`loadActivePermanentImageRows()` queries `amd_place_images`, filters `status='active'`, and processes place IDs in chunks of 100 to keep the `.in("place_id", ids)` request bounded. Empty input returns `[]` without a request.
 
 `getPermanentImagePublicUrl()` uses:
 
 ```ts
-supabase.storage.from(row.storage_bucket || PERMANENT_IMAGE_BUCKET).getPublicUrl(row.storage_path!).data.publicUrl
+supabase.storage
+  .from(row.storage_bucket || PERMANENT_IMAGE_BUCKET)
+  .getPublicUrl(row.storage_path!).data.publicUrl
 ```
 
-It must not sign URLs and must not call Google.
+It does not sign URLs and does not call Google.
 
-- [ ] **Step 5: Verify GREEN**
+- [ ] **Step 5: Implement cover and archive operations**
+
+`setPermanentImageCover()` calls `supabase.rpc("amd_set_place_image_cover", { p_image_id: imageId })` and throws on error.
+
+`archivePermanentPlaceImage()` updates the row to `{ status:"archived", is_cover:false, updated_at: now }` first. Only after that succeeds does it remove the Storage object. If object deletion fails, return `{ objectRemoved:false }` without reactivating the row.
+
+- [ ] **Step 6: Verify GREEN**
 
 ```bash
 npm test -- tests/cloud-permanent-image-storage.test.ts
@@ -374,7 +445,7 @@ npm run typecheck
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add lib/cloud/place-images.ts tests/cloud-permanent-image-storage.test.ts
@@ -383,10 +454,11 @@ git commit -m "feat: add permanent image cloud repository"
 
 ---
 
-### Task 4: Merge permanent Cloud images into the normal place loader without Google requests
+### Task 4: Merge permanent Cloud images into startup loading and preserve runtime fallback order
 
 **Files:**
 - Modify: `lib/database/places.ts`
+- Modify: `components/PlacePhoto.tsx`
 - Create: `tests/cloud-permanent-image-loader.test.ts`
 - Create: `tests/place-photo-fallback.test.ts`
 
@@ -398,16 +470,18 @@ async function applyPermanentImageLayer(places: Place[]): Promise<Place[]>;
 
 - [ ] **Step 1: Write the failing loader boundary test**
 
-The test must assert:
+Assert that:
 
 - `lib/database/places.ts` imports the permanent-image repository/model.
 - `loadPlacesFromDatabase()` applies the permanent layer after user additions/overrides are assembled and before returning normalized places.
 - `lib/database/places.ts`, `lib/cloud/place-images.ts`, and `lib/cloud/place-image-model.ts` do not import `google-transient-photo`, `fetchGoogleTransientPhoto`, or `loadGoogleMaps`.
-- Cloud image failure contributes a warning but does not discard place records.
+- Permanent-image Cloud failure adds a warning while preserving place records.
 
-- [ ] **Step 2: Add a real broken-image fallback test**
+- [ ] **Step 2: Write the failing candidate-chain UI test**
 
-Using Testing Library in a `.test.ts` file and `React.createElement`, render `PlacePhoto` with two persisted candidates: bad Cloud URL first, valid seed URL second. Fire `error` on the first `<img>` and assert the same component switches to the second candidate. This proves a missing Storage object does not leave the card stuck on fallback artwork.
+Using Testing Library in `tests/place-photo-fallback.test.ts` and `React.createElement`, render `PlacePhoto` with two persisted candidates: a Cloud URL first and a seed URL second. Fire `error` on the first `<img>` and assert the image source changes to the seed URL.
+
+Add a second case where a Google runtime image is already present in `google-photo-runtime`: persisted candidates must still render first, but after all persisted candidates fail, the already-loaded runtime image becomes the next candidate. The test must not call Google or `fetchGoogleTransientPhoto`.
 
 - [ ] **Step 3: Run tests and confirm RED**
 
@@ -415,7 +489,7 @@ Using Testing Library in a `.test.ts` file and `React.createElement`, render `Pl
 npm test -- tests/cloud-permanent-image-loader.test.ts tests/place-photo-fallback.test.ts
 ```
 
-Expected: loader test FAIL because the permanent layer is not wired yet.
+Expected: loader test FAIL because the permanent layer is not wired; runtime-after-persisted test FAIL because `PlacePhoto` currently chooses persisted candidates or runtime instead of appending runtime last.
 
 - [ ] **Step 4: Implement the loader layer**
 
@@ -428,9 +502,23 @@ async function applyPermanentImageLayer(places: Place[]) {
 }
 ```
 
-Call it after `applyCloudUserLayer()` so user-added places can also receive permanent images. Catch errors exactly like route/cloud enrichment failures and append a warning such as `Permanent image cloud unavailable` while preserving the existing place list.
+Call it after `applyCloudUserLayer()` so user-added places can receive permanent images. Catch failures like other optional Cloud layers and append `Permanent image cloud unavailable` while retaining the current place list.
 
-- [ ] **Step 5: Verify GREEN and existing database hook tests**
+- [ ] **Step 5: Correct `PlacePhoto` candidate composition**
+
+Replace the persisted-vs-runtime exclusive choice with a single ordered candidate list:
+
+```ts
+const candidates = useMemo(() => {
+  if (!transientImage) return persistedCandidates;
+  if (persistedCandidates.some((image) => image.url === transientImage.url)) return persistedCandidates;
+  return [...persistedCandidates, transientImage];
+}, [persistedCandidates, transientImage]);
+```
+
+This preserves Cloud/persisted priority, permits manually loaded Google runtime as a fallback in the same session, and triggers no Google request by itself.
+
+- [ ] **Step 6: Verify GREEN and existing database tests**
 
 ```bash
 npm test -- tests/cloud-permanent-image-loader.test.ts tests/place-photo-fallback.test.ts tests/use-place-database.test.ts
@@ -439,10 +527,10 @@ npm run typecheck
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add lib/database/places.ts tests/cloud-permanent-image-loader.test.ts tests/place-photo-fallback.test.ts
+git add lib/database/places.ts components/PlacePhoto.tsx tests/cloud-permanent-image-loader.test.ts tests/place-photo-fallback.test.ts
 git commit -m "feat: restore permanent images from cloud on startup"
 ```
 
@@ -461,7 +549,7 @@ git commit -m "feat: restore permanent images from cloud on startup"
 - Select a place, select a local image file, choose `admin_upload` or `licensed_import`, enter required rights basis, optional attribution/source URL, and optional `Set as cover`.
 - Show current active Cloud images for the selected place with `Set cover` and `Archive` actions.
 - Show aggregate counts: permanent Cloud images, places with a Cloud cover, runtime-only Google images, and places with no persisted image.
-- Explicitly state that the currently displayed Google runtime photo cannot be copied into Cloud Storage by this feature.
+- Explicitly state that a displayed Google runtime photo cannot be copied into Cloud Storage by this feature.
 
 - [ ] **Step 1: Write failing manager contract tests**
 
@@ -477,7 +565,7 @@ expect(source).toContain("archivePermanentPlaceImage");
 expect(source).not.toContain("fetchGoogleTransientPhoto");
 ```
 
-Also assert `GoogleBulkPhotoRuntimeControl.tsx` renders `<CloudPermanentImageManager` only inside the already-admin-gated control.
+Also assert `GoogleBulkPhotoRuntimeControl.tsx` renders `<CloudPermanentImageManager` inside the existing admin-only control.
 
 - [ ] **Step 2: Run test and confirm RED**
 
@@ -491,11 +579,11 @@ Expected: FAIL because the manager does not exist.
 
 Use controlled state for `selectedPlaceId`, `file`, `source`, `rightsBasis`, `attribution`, `sourceUrl`, `isCover`, `running`, and `message`.
 
-Disable upload until a place, file, and non-empty rights basis are present. On success: reload active image rows, clear the file input/rights fields, invoke parent `onChanged`, and show a Thai/English success message. Errors must display the Supabase/validation error instead of silently falling back to Google.
+Disable upload until a place, file, and non-empty rights basis are present. On success, reload active image rows, clear file/provenance inputs, invoke parent `onChanged`, and show a Thai/English success message. Errors display the validation/Supabase error and never silently fall back to Google.
 
 - [ ] **Step 4: Embed in the existing global photo control**
 
-Pass the already-loaded `places` and `refreshPlaces` callback. Do not add another login gate and do not mount a second global control.
+Pass the already-loaded `places` and `refreshPlaces` callback. Do not add another login gate and do not mount a second global floating control.
 
 - [ ] **Step 5: Verify GREEN**
 
@@ -523,15 +611,15 @@ git commit -m "feat: manage permanent place images in admin control"
 - Modify: `tests/photo-api-budget.test.ts`
 - Modify: `tests/cloud-only-storage.test.ts`
 
-- [ ] **Step 1: Add failing/guard assertions before any cleanup refactor**
+- [ ] **Step 1: Add boundary assertions**
 
-Add assertions that:
+Assert that:
 
 - `GoogleTransientPhotoPanel` and `GoogleBulkPhotoRuntimeControl` still call Google only from explicit user actions.
-- `lib/google-transient-photo.ts` still documents/implements runtime-only Google photo URLs.
+- `lib/google-transient-photo.ts` still marks Google photo URLs as runtime-only.
 - `lib/cloud/place-images.ts` never imports `google-transient-photo`, `google-photo-runtime`, or `loadGoogleMaps`.
 - `lib/cloud/place-images.ts` contains no `localStorage` or `sessionStorage`.
-- Cloud startup restoration is performed via `amd_place_images` and Supabase Storage public URLs.
+- Startup restoration uses `amd_place_images` and Supabase Storage public URLs.
 - No migration adds `google_photo_uri`, `google_photo_name`, or binary Google cache fields.
 
 - [ ] **Step 2: Run the regression group**
@@ -540,7 +628,7 @@ Add assertions that:
 npm test -- tests/google-bulk-photo-runtime.test.ts tests/google-photo-cloud-metadata.test.ts tests/photo-api-budget.test.ts tests/google-manual-request-architecture.test.ts tests/cloud-only-storage.test.ts
 ```
 
-Expected: PASS after Tasks 1–5; any failure represents a boundary regression that must be corrected before proceeding.
+Expected: PASS after Tasks 1–5. Any failure is a storage/API-boundary regression and must be corrected before proceeding.
 
 - [ ] **Step 3: Commit the boundary tests**
 
@@ -562,14 +650,14 @@ Use the connector's DDL migration action rather than `execute_sql` for schema ch
 
 - [ ] **Step 2: Verify the live registry schema**
 
-Read `information_schema.columns` and confirm all new fields exist with expected nullability/defaults. Confirm row count is preserved.
+Read `information_schema.columns` and confirm all new fields exist with the expected defaults/constraints. Confirm the pre-migration row count is preserved.
 
 - [ ] **Step 3: Verify live RLS policies**
 
 Query `pg_policies` and confirm:
 
-- anon/authenticated may SELECT only active permanent-image rows;
-- INSERT/UPDATE/DELETE on `amd_place_images` require the admin JWT predicate;
+- anon/authenticated SELECT is restricted to active `amd_place_images` rows;
+- INSERT/UPDATE/DELETE on `amd_place_images` use the admin JWT predicate;
 - Storage object writes are restricted to authenticated admins and bucket `amd-place-images`.
 
 - [ ] **Step 4: Verify bucket configuration**
@@ -594,9 +682,9 @@ No production image row is fabricated during this task.
 ### Task 8: End-to-end verification, CI, and merge
 
 **Files:**
-- Update: `docs/superpowers/specs/2026-09-15-cloud-permanent-images-design.md` status line after successful implementation verification.
+- Update: `docs/superpowers/specs/2026-09-15-cloud-permanent-images-design.md` status line only after successful implementation acceptance.
 
-- [ ] **Step 1: Run the full local/CI-equivalent suite**
+- [ ] **Step 1: Run the full CI-equivalent suite**
 
 ```bash
 npm test
@@ -609,32 +697,32 @@ Expected: every command exits 0.
 
 - [ ] **Step 2: Perform the rights-cleared image acceptance test**
 
-Using the new admin UI, upload one real image that the project has permission to store. Mark it as cover. Record the affected place ID and resulting `amd_place_images` row.
+Using the new admin UI, upload one real image that the project has permission to store and mark it as cover. Record the affected place ID, the active `amd_place_images` row, and the Storage object path.
 
-If no rights-cleared image file has been supplied yet, stop this acceptance step without fabricating one; infrastructure/code verification may complete, but the real-image persistence acceptance remains explicitly unverified until such a file is provided.
+If no rights-cleared image file has been supplied, stop this acceptance step without fabricating one. Infrastructure/code verification may complete, but real-image restart persistence remains explicitly unverified until such a file is available.
 
 - [ ] **Step 3: Prove restart persistence without Google photo usage**
 
 For the acceptance-test place:
 
-1. Record current count of `amd_google_request_logs` where `request_type='place_photo'`.
-2. Close/reopen or hard-refresh the app.
+1. Record the count of `amd_google_request_logs` where `request_type='place_photo'`.
+2. Hard-refresh/reopen the app.
 3. Confirm the place renders the Supabase public object URL as its first persisted image.
 4. Re-read the `place_photo` request count.
-5. Assert the count did not increase from the reopen itself.
+5. Assert the count did not increase because of the reopen.
 
-- [ ] **Step 4: Mark the spec implemented only after the acceptance criteria are true**
+- [ ] **Step 4: Mark the spec implemented only when acceptance is complete**
 
-Change the spec status line to `Status: Approved and implemented` only when the code verification and the real-image persistence test have both succeeded.
+Change the spec status line to `Status: Approved and implemented` only when code verification and the real-image restart test have succeeded.
 
-- [ ] **Step 5: Commit final verification documentation**
+- [ ] **Step 5: Commit final verification documentation when applicable**
 
 ```bash
 git add docs/superpowers/specs/2026-09-15-cloud-permanent-images-design.md
 git commit -m "docs: mark cloud permanent images implemented"
 ```
 
-Skip this commit when the real-image acceptance test is still waiting for a rights-cleared file.
+Do not create this commit while the real-image acceptance test is waiting for a rights-cleared file.
 
 - [ ] **Step 6: Check GitHub Build Check for the feature head SHA**
 
@@ -642,10 +730,10 @@ Require Unit tests, Type check, Build production, and Validate Cloudflare Worker
 
 - [ ] **Step 7: Integrate**
 
-Fast-forward `main` to `feature/cloud-permanent-images` only when the feature branch is based on current `main`, the full suite is green, and the GitHub Build Check is successful. Do not claim Cloudflare deployment unless an actual deploy action is separately executed and verified.
+Fast-forward `main` to `feature/cloud-permanent-images` only when the feature branch is based on current `main`, the full suite is green, and GitHub Build Check succeeds. Do not claim Cloudflare deployment unless a separate real deploy action is executed and verified.
 
 ---
 
 ## Completion Criteria
 
-The feature is complete when a rights-cleared image uploaded once is represented by an active `amd_place_images` row plus an object in `amd-place-images`, the normal place loader automatically merges that image on every fresh app session/device, `PlacePhoto` renders it before Google runtime fallback, reopening the app does not create a Google Places photo request, and unauthorized/anonymous clients cannot mutate the registry or Storage bucket.
+The feature is complete when a rights-cleared image uploaded once is represented by an active `amd_place_images` row plus an object in `amd-place-images`, the normal place loader automatically merges that image on every fresh app session/device, `PlacePhoto` renders it before an already-loaded Google runtime fallback, reopening the app does not create a Google Places photo request, and unauthorized/anonymous clients cannot mutate the registry or Storage bucket.
