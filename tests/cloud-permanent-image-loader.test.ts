@@ -29,7 +29,7 @@ describe("permanent image startup layer", () => {
 
   it("keeps place loading resilient when the optional permanent image Cloud layer fails", () => {
     expect(places).toContain("Permanent image cloud unavailable");
-    expect(places).toMatch(/try\s*\{[\s\S]*applyPermanentImageLayer\(personalizedPlaces\)[\s\S]*catch/s);
+    expect(places).toMatch(/try\s*\{[\s\S]*applyPermanentImageLayer\(personalizedPlaces\)[\s\S]*catch/);
   });
 
   it("restores permanent images without importing any Google photo runtime/request module", () => {
