@@ -63,10 +63,11 @@ export function PlacePhoto({
   const persistedCandidates = useMemo(() => getPlaceImageCandidates(place), [place]);
   const transientPhoto = useGoogleRuntimePhoto(place.id);
   const transientImage = useMemo(() => runtimeImage(transientPhoto), [transientPhoto]);
-  const candidates = useMemo(
-    () => persistedCandidates.length ? persistedCandidates : transientImage ? [transientImage] : [],
-    [persistedCandidates, transientImage],
-  );
+  const candidates = useMemo(() => {
+    if (!transientImage) return persistedCandidates;
+    if (persistedCandidates.some((image) => image.url === transientImage.url)) return persistedCandidates;
+    return [...persistedCandidates, transientImage];
+  }, [persistedCandidates, transientImage]);
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const active = candidates.find((image) => !failed.has(image.url)) ?? null;
@@ -85,7 +86,7 @@ export function PlacePhoto({
   }
 
   const loaded = loadedUrl === active.url;
-  const usingTransientGooglePhoto = persistedCandidates.length === 0 && transientPhoto?.url === active.url;
+  const usingTransientGooglePhoto = transientPhoto?.url === active.url;
   const transientCredit = transientPhoto?.authorAttributions.map((item) => item.displayName).filter(Boolean).join(", ") || "";
 
   return (
