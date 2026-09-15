@@ -30,7 +30,27 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Unit tests
-        run: npm test
+        id: unit-tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm test 2>&1 | tee unit-test-output.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit $status
+
+      - name: Upload unit test diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-check-unit-test-output
+          path: unit-test-output.log
+          if-no-files-found: warn
+
+      - name: Enforce unit test result
+        if: steps.unit-tests.outputs.exit_code != '0'
+        run: exit 1
 
       - name: Type check
         run: npm run typecheck
