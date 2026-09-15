@@ -136,7 +136,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [searchFocused, setSearchFocused] = useState(false);
   const [queryIntentOverride, setQueryIntentOverride] = useState<DiscoveryIntent | null>(null);
   const [category, setCategory] = useState<"all" | CategoryId>("all");
-  const [radiusMeters, setRadiusMeters] = useState(500);
+  const [radiusMeters, setRadiusMeters] = useState(DEFAULT_SETTINGS.defaultRadius);
   const [sortMode, setSortMode] = useState<SortMode>("recommended");
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
@@ -212,11 +212,21 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       if (!active) return;
       setFavorites(state.favorites);
       setRecentViews(state.recentViews);
+      const previousPlacesUiVersion = Number((state.settings as Partial<AppSettings> | null)?.placesUiVersion ?? 0);
       const mergedSettings = { ...DEFAULT_SETTINGS, ...(state.settings || {}) };
-      setSettings({ ...mergedSettings, preferredCategories: Array.isArray(mergedSettings.preferredCategories) ? mergedSettings.preferredCategories : [] });
-      setRadiusMeters(mergedSettings.defaultRadius);
-      if (mergedSettings.homeMode === "custom" && mergedSettings.customHomeLocation) {
-        const customCenter = { lat: mergedSettings.customHomeLocation.latitude, lng: mergedSettings.customHomeLocation.longitude };
+      const migratedRadius = previousPlacesUiVersion < 1 && mergedSettings.defaultRadius <= 500
+        ? DEFAULT_SETTINGS.defaultRadius
+        : mergedSettings.defaultRadius;
+      const hydratedSettings: AppSettings = {
+        ...mergedSettings,
+        defaultRadius: migratedRadius,
+        preferredCategories: Array.isArray(mergedSettings.preferredCategories) ? mergedSettings.preferredCategories : [],
+        placesUiVersion: DEFAULT_SETTINGS.placesUiVersion,
+      };
+      setSettings(hydratedSettings);
+      setRadiusMeters(hydratedSettings.defaultRadius);
+      if (hydratedSettings.homeMode === "custom" && hydratedSettings.customHomeLocation) {
+        const customCenter = { lat: hydratedSettings.customHomeLocation.latitude, lng: hydratedSettings.customHomeLocation.longitude };
         setOrigin(customCenter); setOriginMode("custom"); setMapSearchCenter(customCenter);
       }
       setCollections(state.collections.length ? state.collections : DEFAULT_COLLECTIONS);
@@ -330,7 +340,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }, [favoritePlaces, selectedCollection, collections]);
 
   const localPicks = useMemo(() => smartLocalPicks(visiblePlaces, recommendationContext, 4), [visiblePlaces, recommendationContext]);
-  const nearbyPicks = useMemo(() => sortPlaces(visiblePlaces, "distanceAsc").slice(0, 5), [visiblePlaces]);
+  const localPickIds = useMemo(() => new Set(localPicks.map((place) => place.id)), [localPicks]);
+  const explorePlaces = useMemo(() => visiblePlaces.filter((place) => !localPickIds.has(place.id)), [visiblePlaces, localPickIds]);
 
   useEffect(() => {
     if (tab !== "map" || typeof window === "undefined") return;
@@ -634,20 +645,23 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <div className="mt-7 flex items-center justify-between">
                 <div className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[20px] font-semibold">{copy.localPick}</h2></div>
-                <button type="button" onClick={() => { setFilters({ ...EMPTY_FILTERS, localOnly: true }); setQuickFilter(null); }} className="text-[11px] font-semibold text-[#149CFF]">{copy.viewAll} <ChevronRight className="inline h-3.5 w-3.5" /></button>
+                <button type="button" onClick={() => { setFilters({ ...EMPTY_FILTERS, localOnly: true }); setQuickFilter(null); }} className="text-[11px] font-semibold text-[#149CFF]">{copy.localOnly} <ChevronRight className="inline h-3.5 w-3.5" /></button>
               </div>
 
               <div className="mt-3 space-y-3">
                 {loadingPlaces && !visiblePlaces.length ? <LoadingCards /> : (localPicks.length ? localPicks : visiblePlaces.slice(0, 4)).map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} contextMeta={recommendationReasons(place, recommendationContext, settings.language)[0]} />)}
               </div>
 
-              <div className="mt-7 flex items-center justify-between">
-                <div className="flex items-center gap-2"><Utensils className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[20px] font-semibold">{copy.nearby}</h2></div>
-                <button type="button" onClick={() => setSortMode("distanceAsc")} className="text-[11px] font-semibold text-[#149CFF]">{copy.viewAll} <ChevronRight className="inline h-3.5 w-3.5" /></button>
+              <div className="mt-7 flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2"><Store className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[20px] font-semibold">{settings.language === "en" ? "All places" : "สถานที่ทั้งหมด"} <span className="text-[14px] font-bold text-[#00D9FF]">{visiblePlaces.length}</span></h2></div>
+                  <p className="mt-1 text-[10px] text-[var(--amd-text-3)]">{settings.language === "en" ? `Showing ${visiblePlaces.length} of ${allPlaces.length} places in the database` : `กำลังแสดง ${visiblePlaces.length} จาก ${allPlaces.length} สถานที่ในฐานข้อมูล`}</p>
+                </div>
+                <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setDebouncedQuery(""); setQueryIntentOverride(null); setQuickFilter(null); setSortMode("distanceAsc"); }} className="shrink-0 text-[11px] font-semibold text-[#149CFF]">{copy.viewAll} <ChevronRight className="inline h-3.5 w-3.5" /></button>
               </div>
 
               <div className="mt-3 space-y-3">
-                {nearbyPicks.map((place) => <PlaceCard key={`near-${place.id}`} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} />)}
+                {explorePlaces.map((place) => <PlaceCard key={`all-${place.id}`} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} />)}
                 {!visiblePlaces.length && !loadingPlaces && <div className="amd-glass amd-card p-7 text-center"><Search className="mx-auto h-7 w-7 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.noMatches}</p><p className="mt-1 text-[10px] leading-5 text-[var(--amd-text-3)]">{settings.language === "en" ? "Try cafe, mookata or parking" : "ลองค้นหา: ร้านกาแฟ • หมูกระทะ • ที่จอดรถ"}</p><div className="mt-4 flex flex-wrap justify-center gap-2"><button type="button" onClick={() => { setQuery(""); setCategory("cafe"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ร้านกาแฟ</button><button type="button" onClick={() => { setQuery("หมูกระทะ"); setCategory("all"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">หมูกระทะ</button><button type="button" onClick={() => { setQuery(""); setCategory("parking"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ที่จอดรถ</button></div><button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setQuickFilter(null); }} className="mt-4 text-[11px] font-semibold text-[#149CFF]">{copy.clearFilters}</button><button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="ml-3 mt-4 text-[11px] font-semibold text-[#00D9FF]">{settings.language === "en" ? "Search more places" : "ค้นหาเพิ่มเติม"}</button></div>}
               </div>
 
@@ -765,7 +779,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <section className="amd-glass amd-card mt-4 px-4">
                 <SettingRow icon={<MapPin className="h-5 w-5" />} title={copy.startLocation} subtitle={copy.startLocationSub} action={<button type="button" onClick={() => setHomeLocationOpen(true)} className="amd-chip flex max-w-[168px] items-center gap-2 px-3 text-[10px] font-semibold text-[#149CFF]"><MapPin className="h-3.5 w-3.5" /><span className="truncate">{originMode === "dorm" ? DORM_NAME : "ตำแหน่งของฉัน"}</span><ChevronDown className="h-3.5 w-3.5" /></button>} />
-                <div className="py-3"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center text-[#00D9FF]"><LocateFixed className="h-5 w-5" /></div><div><p className="text-[14px] font-semibold">รัศมีค้นหาที่แนะนำ</p><p className="mt-0.5 text-[11px] text-[var(--amd-text-3)]">กำหนดระยะรอบหอที่ต้องการค้นหา</p></div></div><div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{RADII.slice(0, 4).map((radius) => <button key={radius.value} type="button" onClick={() => { setRadiusMeters(radius.value); setSettings((current) => ({ ...current, defaultRadius: radius.value })); }} className={`amd-chip shrink-0 px-4 text-[10px] font-semibold ${settings.defaultRadius === radius.value ? "amd-chip-active" : ""}`}>{radius.label}</button>)}</div></div>
+                <div className="py-3"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center text-[#00D9FF]"><LocateFixed className="h-5 w-5" /></div><div><p className="text-[14px] font-semibold">รัศมีค้นหาที่แนะนำ</p><p className="mt-0.5 text-[11px] text-[var(--amd-text-3)]">กำหนดระยะรอบหอที่ต้องการค้นหา</p></div></div><div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{RADII.map((radius) => <button key={radius.value} type="button" onClick={() => { setRadiusMeters(radius.value); setSettings((current) => ({ ...current, defaultRadius: radius.value })); }} className={`amd-chip shrink-0 px-4 text-[10px] font-semibold ${settings.defaultRadius === radius.value ? "amd-chip-active" : ""}`}>{radius.label}</button>)}</div></div>
               </section>
 
               <section className="amd-glass amd-card mt-4 px-4">
