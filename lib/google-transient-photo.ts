@@ -1,4 +1,4 @@
-import { loadGoogleMaps } from "@/lib/google-maps";
+import { loadGoogleMaps, type GoogleMapsLoadIntent } from "@/lib/google-maps";
 
 export type GooglePhotoAuthorAttribution = {
   displayName: string | null;
@@ -56,15 +56,20 @@ export function mapGooglePhoto(photo: any): GoogleTransientPhoto | null {
 }
 
 /**
- * Explicit user-action only. No cache, no prefetch, no background refresh.
- * The caller must invoke this from a visible button/confirmation path.
+ * Display-only Google photo request. No cache and no persistent photo URI/name/blob.
+ * Manual controls use manual_places_request; the hybrid card flow may use
+ * visible_photo_restore only after the rendered card intersects the viewport.
  */
-export async function fetchGoogleTransientPhoto(apiKey: string, googlePlaceId: string): Promise<GoogleTransientPhoto | null> {
+export async function fetchGoogleTransientPhoto(
+  apiKey: string,
+  googlePlaceId: string,
+  intent: GoogleMapsLoadIntent = "manual_places_request",
+): Promise<GoogleTransientPhoto | null> {
   if (!apiKey) throw new Error("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing");
   if (!googlePlaceId) return null;
 
   try {
-    await loadGoogleMaps(apiKey, "manual_places_request");
+    await loadGoogleMaps(apiKey, intent);
     const maps = window.google?.maps;
     if (!maps) throw new Error("Google Maps is unavailable");
     const library: any = maps.importLibrary ? await maps.importLibrary("places") : maps.places;
