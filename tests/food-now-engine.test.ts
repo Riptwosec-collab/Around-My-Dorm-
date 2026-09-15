@@ -39,7 +39,7 @@ describe("Food Now deterministic engine", () => {
     const known = foodPlace("known");
     const unknownDistance = foodPlace("unknown-distance", { distanceKm: null });
     const unknownPrice = foodPlace("unknown-price", {
-      pricing: null,
+      pricing: undefined,
       minPrice: null,
       maxPrice: null,
       averagePricePerPerson: null,
