@@ -1,0 +1,46 @@
+name: Phase2B Release Gate
+
+on:
+  push:
+    branches:
+      - feat/around-my-dorm-v2-phase2b-food-now
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Validate canonical data
+        run: npm run validate:data
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Browser E2E
+        run: npm run test:e2e
+
+      - name: Validate Cloudflare Workers bundle
+        run: npx wrangler deploy --dry-run
