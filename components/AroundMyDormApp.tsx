@@ -62,6 +62,15 @@ import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
 import { DataManagement } from "@/components/DataManagement";
 import { usePlaceDatabase } from "@/components/app-shell/usePlaceDatabase";
 import { deriveDiscoveryState } from "@/lib/discovery/derive-visible-places";
+import { parseDiscoveryQuery, type DiscoveryIntent } from "@/lib/discovery/query-intent";
+import {
+  addSearchHistoryEntry,
+  applyDiscoveryRelaxation,
+  buildRelaxationOptions,
+  buildSearchSuggestions,
+  type RelaxationId,
+} from "@/lib/discovery/search-assist";
+import { SearchAssistPanel } from "@/components/SearchAssistPanel";
 import { Toast, type ToastTone } from "@/components/Toast";
 import { getCopy } from "@/locales";
 import { addRecentView, getTodayRecentStats, resolveRecentPlaces } from "@/lib/storage/recent";
@@ -123,6 +132,9 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [queryIntentOverride, setQueryIntentOverride] = useState<DiscoveryIntent | null>(null);
   const [category, setCategory] = useState<"all" | CategoryId>("all");
   const [radiusMeters, setRadiusMeters] = useState(500);
   const [sortMode, setSortMode] = useState<SortMode>("recommended");
@@ -179,6 +191,17 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [query]);
+
+  const parsedQueryIntent = useMemo(() => parseDiscoveryQuery(debouncedQuery), [debouncedQuery]);
+  const queryIntent = queryIntentOverride ?? parsedQueryIntent;
+  const searchSuggestions = useMemo(
+    () => buildSearchSuggestions(query, searchHistory, settings.language, 6),
+    [query, searchHistory, settings.language],
+  );
+
+  useEffect(() => {
+    setQueryIntentOverride(null);
+  }, [debouncedQuery]);
 
   const [cloudReady, setCloudReady] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
@@ -245,11 +268,12 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       origin,
       category,
       query: debouncedQuery,
+      queryIntent,
       filters,
       radiusMeters,
       mapSearchCenter,
       originMode,
-      sortMode,
+      sortMode: queryIntent.suggestedSortMode ?? sortMode,
       verifiedOnly: settings.verifiedOnly,
       recommendationContext,
     }),
@@ -258,6 +282,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       origin,
       category,
       debouncedQuery,
+      queryIntent,
       filters,
       radiusMeters,
       mapSearchCenter,
@@ -266,6 +291,19 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       settings.verifiedOnly,
       recommendationContext,
     ],
+  );
+
+  const searchRelaxations = useMemo(
+    () => debouncedQuery
+      ? buildRelaxationOptions({
+          category,
+          filters,
+          intent: queryIntent,
+          resultCount: visiblePlaces.length,
+          language: settings.language,
+        })
+      : [],
+    [debouncedQuery, category, filters, queryIntent, visiblePlaces.length, settings.language],
   );
 
   const favoritePlaces = useMemo(() => {
@@ -427,6 +465,37 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     if (nextKey === "parking") setCategory("parking");
   }
 
+  function onSearchSuggestion(value: string) {
+    const clean = value.replace(/\s+/g, " ").trim();
+    if (!clean) return;
+    setQuery(clean);
+    setDebouncedQuery(clean);
+    setQueryIntentOverride(null);
+    setSearchHistory((current) => addSearchHistoryEntry(current, clean));
+    setSearchFocused(false);
+  }
+
+  function commitSearch() {
+    const clean = query.replace(/\s+/g, " ").trim();
+    if (!clean) return;
+    setDebouncedQuery(clean);
+    setQueryIntentOverride(null);
+    setSearchHistory((current) => addSearchHistoryEntry(current, clean));
+    setSearchFocused(false);
+  }
+
+  function onRelaxSearch(relaxationId: RelaxationId) {
+    const next = applyDiscoveryRelaxation(
+      { category, filters, intent: queryIntent },
+      relaxationId,
+    );
+    setCategory(next.category);
+    setFilters(next.filters);
+    setQueryIntentOverride(next.intent);
+    setQuickFilter(null);
+    setSearchFocused(false);
+  }
+
   function pickFoodNow() { setFoodNowResults([]); setFoodNowOpen(true); }
 
   function recommendFoodNow(options: FoodNowOptions) {
@@ -487,16 +556,36 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <div className="relative amd-input">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--amd-text-3)]" />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} className="h-14 w-full rounded-[20px] bg-transparent pl-12 pr-[118px] text-[13px] font-medium text-[var(--amd-text)] outline-none placeholder:text-[var(--amd-text-3)]" />
+                <input
+                  value={query}
+                  onChange={(event) => { setQuery(event.target.value); setQueryIntentOverride(null); }}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => window.setTimeout(() => setSearchFocused(false), 120)}
+                  onKeyDown={(event) => { if (event.key === "Enter") commitSearch(); }}
+                  placeholder={copy.search}
+                  className="h-14 w-full rounded-[20px] bg-transparent pl-12 pr-[118px] text-[13px] font-medium text-[var(--amd-text)] outline-none placeholder:text-[var(--amd-text-3)]"
+                />
                 <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
                   {loadingPlaces && <LoaderCircle aria-label={settings.language === "en" ? "Updating" : "กำลังอัปเดต"} className="h-4 w-4 animate-spin text-[#00D9FF]" />}
-                  {query && <button type="button" aria-label={settings.language === "en" ? "Clear search" : "ล้างคำค้นหา"} onClick={() => setQuery("")} className="amd-btn grid h-9 w-9 min-h-0 place-items-center rounded-xl text-[var(--amd-text-3)]"><X className="h-4 w-4" /></button>}
+                  {query && <button type="button" aria-label={settings.language === "en" ? "Clear search" : "ล้างคำค้นหา"} onClick={() => { setQuery(""); setDebouncedQuery(""); setQueryIntentOverride(null); }} className="amd-btn grid h-9 w-9 min-h-0 place-items-center rounded-xl text-[var(--amd-text-3)]"><X className="h-4 w-4" /></button>}
                   <button type="button" aria-label={settings.language === "en" ? "Filters" : "ตัวกรอง"} onClick={() => setFilterOpen(true)} className="amd-btn relative grid h-10 w-10 min-h-0 place-items-center rounded-xl border border-[rgba(120,160,210,.18)] bg-white/[0.035] text-[var(--amd-text-2)]">
                     <SlidersHorizontal className="h-[18px] w-[18px]" />
                     {filtersCount > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#007AFF] px-1 text-[8px] font-bold text-white">{filtersCount}</span>}
                   </button>
                 </div>
               </div>
+
+              <SearchAssistPanel
+                language={settings.language}
+                query={query}
+                focused={searchFocused}
+                suggestions={searchSuggestions}
+                recognizedLabels={queryIntent.recognizedLabels}
+                relaxations={searchRelaxations}
+                resultCount={visiblePlaces.length}
+                onSearchSuggestion={onSearchSuggestion}
+                onRelaxSearch={onRelaxSearch}
+              />
 
               {locationError && <div className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] px-3 py-2 text-[10px] text-amber-100">{locationError}</div>}
               {loadingPlaces && visiblePlaces.length > 0 && <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--amd-text-3)]"><LoaderCircle className="h-3.5 w-3.5 animate-spin text-[#00D9FF]" />{settings.language === "en" ? "Updating live data" : "กำลังอัปเดตข้อมูล"}</div>}
