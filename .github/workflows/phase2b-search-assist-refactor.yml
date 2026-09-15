@@ -1,0 +1,27 @@
+name: Phase2B Search Assist Refactor
+
+on:
+  push:
+    branches:
+      - feat/around-my-dorm-v2-phase2b-food-now
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/around-my-dorm-v2-phase2b-food-now
+      - name: Apply bounded Search Assist refactor
+        run: python scripts/phase2b_search_assist_refactor.py
+      - name: Commit refactor
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add components/AroundMyDormApp.tsx
+          git commit -m "feat: wire deterministic Search Assist on Explore [search-assist-refactor]"
+          git push origin HEAD:feat/around-my-dorm-v2-phase2b-food-now
