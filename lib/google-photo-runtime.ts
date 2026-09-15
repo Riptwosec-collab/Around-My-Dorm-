@@ -75,6 +75,14 @@ export function clearGoogleRuntimePhotos(): void {
 }
 
 /**
+ * Compatibility for the admin panel's legacy restore filter. Automatic restore
+ * no longer exists, so there can never be an automatic restore in flight.
+ */
+export function isGooglePhotoAutoRestoreInFlight(_placeId: string): boolean {
+  return false;
+}
+
+/**
  * Visibility tracking only. This function never calls Google.
  * PlacePhoto updates it from IntersectionObserver; Google requests happen only
  * when loadVisibleGooglePhotos() is called by the explicit user button.
