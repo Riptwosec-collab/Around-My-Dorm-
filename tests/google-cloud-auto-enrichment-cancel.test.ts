@@ -67,5 +67,11 @@ describe("GoogleCloudAutoEnrichment cancel guard", () => {
 
     expect(screen.getByRole("button", { name: /confirm cancel/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /keep running/i })).toBeInTheDocument();
+
+    // Let the in-flight async operation settle before Testing Library tears down jsdom.
+    // The previous test ended here, leaving runBulk() to call React setState after
+    // window had already been removed, which made CI fail intermittently.
+    fireEvent.click(screen.getByRole("button", { name: /keep running/i }));
+    await screen.findByText(/Google → Supabase enrichment completed/i);
   });
 });
