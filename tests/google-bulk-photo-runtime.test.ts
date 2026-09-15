@@ -31,10 +31,11 @@ describe("bulk transient Google place photos", () => {
     expect(sanitizer).not.toContain("transientPhoto:");
   });
 
-  it("keeps Google photo fetching explicit and permanently isolated from the Cloud image repository", () => {
+  it("keeps Google photo fetching display-only and permanently isolated from the Cloud image repository", () => {
     expect(transientPhoto).toContain("display-only and must not be persisted");
-    expect(transientPhoto).toContain("Explicit user-action only");
-    expect(transientPhoto).toContain("No cache, no prefetch, no background refresh");
+    expect(transientPhoto).toContain("Display-only Google photo request");
+    expect(transientPhoto).toContain("visible_photo_restore");
+    expect(transientPhoto).toContain("No cache and no persistent photo URI/name/blob");
     expect(permanentRepository).not.toContain("google-transient-photo");
     expect(permanentRepository).not.toContain("fetchGoogleTransientPhoto");
     expect(permanentRepository).not.toContain("loadGoogleMaps");
