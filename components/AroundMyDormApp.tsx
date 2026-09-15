@@ -52,7 +52,7 @@ import { CollectionEditorSheet } from "@/components/CollectionEditorSheet";
 import { CollectionSelectorSheet } from "@/components/CollectionSelectorSheet";
 import { CategoryPreferenceSheet } from "@/components/CategoryPreferenceSheet";
 import { FoodNowSheet } from "@/components/FoodNowSheet";
-import { recommendFoodNow as rankFoodNowOptions, type FoodNowOptions } from "@/lib/discovery/food-now";
+import { recommendFoodNow as rankFoodNowOptions, type FoodNowOptions, type FoodNowResult } from "@/lib/discovery/food-now";
 import { HomeLocationSheet } from "@/components/HomeLocationSheet";
 import { InfoSheet } from "@/components/InfoSheet";
 import { MapBottomSheet } from "@/components/MapBottomSheet";
@@ -157,6 +157,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [infoSheet, setInfoSheet] = useState<"help" | "about" | null>(null);
   const [homeLocationOpen, setHomeLocationOpen] = useState(false);
   const [foodNowOpen, setFoodNowOpen] = useState(false);
+  const [foodNowResults, setFoodNowResults] = useState<FoodNowResult[]>([]);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [mapSearchCenter, setMapSearchCenter] = useState(DORM_CENTER);
   const [pendingMapCenter, setPendingMapCenter] = useState<{ lat: number; lng: number } | null>(null);
@@ -426,7 +427,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     if (nextKey === "parking") setCategory("parking");
   }
 
-  function pickFoodNow() { setFoodNowOpen(true); }
+  function pickFoodNow() { setFoodNowResults([]); setFoodNowOpen(true); }
 
   function recommendFoodNow(options: FoodNowOptions) {
     const ranked = rankFoodNowOptions(
@@ -437,9 +438,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       5,
       settings.verifiedOnly,
     );
-    setFoodNowOpen(false);
-    if (ranked[0]) openDetail(ranked[0].place);
-    else showToast(settings.language === "en" ? "No matching places right now" : "ยังไม่พบร้านที่ตรงเงื่อนไข", "removed");
+    setFoodNowResults(ranked);
   }
 
   function createCollection() { setCollectionEditor({ mode: "create" }); }
@@ -728,7 +727,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       {categoryPreferenceOpen && <CategoryPreferenceSheet value={settings.preferredCategories || []} language={settings.language} onChange={(preferredCategories) => setSettings((current) => ({ ...current, preferredCategories }))} onClose={() => setCategoryPreferenceOpen(false)} />}
       {infoSheet && <InfoSheet kind={infoSheet} language={settings.language} onClose={() => setInfoSheet(null)} />}
       {homeLocationOpen && <HomeLocationSheet language={settings.language} custom={settings.customHomeLocation} onDorm={() => { useDormLocation(); setHomeLocationOpen(false); }} onCurrent={() => { useMyLocation(); setHomeLocationOpen(false); }} onCustom={useCustomHomeLocation} onClose={() => setHomeLocationOpen(false)} />}
-      {foodNowOpen && <FoodNowSheet language={settings.language} defaultRadius={radiusMeters} onClose={() => setFoodNowOpen(false)} onSubmit={recommendFoodNow} />}
+      {foodNowOpen && <FoodNowSheet language={settings.language} defaultRadius={radiusMeters} results={foodNowResults} onClose={() => setFoodNowOpen(false)} onSubmit={recommendFoodNow} onOpenPlace={openDetail} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onDone={() => setToast(null)} />}
     </main>
   );
