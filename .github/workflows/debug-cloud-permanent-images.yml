@@ -1,0 +1,43 @@
+name: Debug Cloud Permanent Images
+
+on:
+  push:
+    branches:
+      - feature/cloud-permanent-images
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: New test - cloud cover priority
+        continue-on-error: true
+        run: npm test -- tests/cloud-permanent-images.test.ts -t "ranks a Cloud cover"
+      - name: New test - matching place merge
+        continue-on-error: true
+        run: npm test -- tests/cloud-permanent-images.test.ts -t "merges Cloud rows"
+      - name: New test - reject Google metadata
+        continue-on-error: true
+        run: npm test -- tests/cloud-permanent-images.test.ts -t "rejects Google-backed"
+      - name: New test - deterministic recreation
+        continue-on-error: true
+        run: npm test -- tests/cloud-permanent-images.test.ts -t "recreates the same"
+      - name: Targeted file all cases
+        continue-on-error: true
+        run: npm test -- tests/cloud-permanent-images.test.ts
+      - name: Existing place image tests
+        continue-on-error: true
+        run: npm test -- tests/place-images.test.ts
+      - name: Type check diagnostic
+        continue-on-error: true
+        run: npm run typecheck
