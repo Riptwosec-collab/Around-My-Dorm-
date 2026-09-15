@@ -122,12 +122,13 @@ export type MenuItem = {
 
 export type PlaceImage = {
   url: string;
-  source: "google_places" | "official_website" | "seed" | "official_social" | "fallback";
+  source: "google_places" | "official_website" | "seed" | "official_social" | "fallback" | "cloud_storage";
   photoReference?: string | null;
   attribution?: string | null;
   width?: number | null;
   height?: number | null;
   verified?: boolean;
+  isCover?: boolean;
 };
 
 export type DeliveryPlatform = { provider: string; url: string; verifiedAt: string | null };
