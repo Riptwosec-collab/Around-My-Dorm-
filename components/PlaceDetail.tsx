@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -16,10 +16,13 @@ import {
 } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
 import { getCopy } from "@/locales";
+import { AdminNotePanel } from "@/components/AdminNotePanel";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
 import { PlaceGoogleDataPanel } from "@/components/PlaceGoogleDataPanel";
+import { getAdminAccessState } from "@/lib/admin-auth";
+import { saveAdminPlaceNote } from "@/lib/admin-notes";
 import {
   calculateLocalScore,
   formatDistance,
@@ -57,6 +60,8 @@ export function PlaceDetail({
   onClose,
   onSave,
   onMap,
+  adminAllowed,
+  onSaveAdminNote,
   language = "th",
 }: {
   place: Place;
@@ -64,9 +69,13 @@ export function PlaceDetail({
   onClose: () => void;
   onSave: () => void;
   onMap: () => void;
+  adminAllowed?: boolean;
+  onSaveAdminNote?: (note: string) => Promise<void>;
   language?: "th" | "en";
 }) {
   const [reportOpen, setReportOpen] = useState(false);
+  const [fallbackAdminAllowed, setFallbackAdminAllowed] = useState(false);
+  const [currentAdminNote, setCurrentAdminNote] = useState<string | null>(place.adminNote ?? null);
   const copy = getCopy(language);
   const category = CATEGORY_MAP[place.category];
   const status = getPlaceOpenStatus(place);
@@ -77,6 +86,34 @@ export function PlaceDetail({
   const parkingStatus = getParkingStatus(place);
   const dataQuality = scorePlaceDataQuality(place);
   const dataFreshnessLabel = dataAgeLabel(place, language);
+  const effectiveAdminAllowed = adminAllowed ?? fallbackAdminAllowed;
+
+  useEffect(() => {
+    setCurrentAdminNote(place.adminNote ?? null);
+  }, [place.adminNote]);
+
+  useEffect(() => {
+    if (adminAllowed !== undefined) return;
+    let active = true;
+    void getAdminAccessState()
+      .then((state) => {
+        if (active) setFallbackAdminAllowed(state.admin);
+      })
+      .catch(() => {
+        if (active) setFallbackAdminAllowed(false);
+      });
+    return () => { active = false; };
+  }, [adminAllowed]);
+
+  async function handleSaveAdminNote(note: string) {
+    if (onSaveAdminNote) {
+      await onSaveAdminNote(note);
+      setCurrentAdminNote(note.trim() || null);
+      return;
+    }
+    const result = await saveAdminPlaceNote(place.id, note);
+    setCurrentAdminNote(result.note);
+  }
 
   async function share() {
     const url = googleMapsPlaceUrl(place);
@@ -177,6 +214,15 @@ export function PlaceDetail({
               <p className="mt-2 text-[12px] leading-6 text-white/68">{place.description}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">{place.tags.map((tag) => <span key={tag} className="rounded-lg bg-white/[0.055] px-2 py-1 text-[9px] text-white/55">{tag}</span>)}</div>
             </div>
+
+            <AdminNotePanel
+              note={currentAdminNote}
+              adminAllowed={effectiveAdminAllowed}
+              language={language}
+              publicTitle={language === "en" ? "Admin Note" : "โน้ตจากผู้ดูแล"}
+              editLabel="Edit Admin Note"
+              onSave={handleSaveAdminNote}
+            />
 
             <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] px-4">
               <ValueRow label={copy.area} value={place.area} />
