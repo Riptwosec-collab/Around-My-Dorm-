@@ -65,6 +65,10 @@ export function PlaceCard({
   language?: "th" | "en";
 }) {
   const category = CATEGORY_MAP[place.category];
+  const categoryBadges = Array.from(new Set<CategoryId>([place.category, ...(place.categories ?? [])]))
+    .map((id) => CATEGORY_MAP[id])
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .slice(0, 3);
   const status = getPlaceOpenStatus(place);
   const localScore = place.localScore ?? calculateLocalScore(place);
   const isLocal = place.placeType === "local" || place.placeType === "independent" || place.localFavorite;
@@ -114,7 +118,16 @@ export function PlaceCard({
             {displayContextMeta && <span className="shrink-0 rounded-md bg-white/[0.045] px-1.5 py-1 text-[10px] font-medium leading-none text-[var(--amd-text-2)]">{displayContextMeta}</span>}
           </div>
 
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <div data-testid="place-category-badges" className="mt-2 flex flex-wrap gap-1.5">
+            {categoryBadges.map((item) => (
+              <span key={item.id} className="inline-flex max-w-full items-center gap-1 rounded-md border border-[rgba(57,221,255,.18)] bg-[rgba(57,221,255,.055)] px-2 py-1 text-[10px] font-bold leading-none text-[#aeeeff]">
+                <span aria-hidden="true" className="text-[11px]">{item.icon}</span>
+                <span className="truncate">{item.name}</span>
+              </span>
+            ))}
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-1.5">
             {isLocal && <span className="rounded-md border border-[rgba(0,140,255,.34)] bg-[rgba(0,122,255,.09)] px-2 py-1 text-[10px] font-extrabold tracking-[.02em] text-[#47b4ff]">LOCAL</span>}
             {isChain && <span className="rounded-md border border-[rgba(155,108,255,.3)] bg-[rgba(155,108,255,.08)] px-2 py-1 text-[10px] font-extrabold tracking-[.02em] text-[#c3a8ff]">CHAIN</span>}
             {place.verified && <span className="flex items-center gap-1 rounded-md border border-[rgba(0,229,195,.28)] bg-[rgba(0,229,195,.07)] px-2 py-1 text-[10px] font-extrabold text-[#3af1d6]"><ShieldCheck className="h-3 w-3" /> VERIFIED</span>}
