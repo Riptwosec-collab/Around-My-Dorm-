@@ -10,11 +10,15 @@ Make permanent place images survive refreshes, browser restarts, and other devic
 
 The permanent-image path is limited to images the project has the right to store and redistribute, such as user/admin uploads or explicitly licensed/approved imports. Google Places photo bytes, Google photo URIs, and Google photo resource names must remain runtime-only and must not be copied into Supabase Storage.
 
-## Existing behavior
+## Existing behavior and live state
 
 The current app already has a `PlaceImage` model and a shared image-selection pipeline. `PlacePhoto` first renders persisted candidates and only falls back to Google runtime photos when no persisted candidate exists. Google runtime photos are stored in an in-memory `Map`, so they disappear after refresh or restart.
 
-The repository also already contains a relational `place_images` concept and `place_sources.can_persist_photos`, but the production canonical dataset is the `amd_places` cloud dataset. The implementation therefore adds a production-specific permanent-image registry instead of coupling the live app to the legacy `places` table.
+The live Supabase project already has `public.amd_place_images`. It currently has zero rows and a public read policy for `anon` and `authenticated`. Its existing columns are `id`, `place_id`, `source`, `source_reference`, `source_url`, `attribution`, `width`, `height`, `verified`, `last_checked`, and `created_at`.
+
+The live admin account already carries `app_metadata.amd_admin = true`, so database and Storage write policies can use that server-issued JWT claim instead of trusting the browser allowlist.
+
+The project does not yet have an Around My Dorm image Storage bucket.
 
 ## Architecture
 
@@ -26,62 +30,78 @@ Stored object path format:
 
 `<place_id>/<uuid>.<extension>`
 
-The bucket is public-read because the app itself is public and the goal is zero extra image-signing requests during normal browsing. Upload, replace, and delete operations are admin-only.
+The bucket is public-read because the app itself is public and the goal is zero image-signing requests during normal browsing. Upload, replace, and delete operations are admin-only.
 
-Allowed media types are JPEG, PNG, WebP, and AVIF. The client must enforce a size limit before upload; the default implementation target is 8 MB per file.
+Allowed media types are JPEG, PNG, WebP, and AVIF. The bucket and client both enforce an 8 MB maximum file size.
 
-### 2. Permanent image registry
+### 2. Extend the existing permanent image registry
 
-Create `public.amd_place_images` with one row per permanent cloud image.
+Do not create a second registry table. Extend `public.amd_place_images` so the live app uses the table that already exists.
 
-Fields:
+Keep all current columns and add:
 
-- `id uuid primary key default gen_random_uuid()`
-- `place_id text not null references public.amd_places(id) on delete cascade`
-- `storage_bucket text not null default 'amd-place-images'`
-- `storage_path text not null unique`
-- `source_kind text not null` with allowed values `user_upload`, `admin_upload`, `licensed_import`
-- `source_url text null`
-- `attribution text null`
-- `rights_basis text not null`
-- `mime_type text not null`
+- `storage_bucket text null`
+- `storage_path text null`
+- `rights_basis text null`
+- `mime_type text null`
 - `byte_size bigint null`
-- `width integer null`
-- `height integer null`
 - `is_cover boolean not null default false`
 - `status text not null default 'active'` with allowed values `active`, `archived`
 - `created_by uuid null`
-- `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
 
-Only one active cover image is allowed per place. Setting a new cover clears the previous cover flag in the same logical operation.
+For new permanent Cloud rows:
+
+- `storage_bucket` is `amd-place-images`
+- `storage_path` is required and unique
+- `source` is one of `user_upload`, `admin_upload`, or `licensed_import`
+- `rights_basis` is required
+- `verified` is true only after the upload and registry insert both succeed
+
+Legacy-compatible rows without `storage_path` remain readable, so the migration is additive.
+
+Only one active cover image is allowed per place. A partial unique index on `(place_id)` where `is_cover = true and status = 'active'` enforces that invariant.
 
 ### 3. Security model
 
-Read access to active image rows and public bucket objects is available to normal app users.
+Read access to active image rows and public bucket objects remains available to normal app users.
 
-Write access is restricted to the same admin identity used by the current admin UI. Database and Storage policies must validate the authenticated JWT rather than trusting a client-side flag. The implementation will use a database helper predicate that accepts the configured admin identity and rejects anonymous sessions.
+Write access is restricted by JWT claim:
 
-The client must never accept `google_places` as a permanent `source_kind`. The permanent uploader/importer also rejects Google-hosted runtime photo URLs and Google photo resource identifiers.
+`app_metadata.amd_admin = true`
+
+Database and Storage policies must evaluate the authenticated JWT directly. Anonymous sessions and ordinary authenticated sessions cannot upload, update, or delete permanent images.
+
+The browser email allowlist remains a UI convenience only; it is not the authorization boundary for Cloud writes.
+
+The permanent uploader/importer must reject:
+
+- `source = google_places`
+- Google Places runtime photo URLs
+- Google photo resource names/references
+- files without an explicit `rights_basis`
 
 ### 4. Client data layer
 
 Add a focused module, `lib/cloud/place-images.ts`, responsible for:
 
-- listing active permanent images for all loaded place IDs
-- uploading a rights-cleared image to Supabase Storage
-- inserting the registry row after successful upload
+- listing active permanent images for loaded place IDs
+- uploading a rights-cleared image to `amd-place-images`
+- inserting the `amd_place_images` registry row after successful upload
 - setting/replacing a cover image
 - archiving/deleting an image
 - translating a registry row into a `PlaceImage`
+- compensating for partial failures
 
-`PlaceImage.source` will gain a cloud-owned source value so the app can rank permanent cloud images above runtime Google fallback images without pretending the image came from Google.
+`PlaceImage.source` gains a Cloud-owned value, `cloud_storage`, so the app can rank permanent Cloud images without pretending they came from Google.
+
+The registry row keeps the original provenance in `amd_place_images.source` (`user_upload`, `admin_upload`, or `licensed_import`), while the UI-facing `PlaceImage.source` is `cloud_storage`.
 
 ### 5. Loading and merge behavior
 
-`loadPlacesFromDatabase()` will load canonical `amd_places` and the active `amd_place_images` rows in the same database-load cycle.
+`loadPlacesFromDatabase()` will load canonical `amd_places` and active `amd_place_images` rows in the same database-load cycle.
 
-For each place, permanent Cloud images are merged into `imageMetadata` before the place reaches the UI.
+For each place, permanent Cloud images are converted to public Supabase object URLs and merged into `imageMetadata` before the place reaches the UI.
 
 Image priority becomes:
 
@@ -101,12 +121,12 @@ For each place, the admin can:
 
 - upload a local image file
 - mark it as cover
-- enter optional attribution/source URL
-- choose or enter a rights basis
+- enter optional attribution and source URL
+- enter a required rights basis
 - replace the cover
 - archive/delete a Cloud image
 
-When the currently displayed image is a Google runtime image, the UI must clearly state that it is temporary and cannot be copied into permanent Cloud storage. The permanent action requires a rights-cleared file or explicitly approved import source.
+When the currently displayed image is a Google runtime image, the UI clearly states that it is temporary and cannot be copied into permanent Cloud storage. The permanent action requires a rights-cleared file or explicitly approved import source.
 
 The control shows counts for:
 
@@ -119,15 +139,17 @@ The control shows counts for:
 
 Upload flow is transactional at the application level:
 
-1. validate file and rights metadata
+1. validate file, source, MIME type, size, and rights metadata
 2. upload object to Storage
 3. insert registry row
 4. if row insertion fails, delete the just-uploaded object as compensation
-5. refresh the place image registry
+5. refresh the permanent image registry
 
-Delete flow removes the registry row or archives it first, then removes the Storage object. If object deletion fails, the row remains archived so the public UI does not reference a broken object.
+Cover replacement first clears the existing active cover flag and then marks the new row as cover within one database operation/RPC so the unique-cover invariant is never temporarily violated.
 
-A missing Storage object must not break a place card; `PlacePhoto` continues to the next candidate and ultimately the existing fallback artwork.
+Delete flow archives the registry row first, then removes the Storage object. If object deletion fails, the row stays archived so the public UI does not reference a broken object.
+
+A missing or broken Storage object must not break a place card; `PlacePhoto` continues to the next candidate and ultimately the existing fallback artwork.
 
 ### 8. Migration and compatibility
 
@@ -135,7 +157,7 @@ Do not automatically copy or re-host existing Google Places photos.
 
 Existing canonical image URLs remain supported unchanged. Existing runtime Google behavior remains available as a fallback for places that have no permanent Cloud image.
 
-No destructive migration of `amd_places.record` is required. The registry is additive and can be rolled back by disabling its loader and leaving existing canonical data untouched.
+No destructive migration of `amd_places.record` is required. The existing `amd_place_images` registry is extended in place, and the loader is additive.
 
 ### 9. Tests
 
@@ -146,22 +168,23 @@ Implementation follows TDD. Required behavior tests include:
 - Google-sourced runtime content is rejected by the permanent-save guard
 - upload failure does not create a registry row
 - registry insertion failure removes the uploaded object
+- cover replacement preserves the one-active-cover invariant
 - app startup with permanent Cloud images performs no Google photo request
 - broken Cloud image falls through to the next candidate
-- only admin sessions can create, update, or delete registry rows/objects
+- non-admin sessions cannot create, update, or delete registry rows/objects
 - reopening the app produces the same Cloud image candidate from Supabase data
 
 ### 10. Verification and rollout
 
 Rollout order:
 
-1. apply database table, indexes, and RLS policies
+1. extend `amd_place_images`, add indexes/RLS write policies, and create the cover RPC
 2. create/configure the `amd-place-images` bucket and Storage policies
 3. ship the client data layer and merge logic
 4. ship admin upload/manage UI
 5. upload one rights-cleared test image for a real place
 6. close and reopen the app
-7. verify the image still renders from the Supabase URL
+7. verify the image still renders from the Supabase public object URL
 8. verify Google photo request logs did not increase during the reopen test
 9. run unit tests, type check, production build, and Cloudflare bundle validation
 
