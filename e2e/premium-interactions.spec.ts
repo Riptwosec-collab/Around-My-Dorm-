@@ -5,7 +5,9 @@ const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 393, height: 852 },
   { width: 430, height: 932 },
+  { width: 519, height: 921 },
   { width: 768, height: 1024 },
+  { width: 815, height: 921 },
   { width: 1280, height: 900 },
 ];
 
@@ -56,8 +58,19 @@ test("navigation, search and PlaceCard interactions remain touch-safe without Pl
       }
     }
 
+    const shell = page.locator(".amd-shell").first();
     const nav = page.locator(".amd-nav");
     await expect(nav).toBeVisible();
+    const shellBox = await shell.boundingBox();
+    const navBox = await nav.boundingBox();
+    if (shellBox && navBox) {
+      const shellCenter = shellBox.x + shellBox.width / 2;
+      const navCenter = navBox.x + navBox.width / 2;
+      expect(Math.abs(navCenter - shellCenter), `nav must share the 519px app-frame axis at ${viewport.width}px`).toBeLessThanOrEqual(1.5);
+      expect(navBox.x, `nav must stay inside app frame at ${viewport.width}px`).toBeGreaterThanOrEqual(shellBox.x - 1);
+      expect(navBox.x + navBox.width, `nav must stay inside app frame at ${viewport.width}px`).toBeLessThanOrEqual(shellBox.x + shellBox.width + 1);
+    }
+
     const navButtons = nav.locator("button");
     expect(await navButtons.count()).toBeGreaterThanOrEqual(5);
     for (let index = 0; index < Math.min(5, await navButtons.count()); index += 1) {
