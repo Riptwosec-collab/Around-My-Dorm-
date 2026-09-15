@@ -121,7 +121,7 @@ export function FoodNowSheet({
                 <button
                   key={result.place.id}
                   type="button"
-                  onClick={() => onOpenPlace(result.place)}
+                  onClick={() => { onClose(); onOpenPlace(result.place); }}
                   className="amd-glass amd-card flex w-full items-center gap-3 p-3 text-left"
                 >
                   <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-[#00D9FF]/20 bg-[#00D9FF]/[0.07] text-[12px] font-bold text-[#00D9FF]">{index + 1}</div>
