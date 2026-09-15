@@ -558,7 +558,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--amd-text-3)]" />
                 <input
                   value={query}
-                  onChange={(event) => { setQuery(event.target.value); setQueryIntentOverride(null); }}
+                  onChange={(event) => { setQuery(event.target.value); setQueryIntentOverride(null); setSearchFocused(true); }}
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => window.setTimeout(() => setSearchFocused(false), 120)}
                   onKeyDown={(event) => { if (event.key === "Enter") commitSearch(); }}
