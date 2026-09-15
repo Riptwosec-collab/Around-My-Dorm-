@@ -27,6 +27,16 @@ body,
   transform: translateZ(0);
 }
 
+/* app-frame-sizing.css centers the fixed nav from 520px upward. This file loads
+   after that sizing layer, so preserve the horizontal translation while keeping
+   the compositor promotion instead of clobbering it with translateZ(0). */
+@media (min-width: 520px) {
+  .amd-nav {
+    -webkit-transform: translateX(-50%) translateZ(0);
+    transform: translateX(-50%) translateZ(0);
+  }
+}
+
 /* Avoid transient white/transparent frames while images are decoded. */
 .amd-place-card-media,
 .amd-place-photo,
