@@ -6,7 +6,7 @@ import { getPlaceImageCandidates } from "@/lib/place-images";
 import {
   GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT,
   getGoogleRuntimePhoto,
-  requestVisibleGooglePhotoRestore,
+  setGooglePhotoCardVisible,
 } from "@/lib/google-photo-runtime";
 import type { CategoryId, Place, PlaceImage } from "@/types/place";
 
@@ -61,8 +61,7 @@ export function PlacePhoto({
   eager?: boolean;
   fallbackLabel?: string;
 }) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
-  const restoreAnchorRef = useRef<HTMLDivElement>(null);
+  const visibilityAnchorRef = useRef<HTMLDivElement>(null);
   const persistedCandidates = useMemo(() => getPlaceImageCandidates(place), [place]);
   const transientPhoto = useGoogleRuntimePhoto(place.id);
   const transientImage = useMemo(() => runtimeImage(transientPhoto), [transientPhoto]);
@@ -76,24 +75,25 @@ export function PlacePhoto({
   const active = candidates.find((image) => !failed.has(image.url)) ?? null;
 
   useEffect(() => {
-    if (!apiKey || transientPhoto || persistedCandidates.length > 0) return;
-    const node = restoreAnchorRef.current;
+    const node = visibilityAnchorRef.current;
     if (!node || typeof IntersectionObserver === "undefined") return;
 
     const observer = new IntersectionObserver((entries) => {
       const entry = entries[0];
-      if (!entry?.isIntersecting || entry.intersectionRatio <= 0) return;
-      observer.disconnect();
-      void requestVisibleGooglePhotoRestore(place, apiKey);
+      const visible = Boolean(entry?.isIntersecting && entry.intersectionRatio > 0);
+      setGooglePhotoCardVisible(place, visible);
     }, { threshold: 0.01 });
 
     observer.observe(node);
-    return () => observer.disconnect();
-  }, [apiKey, place, persistedCandidates.length, transientPhoto]);
+    return () => {
+      observer.disconnect();
+      setGooglePhotoCardVisible(place, false);
+    };
+  }, [place]);
 
   if (!active) {
     return (
-      <div ref={restoreAnchorRef} className="grid h-full w-full place-items-center bg-[radial-gradient(circle_at_40%_30%,rgba(0,140,255,.14),transparent_34%),linear-gradient(145deg,#07111f,#04101b)] text-[#8bbfe9]">
+      <div ref={visibilityAnchorRef} className="grid h-full w-full place-items-center bg-[radial-gradient(circle_at_40%_30%,rgba(0,140,255,.14),transparent_34%),linear-gradient(145deg,#07111f,#04101b)] text-[#8bbfe9]">
         <div className="text-center">
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-[18px] border border-[rgba(120,160,210,.12)] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,.035)]">
             <CategoryIcon category={place.category} />
@@ -109,7 +109,7 @@ export function PlacePhoto({
   const transientCredit = transientPhoto?.authorAttributions.map((item) => item.displayName).filter(Boolean).join(", ") || "";
 
   return (
-    <div ref={restoreAnchorRef} className="relative h-full w-full">
+    <div ref={visibilityAnchorRef} className="relative h-full w-full">
       <div className={`amd-skeleton absolute inset-0 transition-opacity duration-[var(--motion-normal)] ${loaded ? "opacity-0" : "opacity-100"}`} aria-hidden="true" />
       <img
         key={active.url}
