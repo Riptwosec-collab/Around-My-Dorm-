@@ -51,7 +51,8 @@ import { PlaceDetail } from "@/components/PlaceDetail";
 import { CollectionEditorSheet } from "@/components/CollectionEditorSheet";
 import { CollectionSelectorSheet } from "@/components/CollectionSelectorSheet";
 import { CategoryPreferenceSheet } from "@/components/CategoryPreferenceSheet";
-import { FoodNowSheet, type FoodNowOptions } from "@/components/FoodNowSheet";
+import { FoodNowSheet } from "@/components/FoodNowSheet";
+import { recommendFoodNow as rankFoodNowOptions, type FoodNowOptions } from "@/lib/discovery/food-now";
 import { HomeLocationSheet } from "@/components/HomeLocationSheet";
 import { InfoSheet } from "@/components/InfoSheet";
 import { MapBottomSheet } from "@/components/MapBottomSheet";
@@ -80,7 +81,6 @@ import { SmartCapabilityHub } from "@/components/SmartCapabilityHub";
 import {
   DEFAULT_COLLECTIONS,
   DEFAULT_SETTINGS,
-  FOOD_CATEGORIES,
   RADII,
   SORT_OPTIONS,
   TAB_ROUTES,
@@ -96,7 +96,6 @@ import {
 } from "@/lib/app-shell-config";
 import {
   activeFilterCount,
-  explicitPriceCeiling,
   recommendationReasons,
   smartLocalPicks,
   sortPlaces,
@@ -430,13 +429,17 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   function pickFoodNow() { setFoodNowOpen(true); }
 
   function recommendFoodNow(options: FoodNowOptions) {
-    const preferred = new Set(settings.preferredCategories || []);
-    const candidates = allPlaces.filter((place) => FOOD_CATEGORIES.has(place.category)).filter((place) => place.distanceKm == null || place.distanceKm * 1000 <= options.radius).filter((place) => !settings.verifiedOnly || place.verified).filter((place) => !options.openNow || getPlaceOpenStatus(place).isOpen === true).filter((place) => !options.localOnly || place.placeType === "local" || place.placeType === "independent" || place.localFavorite).filter((place) => !options.lateOnly || place.openLate === true).filter((place) => { if (options.budget == null) return true; const ceiling = explicitPriceCeiling(place); return ceiling != null && ceiling <= options.budget; });
-    const ranked = candidates.map((place) => {
-      const isOpen = getPlaceOpenStatus(place).isOpen === true; const distance = place.distanceKm == null ? 0 : Math.max(0, 1 - (place.distanceKm * 1000) / options.radius); const budget = options.budget == null ? 1 : explicitPriceCeiling(place) != null && explicitPriceCeiling(place)! <= options.budget ? 1 : 0; const rating = (place.rating ?? 0) / 5; const local = Math.min(1, (place.localScore ?? (place.localFavorite ? 80 : 0)) / 100); const preference = preferred.has(place.category) ? 1 : 0; const hour = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" })).getHours(); const timeFit = hour >= 21 ? (place.openLate ? 1 : .2) : 1;
-      return { place, score: (isOpen ? .25 : 0) + distance * .20 + budget * .15 + rating * .15 + local * .10 + preference * .10 + timeFit * .05 };
-    }).sort((a,b) => b.score - a.score);
-    setFoodNowOpen(false); if (ranked[0]) openDetail(ranked[0].place);
+    const ranked = rankFoodNowOptions(
+      allPlaces,
+      options,
+      recommendationContext,
+      settings.language,
+      5,
+      settings.verifiedOnly,
+    );
+    setFoodNowOpen(false);
+    if (ranked[0]) openDetail(ranked[0].place);
+    else showToast(settings.language === "en" ? "No matching places right now" : "ยังไม่พบร้านที่ตรงเงื่อนไข", "removed");
   }
 
   function createCollection() { setCollectionEditor({ mode: "create" }); }
