@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("Place ID Manager is mobile safe and filters do not trigger Google Places", async ({ page }) => {
+test("Place ID Manager stays fail-closed before admin login and makes zero Google Places requests", async ({ page }) => {
   let googlePlacesRequests = 0;
   page.on("request", (request) => {
     const url = request.url();
@@ -10,11 +10,9 @@ test("Place ID Manager is mobile safe and filters do not trigger Google Places",
   await page.goto("/settings");
   await expect(page.getByText("จัดการข้อมูลร้าน")).toBeVisible();
   await page.getByRole("button", { name: "จัดการ", exact: true }).click();
-  await expect(page.getByTestId("google-place-id-manager")).toBeVisible();
-  await page.getByTestId("place-id-filter-missing").click();
-  await page.getByTestId("place-id-filter-linked").click();
-  await page.getByTestId("place-id-filter-chain").click();
-  await page.getByTestId("audit-place-ids").click();
+
+  await expect(page.getByTestId("data-management-admin-locked")).toBeVisible();
+  await expect(page.getByTestId("google-place-id-manager")).toHaveCount(0);
   await page.waitForTimeout(300);
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
