@@ -33,6 +33,7 @@ describe("manual visible Google photo loading", () => {
     expect(placePhoto).toContain("IntersectionObserver");
     expect(placePhoto).toContain("setGooglePhotoCardVisible");
     expect(placePhoto).not.toContain("requestVisibleGooglePhotoRestore");
+    expect(placePhoto).not.toContain("fetchGoogleTransientPhoto");
   });
 
   it("mounts a central explicit button that loads only currently visible cards", () => {
@@ -44,11 +45,13 @@ describe("manual visible Google photo loading", () => {
     expect(layout).toContain("VisibleGooglePhotoLoadControl");
     expect(control).toContain("โหลดรูปที่เห็น");
     expect(control).toContain("loadVisibleGooglePhotos");
+    expect(control).toContain("onClick={() => void loadVisible()}");
   });
 
-  it("removes the admin Restore All Remaining action so off-screen restore is not the default path", () => {
-    const adminControl = read("components/GoogleBulkPhotoRuntimeControl.tsx");
-    expect(adminControl).not.toContain("Restore All Remaining");
-    expect(adminControl).not.toContain("runRestoreRemaining");
+  it("keeps off-screen bulk controls separate from the primary visible-card button", () => {
+    const control = read("components/VisibleGooglePhotoLoadControl.tsx");
+    expect(control).not.toContain("Restore All Remaining");
+    expect(control).not.toContain("runRestoreRemaining");
+    expect(control).not.toContain("GoogleBulkPhotoRuntimeControl");
   });
 });
