@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Image as ImageIcon, LoaderCircle, ShieldCheck, X } from "lucide-react";
+import { CloudPermanentImageManager } from "@/components/CloudPermanentImageManager";
 import { getAdminAccessState } from "@/lib/admin-auth";
 import { recordTrackedGoogleRequest } from "@/lib/google-api-budget";
 import { supabase } from "@/lib/cloud/supabase";
@@ -269,7 +270,7 @@ export function GoogleBulkPhotoRuntimeControl() {
           <Camera className="h-4 w-4" /> Google Photos
         </button>
       ) : (
-        <section data-testid="google-bulk-photo-runtime-control" className="amd-glass-strong w-[min(92vw,410px)] rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl">
+        <section data-testid="google-bulk-photo-runtime-control" className="amd-glass-strong max-h-[78vh] w-[min(92vw,410px)] overflow-y-auto rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /><p className="text-[11px] font-bold">GOOGLE PHOTOS • MANUAL</p></div>
@@ -334,6 +335,10 @@ export function GoogleBulkPhotoRuntimeControl() {
                 <button data-testid="google-bulk-photo-runtime-run" type="button" onClick={() => void runBulkPhotos()} className="amd-btn amd-btn-primary h-10 min-h-0 rounded-xl text-[8px] font-bold">ยืนยันและโหลด</button>
               </div>
             </div>
+          )}
+
+          {!running && !loadingPlaces && (
+            <CloudPermanentImageManager places={places} onChanged={refreshPlaces} />
           )}
 
           {message && <p className="mt-3 rounded-xl border border-white/[0.06] bg-black/10 px-3 py-2 text-[8px] leading-4 text-white/60">{message}</p>}
