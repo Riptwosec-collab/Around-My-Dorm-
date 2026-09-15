@@ -12,7 +12,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,24 +20,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: New test - cloud cover priority
+      - name: Group A-F
         continue-on-error: true
-        run: npm test -- tests/cloud-permanent-images.test.ts -t "ranks a Cloud cover"
-      - name: New test - matching place merge
+        run: npm test -- tests/admin-*.test.ts tests/app-*.test.ts tests/candidate-*.test.ts tests/category-*.test.ts tests/cloud-*.test.ts tests/coverage-*.test.ts tests/data-*.test.ts tests/discovery-*.test.ts tests/field-*.test.ts tests/food-*.test.ts
+      - name: Group G-H
         continue-on-error: true
-        run: npm test -- tests/cloud-permanent-images.test.ts -t "merges Cloud rows"
-      - name: New test - reject Google metadata
+        run: npm test -- tests/google-*.test.ts tests/home-*.test.ts tests/hybrid-*.test.ts
+      - name: Group P
         continue-on-error: true
-        run: npm test -- tests/cloud-permanent-images.test.ts -t "rejects Google-backed"
-      - name: New test - deterministic recreation
+        run: npm test -- tests/photo-*.test.ts tests/place-*.test.ts
+      - name: Group R-W
         continue-on-error: true
-        run: npm test -- tests/cloud-permanent-images.test.ts -t "recreates the same"
-      - name: Targeted file all cases
+        run: npm test -- tests/recent*.test.ts tests/recommendation-*.test.ts tests/refresh-*.test.ts tests/review-*.test.ts tests/route-*.test.ts tests/saved-*.test.ts tests/search-*.test.ts tests/smart-*.test.ts tests/use-*.test.ts tests/worker-*.test.ts
+      - name: Full unit suite diagnostic
         continue-on-error: true
-        run: npm test -- tests/cloud-permanent-images.test.ts
-      - name: Existing place image tests
-        continue-on-error: true
-        run: npm test -- tests/place-images.test.ts
+        run: npm test
       - name: Type check diagnostic
         continue-on-error: true
         run: npm run typecheck
