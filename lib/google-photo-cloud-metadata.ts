@@ -10,8 +10,14 @@ export type GooglePhotoCloudMetadataRow = {
   result_code: GooglePhotoCloudResultCode | null;
 };
 
+export type GooglePhotoRestoreTarget = {
+  placeId: string;
+  googlePlaceId: string;
+};
+
 export type GooglePhotoCloudMetadataSummary = {
   savedPlaceIds: string[];
+  restoreTargets: GooglePhotoRestoreTarget[];
   savedCount: number;
   noPhotoCount: number;
   failedCount: number;
@@ -20,6 +26,7 @@ export type GooglePhotoCloudMetadataSummary = {
 
 const EMPTY_SUMMARY: GooglePhotoCloudMetadataSummary = {
   savedPlaceIds: [],
+  restoreTargets: [],
   savedCount: 0,
   noPhotoCount: 0,
   failedCount: 0,
@@ -44,12 +51,16 @@ export function summarizeGooglePhotoCloudMetadata(
   }
 
   const savedPlaceIds: string[] = [];
+  const restoreTargets: GooglePhotoRestoreTarget[] = [];
   let noPhotoCount = 0;
   let failedCount = 0;
 
   for (const [placeId, row] of latestByPlace) {
     if (row.status === "success" && row.result_code === "photo_loaded") {
       savedPlaceIds.push(placeId);
+      if (row.google_place_id) {
+        restoreTargets.push({ placeId, googlePlaceId: row.google_place_id });
+      }
       continue;
     }
     if (row.status === "success" && row.result_code === "no_photo") {
@@ -62,9 +73,11 @@ export function summarizeGooglePhotoCloudMetadata(
   }
 
   savedPlaceIds.sort();
+  restoreTargets.sort((a, b) => a.placeId.localeCompare(b.placeId));
 
   return {
     savedPlaceIds,
+    restoreTargets,
     savedCount: savedPlaceIds.length,
     noPhotoCount,
     failedCount,
