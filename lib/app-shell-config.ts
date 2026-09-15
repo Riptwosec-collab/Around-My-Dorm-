@@ -57,7 +57,6 @@ export const RADII = [
   { label: "2 กม.", value: 2000 },
   { label: "3 กม.", value: 3000 },
   { label: "5 กม.", value: 5000 },
-  { label: "10 กม.", value: 10000 },
 ] as const;
 
 export const FOOD_CATEGORIES = new Set<CategoryId>([
