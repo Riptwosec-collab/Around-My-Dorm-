@@ -50,8 +50,8 @@ describe("Cloud permanent place images", () => {
       [row],
       () => "https://cloud.test/a.webp",
     );
-    expect(merged[0]?.imageMetadata?.some((image) => image.source === "cloud_storage")).toBe(true);
-    expect(merged[1]?.imageMetadata?.some((image) => image.source === "cloud_storage")).toBe(false);
+    expect(Boolean(merged[0]?.imageMetadata?.some((image) => image.source === "cloud_storage"))).toBe(true);
+    expect(Boolean(merged[1]?.imageMetadata?.some((image) => image.source === "cloud_storage"))).toBe(false);
   });
 
   it("rejects Google-backed metadata from the permanent path", () => {
