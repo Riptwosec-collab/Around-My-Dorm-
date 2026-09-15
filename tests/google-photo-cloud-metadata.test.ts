@@ -38,6 +38,7 @@ describe("Google photo cloud metadata", () => {
 
     expect(summarizeGooglePhotoCloudMetadata(rows)).toEqual({
       savedPlaceIds: ["place-a"],
+      restoreTargets: [{ placeId: "place-a", googlePlaceId: "google-a" }],
       savedCount: 1,
       noPhotoCount: 1,
       failedCount: 0,
