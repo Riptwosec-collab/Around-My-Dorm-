@@ -1,14 +1,11 @@
 import { recordTrackedGoogleRequest } from "@/lib/google-api-budget";
-import {
-  loadGooglePhotoCloudMetadata,
-  type GooglePhotoRestoreTarget,
-} from "@/lib/google-photo-cloud-metadata";
 import { getPlaceImageCandidates } from "@/lib/place-images";
 import { fetchGoogleTransientPhoto, type GoogleTransientPhoto } from "@/lib/google-transient-photo";
 import type { Place } from "@/types/place";
 
 export const GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT = "amd:google-photo-runtime-changed";
-export const GOOGLE_PHOTO_AUTO_RESTORE_LIMIT = 20;
+export const GOOGLE_PHOTO_VISIBLE_CARDS_CHANGED_EVENT = "amd:google-photo-visible-cards-changed";
+export const GOOGLE_PHOTO_VISIBLE_LOAD_LIMIT = 20;
 
 type RuntimePhotoRecord = {
   placeId: string;
@@ -16,13 +13,42 @@ type RuntimePhotoRecord = {
   photo: GoogleTransientPhoto;
 };
 
-export type GooglePhotoAutoRestoreResult = "restored" | "no_photo" | "failed" | "skipped";
+export type VisibleGooglePhotoLoadSummary = {
+  attempted: number;
+  loaded: number;
+  noPhoto: number;
+  failed: number;
+};
 
 const runtimePhotos = new Map<string, RuntimePhotoRecord>();
-const autoRestoreClaims = new Set<string>();
-const autoRestoreInFlight = new Set<string>();
-let restoreTargetsPromise: Promise<Map<string, GooglePhotoRestoreTarget>> | null = null;
-let autoRestoreQueue: Promise<void> = Promise.resolve();
+const visibleGooglePhotoCards = new Map<string, Place>();
+
+function dispatchRuntimeChanged(placeId: string | null, googlePlaceId: string | null) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT, { detail: { placeId, googlePlaceId } }));
+}
+
+function dispatchVisibleCardsChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(GOOGLE_PHOTO_VISIBLE_CARDS_CHANGED_EVENT));
+}
+
+function googlePlaceIdFor(place: Place): string | null {
+  return place.googlePlaceId || place.googleMaps?.placeId || null;
+}
+
+function hasPersistedPhoto(place: Place): boolean {
+  return getPlaceImageCandidates(place).length > 0;
+}
+
+function isVisibleGooglePhotoLoadTarget(place: Place): boolean {
+  return Boolean(
+    place?.id
+    && googlePlaceIdFor(place)
+    && !hasGoogleRuntimePhoto(place.id)
+    && !hasPersistedPhoto(place),
+  );
+}
 
 export function getGoogleRuntimePhoto(placeId: string): GoogleTransientPhoto | null {
   return runtimePhotos.get(placeId)?.photo ?? null;
@@ -39,122 +65,111 @@ export function getGoogleRuntimePhotoCount(): number {
 export function setGoogleRuntimePhoto(placeId: string, googlePlaceId: string, photo: GoogleTransientPhoto): void {
   if (!placeId || !googlePlaceId || !photo?.url) return;
   runtimePhotos.set(placeId, { placeId, googlePlaceId, photo });
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent(GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT, { detail: { placeId, googlePlaceId } }));
-  }
+  dispatchRuntimeChanged(placeId, googlePlaceId);
 }
 
 export function clearGoogleRuntimePhotos(): void {
   if (!runtimePhotos.size) return;
   runtimePhotos.clear();
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent(GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT, { detail: { placeId: null, googlePlaceId: null } }));
-  }
-}
-
-export function claimGooglePhotoAutoRestoreSlot(placeId: string): boolean {
-  if (!placeId || autoRestoreClaims.has(placeId)) return false;
-  if (autoRestoreClaims.size >= GOOGLE_PHOTO_AUTO_RESTORE_LIMIT) return false;
-  autoRestoreClaims.add(placeId);
-  return true;
-}
-
-export function isGooglePhotoAutoRestoreInFlight(placeId: string): boolean {
-  return autoRestoreInFlight.has(placeId);
-}
-
-export function getGooglePhotoAutoRestoreCount(): number {
-  return autoRestoreClaims.size;
-}
-
-export function resetGooglePhotoAutoRestoreSession(): void {
-  autoRestoreClaims.clear();
-  autoRestoreInFlight.clear();
-  restoreTargetsPromise = null;
-  autoRestoreQueue = Promise.resolve();
-}
-
-async function restoreTargetsByPlace() {
-  if (!restoreTargetsPromise) {
-    restoreTargetsPromise = loadGooglePhotoCloudMetadata()
-      .then((summary) => new Map(summary.restoreTargets.map((target) => [target.placeId, target])))
-      .catch(() => new Map<string, GooglePhotoRestoreTarget>());
-  }
-  return restoreTargetsPromise;
-}
-
-function hasPersistedPhoto(place: Place) {
-  return getPlaceImageCandidates(place).length > 0;
-}
-
-function queueAutoRestore<T>(task: () => Promise<T>): Promise<T> {
-  const run = autoRestoreQueue.catch(() => undefined).then(task);
-  autoRestoreQueue = run.then(() => undefined, () => undefined);
-  return run;
+  dispatchRuntimeChanged(null, null);
 }
 
 /**
- * Restore a previously successful Google photo only after its rendered card becomes visible.
- * The photo remains runtime-only. Supabase stores only request/result metadata and Google Place ID.
+ * Compatibility for the admin panel's legacy restore filter. Automatic restore
+ * no longer exists, so there can never be an automatic restore in flight.
  */
-export async function requestVisibleGooglePhotoRestore(
-  place: Place,
-  apiKey: string,
-): Promise<GooglePhotoAutoRestoreResult> {
-  if (!apiKey || !place?.id || hasGoogleRuntimePhoto(place.id) || hasPersistedPhoto(place)) return "skipped";
+export function isGooglePhotoAutoRestoreInFlight(_placeId: string): boolean {
+  return false;
+}
 
-  const targets = await restoreTargetsByPlace();
-  const savedTarget = targets.get(place.id);
-  if (!savedTarget) return "skipped";
+/**
+ * Visibility tracking only. This function never calls Google.
+ * PlacePhoto updates it from IntersectionObserver; Google requests happen only
+ * when loadVisibleGooglePhotos() is called by the explicit user button.
+ */
+export function setGooglePhotoCardVisible(place: Place, visible: boolean): void {
+  if (!place?.id) return;
+  const wasVisible = visibleGooglePhotoCards.has(place.id);
+  if (visible) {
+    visibleGooglePhotoCards.set(place.id, place);
+  } else {
+    visibleGooglePhotoCards.delete(place.id);
+  }
+  if (wasVisible !== visible) dispatchVisibleCardsChanged();
+}
 
-  const target: GooglePhotoRestoreTarget = {
-    placeId: place.id,
-    googlePlaceId: place.googlePlaceId || place.googleMaps?.placeId || savedTarget.googlePlaceId,
+export function getVisibleGooglePhotoPlaces(): Place[] {
+  return Array.from(visibleGooglePhotoCards.values());
+}
+
+export function resetVisibleGooglePhotoCards(): void {
+  if (!visibleGooglePhotoCards.size) return;
+  visibleGooglePhotoCards.clear();
+  dispatchVisibleCardsChanged();
+}
+
+export function getVisibleGooglePhotoLoadTargetCount(): number {
+  return getVisibleGooglePhotoPlaces().filter(isVisibleGooglePhotoLoadTarget).length;
+}
+
+/**
+ * Explicit user action only. Snapshot the cards currently visible at click time,
+ * then request Google photos only for eligible cards in that snapshot.
+ * Google photo content remains runtime-only and is never persisted.
+ */
+export async function loadVisibleGooglePhotos(apiKey: string): Promise<VisibleGooglePhotoLoadSummary> {
+  if (!apiKey) throw new Error("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing");
+
+  const targets = getVisibleGooglePhotoPlaces()
+    .filter(isVisibleGooglePhotoLoadTarget)
+    .slice(0, GOOGLE_PHOTO_VISIBLE_LOAD_LIMIT);
+
+  const summary: VisibleGooglePhotoLoadSummary = {
+    attempted: targets.length,
+    loaded: 0,
+    noPhoto: 0,
+    failed: 0,
   };
-  if (!target.googlePlaceId || !claimGooglePhotoAutoRestoreSlot(place.id)) return "skipped";
 
-  autoRestoreInFlight.add(place.id);
-  return queueAutoRestore(async () => {
+  for (const place of targets) {
+    const googlePlaceId = googlePlaceIdFor(place);
+    if (!googlePlaceId) continue;
+    const startedAt = Date.now();
+    let status: "success" | "failed" = "success";
+    let resultCode: "photo_loaded" | "no_photo" | "failed" = "no_photo";
+
     try {
-      if (hasGoogleRuntimePhoto(place.id) || hasPersistedPhoto(place)) return "skipped";
-
-      const startedAt = Date.now();
-      let requestStatus: "success" | "failed" = "success";
-      let resultCode: "photo_loaded" | "no_photo" | "failed" = "no_photo";
-      let outcome: GooglePhotoAutoRestoreResult = "no_photo";
-
-      try {
-        const photo = await fetchGoogleTransientPhoto(apiKey, target.googlePlaceId, "visible_photo_restore");
-        if (photo) {
-          setGoogleRuntimePhoto(place.id, target.googlePlaceId, photo);
-          resultCode = "photo_loaded";
-          outcome = "restored";
-        }
-      } catch {
-        requestStatus = "failed";
-        resultCode = "failed";
-        outcome = "failed";
+      const photo = await fetchGoogleTransientPhoto(apiKey, googlePlaceId, "manual_places_request");
+      if (photo) {
+        setGoogleRuntimePhoto(place.id, googlePlaceId, photo);
+        resultCode = "photo_loaded";
+        summary.loaded += 1;
+      } else {
+        summary.noPhoto += 1;
       }
-
-      try {
-        await recordTrackedGoogleRequest({
-          requestType: "place_photo",
-          placeId: place.id,
-          placeName: place.name,
-          googlePlaceId: target.googlePlaceId,
-          status: requestStatus,
-          resultCode,
-          attempted: 1,
-          retryCount: 0,
-          durationMs: Math.max(0, Date.now() - startedAt),
-        });
-      } catch {
-        // Photo display is allowed to succeed even if usage metadata logging is temporarily unavailable.
-      }
-
-      return outcome;
-    } finally {
-      autoRestoreInFlight.delete(place.id);
+    } catch {
+      status = "failed";
+      resultCode = "failed";
+      summary.failed += 1;
     }
-  });
+
+    try {
+      await recordTrackedGoogleRequest({
+        requestType: "place_photo",
+        placeId: place.id,
+        placeName: place.name,
+        googlePlaceId,
+        status,
+        resultCode,
+        attempted: 1,
+        retryCount: 0,
+        durationMs: Math.max(0, Date.now() - startedAt),
+      });
+    } catch {
+      // Display can succeed even if usage metadata logging is temporarily unavailable.
+    }
+  }
+
+  dispatchVisibleCardsChanged();
+  return summary;
 }

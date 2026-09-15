@@ -9,6 +9,7 @@ import "./render-stability.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
 import { GoogleBulkPhotoRuntimeControl } from "@/components/GoogleBulkPhotoRuntimeControl";
 import { PreciseGeolocationRuntime } from "@/components/PreciseGeolocationRuntime";
+import { VisibleGooglePhotoLoadControl } from "@/components/VisibleGooglePhotoLoadControl";
 
 export const metadata: Metadata = {
   title: "Around My Dorm",
@@ -36,6 +37,7 @@ export default function RootLayout({
         <PreciseGeolocationRuntime />
         {children}
         <PwaRuntime />
+        <VisibleGooglePhotoLoadControl />
         <GoogleBulkPhotoRuntimeControl />
       </body>
     </html>

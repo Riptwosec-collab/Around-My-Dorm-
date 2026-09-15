@@ -1,49 +1,37 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import * as runtime from "@/lib/google-photo-runtime";
 
 function read(file: string) {
   return fs.readFileSync(path.join(process.cwd(), file), "utf8");
 }
 
-describe("hybrid Google photo restore", () => {
-  it("caps automatic viewport restores at 20 requests per session and deduplicates places", () => {
-    const claim = (runtime as unknown as { claimGooglePhotoAutoRestoreSlot?: (placeId: string) => boolean }).claimGooglePhotoAutoRestoreSlot;
-    const reset = (runtime as unknown as { resetGooglePhotoAutoRestoreSession?: () => void }).resetGooglePhotoAutoRestoreSession;
-
-    expect(claim).toBeTypeOf("function");
-    expect(reset).toBeTypeOf("function");
-    reset!();
-
-    for (let index = 0; index < 20; index += 1) {
-      expect(claim!(`place-${index}`)).toBe(true);
-    }
-    expect(claim!("place-0")).toBe(false);
-    expect(claim!("place-20")).toBe(false);
-  });
-
-  it("only starts automatic restore from a visible PlacePhoto via IntersectionObserver", () => {
+describe("manual visible Google photo restore", () => {
+  it("uses IntersectionObserver only to track visibility, never to trigger a request", () => {
     const placePhoto = read("components/PlacePhoto.tsx");
     expect(placePhoto).toContain("IntersectionObserver");
-    expect(placePhoto).toContain("requestVisibleGooglePhotoRestore");
-    expect(placePhoto).toContain("intersectionRatio");
+    expect(placePhoto).toContain("setGooglePhotoCardVisible");
+    expect(placePhoto).not.toContain("requestVisibleGooglePhotoRestore");
   });
 
-  it("uses a dedicated visible-photo Maps load intent instead of pretending the restore was a manual Places request", () => {
-    const maps = read("lib/google-maps.ts");
-    const transient = read("lib/google-transient-photo.ts");
+  it("uses the normal manual Places request intent for the explicit visible-card button", () => {
     const runtimeSource = read("lib/google-photo-runtime.ts");
-
-    expect(maps).toContain('"visible_photo_restore"');
-    expect(transient).toContain("GoogleMapsLoadIntent");
-    expect(runtimeSource).toContain('fetchGoogleTransientPhoto(apiKey, target.googlePlaceId, "visible_photo_restore")');
+    expect(runtimeSource).toContain('fetchGoogleTransientPhoto(apiKey, googlePlaceId, "manual_places_request")');
+    expect(runtimeSource).toContain("Explicit user action only");
+    expect(runtimeSource).not.toContain("requestVisibleGooglePhotoRestore");
   });
 
-  it("keeps bulk restore explicit and exposes Restore All Remaining for previously successful photos", () => {
-    const control = read("components/GoogleBulkPhotoRuntimeControl.tsx");
-    expect(control).toContain("restoreTargets");
-    expect(control).toContain("Restore All Remaining");
-    expect(control).toContain("runRestoreRemaining");
+  it("caps a single visible-card click defensively without restoring off-screen cards", () => {
+    const runtimeSource = read("lib/google-photo-runtime.ts");
+    expect(runtimeSource).toContain("GOOGLE_PHOTO_VISIBLE_LOAD_LIMIT = 20");
+    expect(runtimeSource).toContain("getVisibleGooglePhotoPlaces()");
+    expect(runtimeSource).toContain(".slice(0, GOOGLE_PHOTO_VISIBLE_LOAD_LIMIT)");
+  });
+
+  it("keeps Google photos runtime-only and preserves the manual admin tools as a separate path", () => {
+    const runtimeSource = read("lib/google-photo-runtime.ts");
+    const adminControl = read("components/GoogleBulkPhotoRuntimeControl.tsx");
+    expect(runtimeSource).toContain("Google photo content remains runtime-only");
+    expect(adminControl).toContain("Google Photos");
   });
 });
