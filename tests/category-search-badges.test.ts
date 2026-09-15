@@ -64,7 +64,7 @@ describe("category badges and category search", () => {
   });
 
   it("renders a dedicated category search bar below the main search field", () => {
-    const source = fs.readFileSync(path.join(process.cwd(), "components/AroundMyDormApp.tsx"), "utf8");
+    const source = fs.readFileSync(path.join(process.cwd(), "components/SearchAssistPanel.tsx"), "utf8");
     expect(source).toContain('data-testid="category-search-bar"');
     expect(source).toContain("CATEGORIES.filter((item) => item.id !== \"all\")");
   });
