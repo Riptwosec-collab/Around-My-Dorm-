@@ -299,6 +299,8 @@ export type Place = {
   deliveryVerifiedAt?: string | null;
   parkingVerifiedAt?: string | null;
   fieldProvenance?: Record<string, FieldProvenanceEntry>;
+  adminNote?: string | null;
+  adminNoteUpdatedAt?: string | null;
   notes: string | null;
 };
 
