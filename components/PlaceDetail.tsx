@@ -20,6 +20,7 @@ import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
 import { PlaceGoogleDataPanel } from "@/components/PlaceGoogleDataPanel";
+import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";
 import { loadPlaceReportWarnings, type PlaceReportWarning } from "@/lib/cloud/place-reports";
 import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
 import { formatFreshnessLabel, getFieldFreshness } from "@/lib/place-freshness";
@@ -209,6 +210,8 @@ export function PlaceDetail({
               <ValueRow label={copy.parkingInfo} value={place.parkingDetails ? parkingStatus.label : place.parking.available === true ? place.parking.note || "มี" : place.parking.available === false ? "ไม่มี" : copy.unknownData} />
               <ValueRow label={language === "en" ? "Parking freshness" : "ความสดของที่จอด"} value={formatFreshnessLabel(parkingFreshness, language)} />
             </div>
+
+            <PlaceEtaPanel place={place} language={language} />
 
             {(menuItems.length > 0 || place.popularMenus.length > 0 || place.recommendedItems.length > 0) && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
