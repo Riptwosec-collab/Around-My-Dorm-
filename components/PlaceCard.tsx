@@ -22,6 +22,7 @@ import {
 import { CATEGORY_MAP } from "@/data/categories";
 import { PlacePhoto } from "@/components/PlacePhoto";
 import { getCopy } from "@/locales";
+import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
 import { getFieldFreshness } from "@/lib/place-freshness";
 import {
   calculateLocalScore,
@@ -71,6 +72,7 @@ export function PlaceCard({
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
     .slice(0, 3);
   const status = getPlaceOpenStatus(place);
+  const openingIntelligence = buildOpeningIntelligence(status, new Date(), language);
   const openingFreshness = getFieldFreshness(place, "openingHours");
   const localScore = place.localScore ?? calculateLocalScore(place);
   const isLocal = place.placeType === "local" || place.placeType === "independent" || place.localFavorite;
@@ -146,8 +148,8 @@ export function PlaceCard({
 
           <div className="mt-3 space-y-1.5 text-[12px] leading-5">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className={`amd-status font-bold ${statusClass}`}>{status.label}</span>
-              {status.secondaryText && <><span className="text-[var(--amd-text-3)]">•</span><span className="font-medium text-[var(--amd-text-2)]">{status.secondaryText}</span></>}
+              <span className={`amd-status font-bold ${statusClass}`}>{openingIntelligence.primary}</span>
+              {openingIntelligence.secondary && <><span className="text-[var(--amd-text-3)]">•</span><span className="font-medium text-[var(--amd-text-2)]">{openingIntelligence.secondary}</span></>}
             </div>
             {freshnessWarning && <p className="text-[10px] font-semibold leading-4 text-amber-200">{freshnessWarning}</p>}
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[var(--amd-text-2)]">
