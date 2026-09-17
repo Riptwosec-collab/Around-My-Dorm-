@@ -1,3 +1,4 @@
+import { getFieldFreshness, type FreshnessField } from "@/lib/place-freshness";
 import type { Place } from "@/types/place";
 
 export type DataQualityGrade = "A" | "B" | "C" | "D";
@@ -16,6 +17,24 @@ export type PlaceDataQuality = {
     media: number;
     verification: number;
   };
+};
+
+export type FreshnessMetric = {
+  fresh: number;
+  aging: number;
+  stale: number;
+  unknown: number;
+  freshPercent: number;
+  staleIds: string[];
+  unknownIds: string[];
+};
+
+export type FreshnessSummary = {
+  total: number;
+  opening: FreshnessMetric;
+  price: FreshnessMetric;
+  parking: FreshnessMetric;
+  location: FreshnessMetric;
 };
 
 function filled(value: unknown) {
@@ -101,6 +120,38 @@ export function buildDataCompletenessDashboard(places: Place[]) {
     missingPhone: scored.filter((item) => item.quality.missing.includes("phone")).length,
     topMissing: [...missingCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6),
     scored,
+  };
+}
+
+function summarizeField(places: Place[], field: FreshnessField, now: Date): FreshnessMetric {
+  const metric: FreshnessMetric = {
+    fresh: 0,
+    aging: 0,
+    stale: 0,
+    unknown: 0,
+    freshPercent: 0,
+    staleIds: [],
+    unknownIds: [],
+  };
+
+  for (const place of places) {
+    const freshness = getFieldFreshness(place, field, now);
+    metric[freshness.status] += 1;
+    if (freshness.status === "stale") metric.staleIds.push(place.id);
+    if (freshness.status === "unknown") metric.unknownIds.push(place.id);
+  }
+
+  metric.freshPercent = places.length ? Math.round((metric.fresh / places.length) * 100) : 0;
+  return metric;
+}
+
+export function buildFreshnessSummary(places: Place[], now = new Date()): FreshnessSummary {
+  return {
+    total: places.length,
+    opening: summarizeField(places, "openingHours", now),
+    price: summarizeField(places, "price", now),
+    parking: summarizeField(places, "parking", now),
+    location: summarizeField(places, "location", now),
   };
 }
 
