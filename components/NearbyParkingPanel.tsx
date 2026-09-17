@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Car, ChevronDown, MapPin, Navigation, ShieldCheck } from "lucide-react";
+import { Car, ChevronDown, ExternalLink, LoaderCircle, MapPin, Navigation, ShieldCheck } from "lucide-react";
 import { getRuntimeLoadedPlaces } from "@/lib/database/runtime-places";
 import { rankNearbyParking } from "@/lib/discovery/parking-match";
+import { searchTransientParking } from "@/lib/google-parking-runtime";
 import { googleMapsDirectionsFallbackUrl } from "@/lib/google-maps-links";
+import type { PlaceCandidate } from "@/lib/maintenance/place-candidates";
 import type { Place } from "@/types/place";
 
 function distanceLabel(distanceKm: number, language: "th" | "en") {
@@ -42,11 +44,60 @@ export function NearbyParkingPanel({
 }) {
   const [showAll, setShowAll] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [googleCandidates, setGoogleCandidates] = useState<PlaceCandidate[]>([]);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleSearched, setGoogleSearched] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
   const allMatches = useMemo(() => rankNearbyParking(target, places, { limit: Math.max(places.length, 3) }), [target, places]);
   const matches = showAll ? allMatches : allMatches.slice(0, 3);
   const copy = language === "en"
-    ? { title: "Parking near this place", empty: "No verified local parking nearby yet", details: "View details", directions: "Directions", all: "View all parking", collapse: "Show less", more: "Find more parking", walk: "Walk" }
-    : { title: "ที่จอดใกล้ร้าน", empty: "ยังไม่มีข้อมูลที่จอดใกล้ร้านในฐานข้อมูล", details: "ดูรายละเอียด", directions: "นำทาง", all: "ดูที่จอดทั้งหมด", collapse: "ย่อรายการ", more: "ค้นหาที่จอดเพิ่ม", walk: "เดิน" };
+    ? {
+        title: "Parking near this place",
+        empty: "No verified local parking nearby yet",
+        details: "View details",
+        directions: "Directions",
+        all: "View all parking",
+        collapse: "Show less",
+        more: "Find more parking",
+        walk: "Walk",
+        extra: "Additional search results",
+        transient: "Google result • not saved to the database",
+        noExtra: "No additional parking found",
+        searchError: "Could not search Google parking",
+        viewGoogle: "View on Google Maps",
+      }
+    : {
+        title: "ที่จอดใกล้ร้าน",
+        empty: "ยังไม่มีข้อมูลที่จอดใกล้ร้านในฐานข้อมูล",
+        details: "ดูรายละเอียด",
+        directions: "นำทาง",
+        all: "ดูที่จอดทั้งหมด",
+        collapse: "ย่อรายการ",
+        more: "ค้นหาที่จอดเพิ่ม",
+        walk: "เดิน",
+        extra: "ผลค้นหาเพิ่มเติม",
+        transient: "ผลจาก Google • ยังไม่บันทึกลงฐานข้อมูล",
+        noExtra: "ไม่พบที่จอดเพิ่มเติม",
+        searchError: "ค้นหาที่จอดจาก Google ไม่สำเร็จ",
+        viewGoogle: "ดูบน Google Maps",
+      };
+
+  async function searchMoreParking() {
+    if (googleLoading) return;
+    onSearchMore?.();
+    setGoogleLoading(true);
+    setGoogleError(null);
+    setGoogleSearched(true);
+    try {
+      const candidates = await searchTransientParking(target, { language, places });
+      setGoogleCandidates(candidates);
+    } catch (reason) {
+      setGoogleCandidates([]);
+      setGoogleError(reason instanceof Error ? reason.message : copy.searchError);
+    } finally {
+      setGoogleLoading(false);
+    }
+  }
 
   return (
     <section data-testid="nearby-parking-panel" className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
@@ -104,10 +155,47 @@ export function NearbyParkingPanel({
         <button type="button" onClick={() => setShowAll((current) => !current)} disabled={allMatches.length <= 3} className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 text-[9px] font-bold text-white/58 disabled:opacity-35">
           <ChevronDown className={`h-3.5 w-3.5 ${showAll ? "rotate-180" : ""}`} />{showAll ? copy.collapse : copy.all}
         </button>
-        <button type="button" onClick={onSearchMore} className="min-h-11 rounded-xl border border-cyan-300/12 bg-cyan-300/[0.06] px-2 text-[9px] font-bold text-cyan-100">
-          {copy.more}
+        <button type="button" onClick={() => void searchMoreParking()} disabled={googleLoading} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-cyan-300/12 bg-cyan-300/[0.06] px-2 text-[9px] font-bold text-cyan-100 disabled:opacity-45">
+          {googleLoading && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}{copy.more}
         </button>
       </div>
+
+      {googleSearched && (
+        <div data-testid="transient-parking-results" className="mt-4 border-t border-white/[0.06] pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-100">{copy.extra}</p>
+            <span className="text-[8px] text-white/30">{googleCandidates.length}</span>
+          </div>
+          <p className="mt-1 text-[8px] leading-4 text-white/35">{copy.transient}</p>
+
+          {googleError && <p className="mt-3 rounded-xl border border-rose-300/10 bg-rose-300/[0.05] p-2.5 text-[9px] text-rose-100">{googleError}</p>}
+
+          {!googleLoading && !googleError && googleCandidates.length === 0 && (
+            <p className="mt-3 rounded-xl border border-white/[0.06] bg-black/10 p-3 text-[9px] text-white/40">{copy.noExtra}</p>
+          )}
+
+          {googleCandidates.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {googleCandidates.map((candidate) => {
+                const proposed = candidate.proposedPlace;
+                const url = proposed.googleMapsUrl || proposed.sourceUrl || null;
+                return (
+                  <article key={candidate.id} className="rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.035] p-3">
+                    <p className="text-[11px] font-bold text-white/85">{proposed.name}</p>
+                    {proposed.address && <p className="mt-1 text-[8px] leading-4 text-white/38">{proposed.address}</p>}
+                    <p className="mt-2 text-[8px] text-cyan-100/65">{copy.transient}</p>
+                    {url && (
+                      <a href={url} target="_blank" rel="noreferrer" className="mt-3 flex min-h-10 items-center justify-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 text-[9px] font-bold text-white/65">
+                        {copy.viewGoogle}<ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
