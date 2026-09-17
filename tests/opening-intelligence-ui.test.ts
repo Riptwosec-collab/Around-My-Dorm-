@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const cardSource = readFileSync("components/PlaceCard.tsx", "utf8");
 const detailSource = readFileSync("components/PlaceDetail.tsx", "utf8");
+const decisionSource = readFileSync("components/PlaceDecisionPanel.tsx", "utf8");
 
 describe("opening intelligence UI", () => {
   it("uses the shared opening formatter on cards", () => {
@@ -12,15 +13,16 @@ describe("opening intelligence UI", () => {
     expect(cardSource).toContain("openingIntelligence.secondary");
   });
 
-  it("uses the shared formatter in detail while keeping freshness independent", () => {
-    expect(detailSource).toContain('from "@/lib/opening-intelligence"');
-    expect(detailSource).toContain("buildOpeningIntelligence(status");
-    expect(detailSource).toContain("openingIntelligence.primary");
-    expect(detailSource).toContain("openingFreshness.status");
+  it("uses the shared formatter in detail decision UI while keeping freshness independent", () => {
+    expect(detailSource).toContain('from "@/components/PlaceDecisionPanel"');
+    expect(decisionSource).toContain('from "@/lib/opening-intelligence"');
+    expect(decisionSource).toContain("buildOpeningIntelligence(openStatus");
+    expect(decisionSource).toContain("opening.primary");
+    expect(decisionSource).toContain('getFieldFreshness(place, "openingHours")');
   });
 
-  it("does not wire opening rendering to Google request functions", () => {
+  it("does not trigger route calculation from opening rendering", () => {
     expect(cardSource).not.toContain("fetchGooglePlace");
-    expect(detailSource).not.toContain("calculateRoute(");
+    expect(decisionSource).not.toContain("calculateRoute(");
   });
 });
