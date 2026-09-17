@@ -26,11 +26,11 @@ describe("getFieldFreshness", () => {
   it("uses 30/60 day boundaries for price and parking", () => {
     expect(getFieldFreshness(place({ priceVerifiedAt: "2026-08-18T00:00:00.000Z" }), "price", NOW).status).toBe("fresh");
     expect(getFieldFreshness(place({ priceVerifiedAt: "2026-08-17T00:00:00.000Z" }), "price", NOW).status).toBe("aging");
-    expect(getFieldFreshness(place({ priceVerifiedAt: "2026-07-18T00:00:00.000Z" }), "price", NOW).status).toBe("aging");
-    expect(getFieldFreshness(place({ priceVerifiedAt: "2026-07-17T00:00:00.000Z" }), "price", NOW).status).toBe("stale");
+    expect(getFieldFreshness(place({ priceVerifiedAt: "2026-07-19T00:00:00.000Z" }), "price", NOW).status).toBe("aging");
+    expect(getFieldFreshness(place({ priceVerifiedAt: "2026-07-18T00:00:00.000Z" }), "price", NOW).status).toBe("stale");
 
     expect(getFieldFreshness(place({ parkingVerifiedAt: "2026-08-18T00:00:00.000Z" }), "parking", NOW).status).toBe("fresh");
-    expect(getFieldFreshness(place({ parkingVerifiedAt: "2026-07-17T00:00:00.000Z" }), "parking", NOW).status).toBe("stale");
+    expect(getFieldFreshness(place({ parkingVerifiedAt: "2026-07-18T00:00:00.000Z" }), "parking", NOW).status).toBe("stale");
   });
 
   it("uses field-specific single-threshold freshness for contact, location, and image", () => {
