@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Car, ChevronDown, MapPin, Navigation, ShieldCheck } from "lucide-react";
+import { getRuntimeLoadedPlaces } from "@/lib/database/runtime-places";
 import { rankNearbyParking } from "@/lib/discovery/parking-match";
 import { googleMapsDirectionsFallbackUrl } from "@/lib/google-maps-links";
 import type { Place } from "@/types/place";
@@ -30,12 +31,12 @@ function availabilityLabel(place: Place, language: "th" | "en") {
 
 export function NearbyParkingPanel({
   target,
-  places,
+  places = getRuntimeLoadedPlaces(),
   language,
   onSearchMore,
 }: {
   target: Place;
-  places: Place[];
+  places?: Place[];
   language: "th" | "en";
   onSearchMore?: () => void;
 }) {
