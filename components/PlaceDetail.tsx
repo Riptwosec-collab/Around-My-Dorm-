@@ -20,6 +20,7 @@ import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
 import { PlaceGoogleDataPanel } from "@/components/PlaceGoogleDataPanel";
+import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
 import { formatFreshnessLabel, getFieldFreshness } from "@/lib/place-freshness";
 import {
   calculateLocalScore,
@@ -70,6 +71,7 @@ export function PlaceDetail({
   const copy = getCopy(language);
   const category = CATEGORY_MAP[place.category];
   const status = getPlaceOpenStatus(place);
+  const openingIntelligence = buildOpeningIntelligence(status, new Date(), language);
   const localScore = place.localScore ?? calculateLocalScore(place);
   const isLocal = place.placeType === "local" || place.placeType === "independent" || place.localFavorite;
   const hasHours = place.is24Hours || Boolean(place.openingHoursText) || DAYS.some(({ key }) => Boolean(place.openingHours[key]));
@@ -147,7 +149,7 @@ export function PlaceDetail({
               )}
               <span className="rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-2 text-[10px] font-bold">{formatPrice(place)}</span>
               <span className="rounded-xl border border-cyan-300/10 bg-cyan-300/[0.05] px-2.5 py-2 text-[10px] font-bold text-cyan-100">Data {dataQuality.score}/100</span>
-              <span className={`rounded-xl border px-2.5 py-2 text-[10px] font-bold ${status.tone === "green" ? "border-emerald-300/15 bg-emerald-300/[0.08] text-emerald-200" : status.tone === "red" ? "border-rose-300/15 bg-rose-300/[0.08] text-rose-200" : status.tone === "cyan" ? "border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-200" : status.tone === "amber" ? "border-amber-300/15 bg-amber-300/[0.08] text-amber-100" : "border-white/10 bg-white/[0.04] text-white/50"}`}>{status.label}{status.secondaryText ? ` · ${status.secondaryText}` : ""}</span>
+              <span className={`rounded-xl border px-2.5 py-2 text-[10px] font-bold ${status.tone === "green" ? "border-emerald-300/15 bg-emerald-300/[0.08] text-emerald-200" : status.tone === "red" ? "border-rose-300/15 bg-rose-300/[0.08] text-rose-200" : status.tone === "cyan" ? "border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-200" : status.tone === "amber" ? "border-amber-300/15 bg-amber-300/[0.08] text-amber-100" : "border-white/10 bg-white/[0.04] text-white/50"}`}>{openingIntelligence.primary}{openingIntelligence.secondary ? ` · ${openingIntelligence.secondary}` : ""}</span>
             </div>
 
             <div className="mt-4 grid grid-cols-4 gap-2">
@@ -225,6 +227,7 @@ export function PlaceDetail({
             {hasHours && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] px-4 py-2">
                 <p className="py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.openingHours}</p>
+                <ValueRow label={language === "en" ? "Current status" : "สถานะตอนนี้"} value={`${openingIntelligence.primary}${openingIntelligence.secondary ? ` • ${openingIntelligence.secondary}` : ""}`} />
                 {place.is24Hours ? <ValueRow label={copy.everyDay} value={copy.open24} /> : place.openingHoursText && !DAYS.some(({ key }) => Boolean(place.openingHours[key])) ? <ValueRow label={copy.openingData} value={place.openingHoursText} /> : DAYS.map(({ key, label }) => <ValueRow key={key} label={language === "en" ? copy[key] : label} value={place.openingHours[key] || "ยังไม่มีข้อมูล"} />)}
                 {openingFreshness.status !== "fresh" && <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-300/[0.06] p-2.5 text-[9px] leading-4 text-amber-100/70"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{language === "en" ? "Opening hours may have changed. Verify before travelling." : "เวลาเปิดอาจมีการเปลี่ยนแปลง กรุณาตรวจสอบก่อนเดินทาง"}</div>}
               </div>
