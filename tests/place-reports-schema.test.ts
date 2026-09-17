@@ -16,7 +16,7 @@ describe("place reports schema", () => {
     expect(sql).toContain("amd_submit_place_report");
     expect(sql).toContain("amd_place_report_warning");
     expect(sql).toContain("amd_admin_transition_place_report");
-    expect(sql).toContain("revoke all on table public.amd_place_reports from anon");
+    expect(sql).toMatch(/revoke all on table public\.amd_place_reports from (?:public,\s*)?anon/i);
     expect(sql).not.toMatch(/create policy[^;]+amd_place_reports[^;]+to anon/is);
   });
 
