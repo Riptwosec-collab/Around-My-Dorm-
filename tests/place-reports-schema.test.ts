@@ -12,6 +12,13 @@ describe("place reports schema", () => {
     expect(sql).toContain("enable row level security");
   });
 
+  it("references the canonical Around My Dorm place table", () => {
+    expect(sql).toContain("references public.amd_places(id) on delete cascade");
+    expect(sql).toContain("select 1 from public.amd_places where id = p_place_id");
+    expect(sql).not.toContain("references public.places(id)");
+    expect(sql).not.toContain("select 1 from public.places where id = p_place_id");
+  });
+
   it("exposes RPC boundaries rather than public table policies", () => {
     expect(sql).toContain("amd_submit_place_report");
     expect(sql).toContain("amd_place_report_warning");
