@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.amd_place_reports (
   id uuid primary key default gen_random_uuid(),
-  place_id text not null references public.places(id) on delete cascade,
+  place_id text not null references public.amd_places(id) on delete cascade,
   report_type text not null check (report_type in ('closed','opening_hours','price','moved','parking','phone','location','other')),
   message text null check (char_length(coalesce(message, '')) <= 500),
   status text not null default 'pending' check (status in ('pending','reviewed','resolved','rejected')),
@@ -56,7 +56,7 @@ begin
     raise exception 'authenticated anonymous session required';
   end if;
 
-  if p_place_id is null or not exists(select 1 from public.places where id = p_place_id) then
+  if p_place_id is null or not exists(select 1 from public.amd_places where id = p_place_id) then
     raise exception 'invalid place_id';
   end if;
 
