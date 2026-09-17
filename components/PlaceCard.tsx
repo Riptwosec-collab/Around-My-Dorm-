@@ -22,6 +22,7 @@ import {
 import { CATEGORY_MAP } from "@/data/categories";
 import { PlacePhoto } from "@/components/PlacePhoto";
 import { getCopy } from "@/locales";
+import { getFieldFreshness } from "@/lib/place-freshness";
 import {
   calculateLocalScore,
   formatDistance,
@@ -70,6 +71,7 @@ export function PlaceCard({
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
     .slice(0, 3);
   const status = getPlaceOpenStatus(place);
+  const openingFreshness = getFieldFreshness(place, "openingHours");
   const localScore = place.localScore ?? calculateLocalScore(place);
   const isLocal = place.placeType === "local" || place.placeType === "independent" || place.localFavorite;
   const isChain = place.placeType === "chain" || place.placeType === "franchise";
@@ -88,6 +90,14 @@ export function PlaceCard({
         : status.tone === "amber"
           ? "text-[#FFD166]"
           : "text-[var(--amd-text-2)]";
+
+  const freshnessWarning = openingFreshness.status === "stale"
+    ? language === "en" ? "Opening hours may be outdated" : "เวลาเปิดอาจล้าสมัย"
+    : openingFreshness.status === "aging"
+      ? language === "en" ? "Opening hours should be rechecked soon" : "ควรตรวจเวลาเปิดอีกครั้งเร็ว ๆ นี้"
+      : openingFreshness.status === "unknown"
+        ? language === "en" ? "Opening hours not verified" : "เวลาเปิดยังไม่ยืนยัน"
+        : null;
 
   return (
     <article className="amd-glass amd-card amd-place-card group min-w-0 overflow-hidden">
@@ -139,6 +149,7 @@ export function PlaceCard({
               <span className={`amd-status font-bold ${statusClass}`}>{status.label}</span>
               {status.secondaryText && <><span className="text-[var(--amd-text-3)]">•</span><span className="font-medium text-[var(--amd-text-2)]">{status.secondaryText}</span></>}
             </div>
+            {freshnessWarning && <p className="text-[10px] font-semibold leading-4 text-amber-200">{freshnessWarning}</p>}
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[var(--amd-text-2)]">
               <span className="font-semibold text-[var(--amd-text)]">{price}</span><span className="text-[var(--amd-text-3)]">•</span><span className="font-semibold">{formatDistance(place.distanceKm)}</span>
             </div>
