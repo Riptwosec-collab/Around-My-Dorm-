@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const cardSource = readFileSync("components/PlaceCard.tsx", "utf8");
 const detailSource = readFileSync("components/PlaceDetail.tsx", "utf8");
+const decisionSource = readFileSync("components/PlaceDecisionPanel.tsx", "utf8");
 
 describe("field freshness UI wiring", () => {
   it("uses opening-hours freshness as a compact PlaceCard warning", () => {
@@ -13,13 +14,15 @@ describe("field freshness UI wiring", () => {
     expect(cardSource).not.toContain('getFieldFreshness(place, "parking")');
   });
 
-  it("renders independent opening, price, and parking freshness in PlaceDetail", () => {
-    expect(detailSource).toContain('from "@/lib/place-freshness"');
-    expect(detailSource).toContain('getFieldFreshness(place, "openingHours")');
-    expect(detailSource).toContain('getFieldFreshness(place, "price")');
-    expect(detailSource).toContain('getFieldFreshness(place, "parking")');
-    expect(detailSource).toContain("formatFreshnessLabel(openingFreshness, language)");
-    expect(detailSource).toContain("formatFreshnessLabel(priceFreshness, language)");
-    expect(detailSource).toContain("formatFreshnessLabel(parkingFreshness, language)");
+  it("renders independent opening, price, and parking freshness in the detail decision panel", () => {
+    expect(detailSource).toContain('from "@/components/PlaceDecisionPanel"');
+    expect(detailSource).toContain("<PlaceDecisionPanel");
+    expect(decisionSource).toContain('from "@/lib/place-freshness"');
+    expect(decisionSource).toContain('getFieldFreshness(place, "openingHours")');
+    expect(decisionSource).toContain('getFieldFreshness(place, "price")');
+    expect(decisionSource).toContain('getFieldFreshness(place, "parking")');
+    expect(decisionSource).toContain("formatFreshnessLabel(openingFreshness, language)");
+    expect(decisionSource).toContain("formatFreshnessLabel(priceFreshness, language)");
+    expect(decisionSource).toContain("formatFreshnessLabel(parkingFreshness, language)");
   });
 });
