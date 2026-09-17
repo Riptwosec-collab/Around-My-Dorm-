@@ -21,6 +21,7 @@ import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
 import { PlaceGoogleDataPanel } from "@/components/PlaceGoogleDataPanel";
 import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";
+import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";
 import { loadPlaceReportWarnings, type PlaceReportWarning } from "@/lib/cloud/place-reports";
 import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
 import { formatFreshnessLabel, getFieldFreshness } from "@/lib/place-freshness";
@@ -212,6 +213,7 @@ export function PlaceDetail({
             </div>
 
             <PlaceEtaPanel place={place} language={language} />
+            <NearbyParkingPanel target={place} language={language} />
 
             {(menuItems.length > 0 || place.popularMenus.length > 0 || place.recommendedItems.length > 0) && (
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] p-4">
