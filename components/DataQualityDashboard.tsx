@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { BarChart3, CheckCircle2, ImageOff, MapPinned, PhoneOff, TimerOff } from "lucide-react";
 import { CoverageDashboard } from "@/components/CoverageDashboard";
+import { PlaceReportAdminQueue } from "@/components/PlaceReportAdminQueue";
 import { ReviewQueuePanel } from "@/components/ReviewQueuePanel";
 import { buildDataCompletenessDashboard, buildFreshnessSummary } from "@/lib/data-quality";
 import type { PlaceCandidate } from "@/lib/maintenance/place-candidates";
@@ -92,6 +93,8 @@ export function DataQualityDashboard({
           : `สถานะ: ยืนยันแล้ว ${health.status.verified} • บางส่วน ${health.status.partial} • เก่า ${health.status.stale} • ยังไม่ยืนยัน ${health.status.unverified} • คู่ซ้ำที่ควรตรวจ ${health.duplicateCandidates}`}</p>
       </div>
     </section>
+
+    <PlaceReportAdminQueue places={places} language={language} />
 
     <CoverageDashboard
       places={places}
