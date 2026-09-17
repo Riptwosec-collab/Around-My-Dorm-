@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Place } from "@/types/place";
 import { saveGoogleApiControlSettings } from "@/lib/google-api-control";
 
-const recordTrackedGoogleRequest = vi.fn().mockResolvedValue(undefined);
+const { recordTrackedGoogleRequest } = vi.hoisted(() => ({
+  recordTrackedGoogleRequest: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/google-api-budget", () => ({ recordTrackedGoogleRequest }));
 
 import {
@@ -104,7 +106,8 @@ describe("runtime routes", () => {
     saveGoogleApiControlSettings({ locked: true });
     const fetchMock = vi.fn();
 
-    await expect(calculateRoute(place, "driving", { fetchImpl: fetchMock as typeof fetch })).rejects.toBeInstanceOf(RouteRuntimeError);
+    const request = calculateRoute(place, "driving", { fetchImpl: fetchMock as typeof fetch });
+    await expect(request).rejects.toBeInstanceOf(RouteRuntimeError);
     await expect(calculateRoute(place, "driving", { fetchImpl: fetchMock as typeof fetch })).rejects.toMatchObject({ code: "api_locked" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
