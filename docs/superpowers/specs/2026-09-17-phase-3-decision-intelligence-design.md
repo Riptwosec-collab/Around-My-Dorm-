@@ -182,6 +182,8 @@ Workflow statuses:
 - `resolved`
 - `rejected`
 
+`reviewed` is the active in-review state after an admin takes ownership of a report. The UI may label this state `กำลังตรวจ` / `Reviewing`; it is not a completed review.
+
 ### Security model
 
 Public/anonymous clients must not receive direct unrestricted write access to the report table.
@@ -205,11 +207,13 @@ Client callers cannot set `reviewed_by`, `reviewed_at`, `resolved_at`, or force 
 
 Public reporting should not require account creation.
 
-Use an opaque client identifier dedicated to anti-spam/reporting and persist only a transformed/hash-safe representation suitable for duplicate and rate-limit checks.
+Use an opaque client identifier dedicated to anti-spam/reporting. The validated server boundary must transform it to a non-reversible stored fingerprint before persistence; raw client identifiers must not be stored or exposed in admin UI.
 
-Do not expose the raw identifier in admin UI and do not reuse it for unrelated personalization or cross-feature tracking.
+The fingerprint exists only for duplicate and rate-limit checks and must not be reused for unrelated personalization or cross-feature tracking.
 
-If authenticated reporting is added later, `auth.uid()` may replace the anonymous fingerprint for that reporter.
+If authenticated reporting is added later, `auth.uid()` may replace the anonymous identity for that reporter.
+
+Because a determined anonymous client can intentionally rotate a local identifier, this mechanism is a practical abuse-reduction layer rather than bot-proof identity. Stronger bot protection, if later required, should be added at the public submission boundary without changing the report workflow model.
 
 ### Anti-spam policy
 
@@ -252,6 +256,12 @@ Resolved/rejected reports remain available for audit. Duplicate reports should b
 
 ## 4. On-demand ETA Engine
 
+### Route origin
+
+Phase 3 ETA is calculated from the verified `HomeOrigin` for บ้านสุภาอพาร์ทเม้นต์ to the selected place. It does not use the user’s live GPS location.
+
+If the home origin or destination coordinates are unavailable/unverified enough to route safely, disable live ETA calculation and show the normal map/directions fallback instead of guessing coordinates.
+
 ### Cost principle
 
 Routes are explicit user actions only.
@@ -289,7 +299,7 @@ Haversine distance may remain useful as straight-line distance only.
 
 Fresh Google-backed route results are runtime/transient by default and do not overwrite canonical route fields automatically.
 
-Within the current session, duplicate requests for the same place + travel mode should reuse the runtime result unless the user explicitly chooses `คำนวณใหม่`.
+Within the current session, duplicate requests for the same origin + place + travel mode should reuse the runtime result unless the user explicitly chooses `คำนวณใหม่`.
 
 The result UI should include:
 
@@ -302,7 +312,7 @@ For walking/two-wheeler modes, show any required provider disclaimer/attribution
 
 ### Failure behavior
 
-If route calculation is unavailable because of a missing key, API lock, quota guard, provider failure, or no route:
+If route calculation is unavailable because of a missing key, API lock, quota guard, provider failure, no route, or unresolved route endpoints:
 
 - do not create an estimated route duration
 - show a clear unavailable/error state
@@ -327,13 +337,17 @@ Eligible categories include at least:
 
 Candidates without a usable location cannot be ranked by proximity and should not be inserted into the nearby top list as though their distance were known.
 
+### Ranking origin
+
+“Nearby parking” means proximity to the currently viewed destination place, not proximity to บ้านสุภา. The parking matcher calculates straight-line proximity from the destination place coordinates to each eligible parking candidate.
+
 ### Ranking
 
 Rank nearby parking using known facts, prioritizing:
 
-1. proximity
+1. proximity to the destination place
 2. verified/known availability
-3. verified walking ETA when already available
+3. verified walking ETA when already available for the relevant destination-to-parking pair
 4. price fit/value
 5. 24-hour access
 6. useful amenities such as covered parking, CCTV, security guard, overnight access, or EV charging
@@ -347,12 +361,12 @@ If only straight-line distance exists, show it as distance and do not label it a
 Show up to three nearby parking options initially with useful facts such as:
 
 - name
-- distance
+- distance from the viewed place
 - hourly/daily/monthly price when known
 - 24-hour access
 - availability status
 - CCTV/security/covered parking when known
-- verified walking ETA when available
+- verified walking ETA when available for that destination-to-parking pair
 
 Actions:
 
@@ -458,7 +472,7 @@ Add a `DATA REPORTS` section to admin tooling.
 Summary metrics:
 
 - new/pending
-- reviewing
+- reviewing (`reviewed` status)
 - resolved
 - rejected
 
@@ -570,12 +584,14 @@ Required regression coverage includes:
 - another mode requires another explicit request
 - duplicate session request reuses runtime result
 - recalculate explicitly requests fresh data
+- unresolved route endpoints do not trigger guessed routes
 - no Haversine-to-minutes estimation
 - provider/API-lock failures never produce fake ETA
 
 ### Parking
 
 - local canonical candidates rank before any Google fallback
+- ranking is relative to the viewed destination place
 - missing route ETA does not create fake walking minutes
 - explicit parking search is required before Google request
 - Google parking candidates remain transient and are not auto-imported
@@ -597,21 +613,22 @@ Phase 3 is complete only when all of the following are true:
 
 1. Home, list, and Place Detail startup cause zero Route API requests.
 2. ETA requests happen only after travel mode selection and an explicit calculate action.
-3. Walking/driving/motorcycle durations are never inferred from straight-line distance.
-4. Opening-soon and closing-soon behavior works for normal and overnight schedules.
-5. Freshness is evaluated independently for opening hours, price, parking, contact, location, and image data.
-6. A stale field does not mark unrelated verified fields stale.
-7. Public reports never edit canonical place data automatically.
-8. Duplicate and rate-limit protections prevent report spam.
-9. Public users cannot read other users’ reports.
-10. Admins can review, resolve, and reject reports with an audit trail.
-11. Parking uses the local Around My Dorm dataset first.
-12. Google parking discovery occurs only after explicit user action.
-13. Google parking results do not automatically enter canonical data.
-14. API/provider failure states never generate fabricated data.
-15. Phase 3 UI remains usable on small mobile screens and safe areas.
-16. TH/EN flows remain intact.
-17. Unit tests, type check, production build, and Cloudflare Workers bundle validation are green before integration.
+3. ETA uses the verified บ้านสุภา HomeOrigin and never silently substitutes guessed route endpoints.
+4. Walking/driving/motorcycle durations are never inferred from straight-line distance.
+5. Opening-soon and closing-soon behavior works for normal and overnight schedules.
+6. Freshness is evaluated independently for opening hours, price, parking, contact, location, and image data.
+7. A stale field does not mark unrelated verified fields stale.
+8. Public reports never edit canonical place data automatically.
+9. Duplicate and rate-limit protections prevent routine report spam.
+10. Public users cannot read other users’ reports.
+11. Admins can review, resolve, and reject reports with an audit trail.
+12. Parking uses the local Around My Dorm dataset first and ranks relative to the viewed destination place.
+13. Google parking discovery occurs only after explicit user action.
+14. Google parking results do not automatically enter canonical data.
+15. API/provider failure states never generate fabricated data.
+16. Phase 3 UI remains usable on small mobile screens and safe areas.
+17. TH/EN flows remain intact.
+18. Unit tests, type check, production build, and Cloudflare Workers bundle validation are green before integration.
 
 ---
 
@@ -627,6 +644,7 @@ Phase 3 intentionally excludes:
 - automatic correction from public reports
 - automatic import of Google parking candidates
 - turn-by-turn navigation
+- live user-location routing
 - a full redesign of the app shell
 
 These may be considered in a later phase.
