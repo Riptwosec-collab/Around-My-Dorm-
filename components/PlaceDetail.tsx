@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -20,6 +20,7 @@ import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
 import { PlaceGoogleDataPanel } from "@/components/PlaceGoogleDataPanel";
+import { loadPlaceReportWarnings, type PlaceReportWarning } from "@/lib/cloud/place-reports";
 import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
 import { formatFreshnessLabel, getFieldFreshness } from "@/lib/place-freshness";
 import {
@@ -68,6 +69,7 @@ export function PlaceDetail({
   language?: "th" | "en";
 }) {
   const [reportOpen, setReportOpen] = useState(false);
+  const [reportWarnings, setReportWarnings] = useState<PlaceReportWarning[]>([]);
   const copy = getCopy(language);
   const category = CATEGORY_MAP[place.category];
   const status = getPlaceOpenStatus(place);
@@ -80,6 +82,14 @@ export function PlaceDetail({
   const parkingFreshness = getFieldFreshness(place, "parking");
   const parkingStatus = getParkingStatus(place);
   const dataQuality = scorePlaceDataQuality(place);
+
+  useEffect(() => {
+    let active = true;
+    void loadPlaceReportWarnings(place.id)
+      .then((warnings) => { if (active) setReportWarnings(warnings); })
+      .catch(() => { if (active) setReportWarnings([]); });
+    return () => { active = false; };
+  }, [place.id]);
 
   async function share() {
     const url = googleMapsPlaceUrl(place);
@@ -107,6 +117,8 @@ export function PlaceDetail({
 
   const menuItems = place.menuItems || [];
   const gallery = place.galleryImages?.length ? place.galleryImages : place.images;
+  const warningCount = reportWarnings.reduce((sum, warning) => sum + warning.reportCount, 0);
+  const hasOpeningWarning = reportWarnings.some((warning) => warning.reportType === "opening_hours" || warning.reportType === "closed");
 
   return (
     <>
@@ -151,6 +163,8 @@ export function PlaceDetail({
               <span className="rounded-xl border border-cyan-300/10 bg-cyan-300/[0.05] px-2.5 py-2 text-[10px] font-bold text-cyan-100">Data {dataQuality.score}/100</span>
               <span className={`rounded-xl border px-2.5 py-2 text-[10px] font-bold ${status.tone === "green" ? "border-emerald-300/15 bg-emerald-300/[0.08] text-emerald-200" : status.tone === "red" ? "border-rose-300/15 bg-rose-300/[0.08] text-rose-200" : status.tone === "cyan" ? "border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-200" : status.tone === "amber" ? "border-amber-300/15 bg-amber-300/[0.08] text-amber-100" : "border-white/10 bg-white/[0.04] text-white/50"}`}>{openingIntelligence.primary}{openingIntelligence.secondary ? ` · ${openingIntelligence.secondary}` : ""}</span>
             </div>
+
+            {warningCount > 0 && <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.05] p-3 text-[9px] leading-4 text-amber-100"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{language === "en" ? (hasOpeningWarning ? "Opening information has been reported as possibly incorrect • under review" : `There ${warningCount === 1 ? "is" : "are"} ${warningCount} unresolved data report${warningCount === 1 ? "" : "s"} • under review`) : (hasOpeningWarning ? "มีรายงานว่าข้อมูลเวลาเปิดอาจไม่ถูกต้อง • กำลังตรวจสอบ" : `มีรายงานข้อมูลที่ยังไม่ปิด ${warningCount} รายการ • กำลังตรวจสอบ`)}</span></div>}
 
             <div className="mt-4 grid grid-cols-4 gap-2">
               <button type="button" onClick={onMap} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.08] text-[9px] font-bold text-cyan-200"><MapPin className="h-4 w-4" />{copy.mapAction}</button>
@@ -251,7 +265,7 @@ export function PlaceDetail({
           </div>
         </section>
       </div>
-      {reportOpen && <ReportPlaceSheet place={place} onClose={() => setReportOpen(false)} />}
+      {reportOpen && <ReportPlaceSheet place={place} onClose={() => setReportOpen(false)} language={language} />}
     </>
   );
 }
