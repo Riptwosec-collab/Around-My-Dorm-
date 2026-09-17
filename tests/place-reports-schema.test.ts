@@ -17,7 +17,7 @@ describe("place reports schema", () => {
     expect(sql).toContain("amd_place_report_warning");
     expect(sql).toContain("amd_admin_transition_place_report");
     expect(sql).toMatch(/revoke all on table public\.amd_place_reports from (?:public,\s*)?anon/i);
-    expect(sql).not.toMatch(/create policy[^;]+amd_place_reports[^;]+to anon/is);
+    expect(sql).not.toMatch(/create policy[^;]+amd_place_reports[^;]+to anon/i);
   });
 
   it("enforces duplicate and rate windows and safe warning output", () => {
@@ -25,6 +25,6 @@ describe("place reports schema", () => {
     expect(sql).toContain("interval '24 hours'");
     expect(sql).toContain("duplicate_count");
     expect(sql).toContain("returns table(report_type text, report_count bigint)");
-    expect(sql).not.toMatch(/returns table\([^)]*message/is);
+    expect(sql).not.toMatch(/returns table\([^)]*message/i);
   });
 });
