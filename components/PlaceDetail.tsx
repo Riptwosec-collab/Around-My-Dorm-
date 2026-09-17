@@ -20,15 +20,15 @@ import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { PlacePhoto, PlacePhotoAttribution } from "@/components/PlacePhoto";
 import { GoogleLiveEnrichment } from "@/components/GoogleLiveEnrichment";
 import { PlaceGoogleDataPanel } from "@/components/PlaceGoogleDataPanel";
+import { formatFreshnessLabel, getFieldFreshness } from "@/lib/place-freshness";
 import {
   calculateLocalScore,
   formatDistance,
   formatPrice,
-  getDataFreshness,
   getParkingStatus,
   getPlaceOpenStatus,
 } from "@/lib/place-utils";
-import { dataAgeLabel, scorePlaceDataQuality } from "@/lib/data-quality";
+import { scorePlaceDataQuality } from "@/lib/data-quality";
 import { googleMapsDirectionsFallbackUrl, googleMapsPlaceUrl } from "@/lib/google-maps-links";
 import type { OpeningHours, Place } from "@/types/place";
 
@@ -73,10 +73,11 @@ export function PlaceDetail({
   const localScore = place.localScore ?? calculateLocalScore(place);
   const isLocal = place.placeType === "local" || place.placeType === "independent" || place.localFavorite;
   const hasHours = place.is24Hours || Boolean(place.openingHoursText) || DAYS.some(({ key }) => Boolean(place.openingHours[key]));
-  const openingFreshness = getDataFreshness(place.openingHoursVerifiedAt, 90);
+  const openingFreshness = getFieldFreshness(place, "openingHours");
+  const priceFreshness = getFieldFreshness(place, "price");
+  const parkingFreshness = getFieldFreshness(place, "parking");
   const parkingStatus = getParkingStatus(place);
   const dataQuality = scorePlaceDataQuality(place);
-  const dataFreshnessLabel = dataAgeLabel(place, language);
 
   async function share() {
     const url = googleMapsPlaceUrl(place);
@@ -186,9 +187,11 @@ export function PlaceDetail({
               <ValueRow label={copy.motorcycle} value={place.distance?.motorcycleMinutes != null ? `${place.distance.motorcycleMinutes} นาที` : copy.unknownRoute} />
               <ValueRow label={copy.driveTime} value={place.drivingMinutes != null ? `${place.drivingMinutes} นาที` : copy.unknownRoute} />
               <ValueRow label={copy.price} value={formatPrice(place)} />
+              <ValueRow label={language === "en" ? "Opening hours freshness" : "ความสดของเวลาเปิด"} value={formatFreshnessLabel(openingFreshness, language)} />
+              <ValueRow label={language === "en" ? "Price freshness" : "ความสดของราคา"} value={formatFreshnessLabel(priceFreshness, language)} />
               <ValueRow label={copy.phoneNumber} value={place.phone || copy.unknownData} />
-              <ValueRow label={language === "en" ? "Data freshness" : "อัปเดตข้อมูล"} value={dataFreshnessLabel} />
               <ValueRow label={copy.parkingInfo} value={place.parkingDetails ? parkingStatus.label : place.parking.available === true ? place.parking.note || "มี" : place.parking.available === false ? "ไม่มี" : copy.unknownData} />
+              <ValueRow label={language === "en" ? "Parking freshness" : "ความสดของที่จอด"} value={formatFreshnessLabel(parkingFreshness, language)} />
             </div>
 
             {(menuItems.length > 0 || place.popularMenus.length > 0 || place.recommendedItems.length > 0) && (
@@ -223,7 +226,7 @@ export function PlaceDetail({
               <div className="mt-4 rounded-[24px] border border-white/[0.07] bg-white/[0.035] px-4 py-2">
                 <p className="py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">{copy.openingHours}</p>
                 {place.is24Hours ? <ValueRow label={copy.everyDay} value={copy.open24} /> : place.openingHoursText && !DAYS.some(({ key }) => Boolean(place.openingHours[key])) ? <ValueRow label={copy.openingData} value={place.openingHoursText} /> : DAYS.map(({ key, label }) => <ValueRow key={key} label={language === "en" ? copy[key] : label} value={place.openingHours[key] || "ยังไม่มีข้อมูล"} />)}
-                {openingFreshness.stale && place.openingHoursVerifiedAt && <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-300/[0.06] p-2.5 text-[9px] leading-4 text-amber-100/70"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />เวลาเปิดอาจมีการเปลี่ยนแปลง กรุณาตรวจสอบก่อนเดินทาง</div>}
+                {openingFreshness.status !== "fresh" && <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-300/[0.06] p-2.5 text-[9px] leading-4 text-amber-100/70"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{language === "en" ? "Opening hours may have changed. Verify before travelling." : "เวลาเปิดอาจมีการเปลี่ยนแปลง กรุณาตรวจสอบก่อนเดินทาง"}</div>}
               </div>
             )}
 
