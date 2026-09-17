@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the current localStorage demo report flow with a Supabase-backed public report workflow that is rate-limited, duplicate-protected, private to admins, and auditable.
+**Goal:** Replace the current localStorage demo report flow with a Supabase-backed public report workflow that is rate-limited, duplicate-protected, private to admins, auditable, and able to expose only safe unresolved-warning summaries to public Place Detail.
 
-**Architecture:** Keep public submission behind one Supabase RPC and admin reads/transitions behind RLS-protected cloud functions. The existing `ReportPlaceSheet` becomes a thin UI client; a new report cloud module owns RPC calls and typed results; a dedicated admin panel is mounted inside existing data-management/admin surfaces.
+**Architecture:** Public submission goes through one validated RPC; public warning lookup goes through a separate aggregate-only RPC; admin reads/transitions remain RLS/admin protected. `ReportPlaceSheet` becomes a thin UI client and `lib/cloud/place-reports.ts` owns typed cloud calls.
 
 **Tech Stack:** Supabase Postgres/RLS/RPC, `@supabase/supabase-js`, React, TypeScript, Vitest.
 
@@ -17,7 +17,8 @@
 - Message max length: 500 characters.
 - Same reporter + place + type: one accepted report per 24h.
 - Reporter max: 5 reports / 10 minutes and 20 / 24 hours.
-- Public users cannot read the report queue.
+- Public users cannot read the report queue, reporter identity, free-text notes, or audit fields.
+- Public warning lookup may expose only unresolved report type/count for one place.
 - Admin status flow: `pending` -> `reviewed` -> `resolved` or `rejected`; `reviewed` means actively under review.
 - Reviewer/audit fields are server controlled.
 
@@ -32,20 +33,19 @@
 **Interfaces:**
 - DB table: `public.amd_place_reports`.
 - RPC: `public.amd_submit_place_report(p_place_id text, p_report_type text, p_message text, p_reporter_fingerprint text)`.
+- RPC: `public.amd_place_report_warning(p_place_id text)` returning only `report_type` and unresolved `report_count`.
 - RPC: `public.amd_admin_transition_place_report(p_report_id uuid, p_status text, p_resolution_note text default null)`.
 
 - [ ] **Step 1: Write failing schema contract test**
 
-Read `supabase/place-reports.sql` in the test and assert it declares the table, valid status/report checks, RLS, public submit RPC, admin transition RPC, and no public select policy.
+Assert SQL declares the table, status/report checks, RLS, submit RPC, aggregate-only warning RPC, admin transition RPC, and no public table SELECT/INSERT policy.
 
 - [ ] **Step 2: Run RED**
 
 Run: `npm test -- tests/place-reports-schema.test.ts`
-Expected: FAIL because the SQL file is missing.
+Expected: FAIL because `supabase/place-reports.sql` does not exist.
 
-- [ ] **Step 3: Write the SQL**
-
-Core table shape:
+- [ ] **Step 3: Write table and submission controls**
 
 ```sql
 create table if not exists public.amd_place_reports (
@@ -64,16 +64,20 @@ create table if not exists public.amd_place_reports (
 );
 ```
 
-The submit RPC must validate `place_id` exists in canonical data, enforce both rate windows and the 24h duplicate rule transactionally, and return a small typed status (`accepted`, `duplicate`, `rate_limited`). Do not grant direct public insert/select.
+The submit RPC must validate `place_id`, enforce both rate windows and the 24h duplicate rule transactionally, and return `accepted`, `duplicate`, or `rate_limited`. Do not grant direct public insert/select.
 
-Admin transition must derive `reviewed_by = auth.uid()` and set timestamps based on target state. Require `app_metadata.amd_admin = true` using the project’s current admin authorization pattern.
+- [ ] **Step 4: Implement safe public warning RPC**
 
-- [ ] **Step 4: Run GREEN**
+`amd_place_report_warning` must only return unresolved (`pending`/`reviewed`) grouped report type/count for the requested place. It must never return `message`, `reporter_fingerprint`, reviewer identity, timestamps beyond what is necessary, or reports for other places.
+
+- [ ] **Step 5: Implement admin transition RPC**
+
+Derive `reviewed_by = auth.uid()` and timestamps server-side. Require `app_metadata.amd_admin = true` using the current admin authorization pattern.
+
+- [ ] **Step 6: Run GREEN and commit**
 
 Run: `npm test -- tests/place-reports-schema.test.ts`
 Expected: PASS.
-
-- [ ] **Step 5: Commit**
 
 ```bash
 git add supabase/place-reports.sql tests/place-reports-schema.test.ts
@@ -89,22 +93,27 @@ git commit -m "feat: add secure place report schema"
 **Interfaces:**
 - Produces: `type PlaceReportType = "closed" | "opening_hours" | "price" | "moved" | "parking" | "phone" | "location" | "other"`.
 - Produces: `submitPlaceReport(input): Promise<{ status: "accepted" | "duplicate" | "rate_limited"; reportId?: string }>`.
+- Produces: `loadPlaceReportWarnings(placeId: string): Promise<Array<{ reportType: PlaceReportType; reportCount: number }>>`.
 - Produces admin-only `loadPlaceReports()` and `transitionPlaceReport()`.
 
-- [ ] **Step 1: Write failing unit tests with mocked Supabase RPC/from calls**
+- [ ] **Step 1: Write failing mocked cloud tests**
 
-Assert public submit calls `amd_submit_place_report`; no code path inserts directly into `amd_place_reports`; admin transition calls only the transition RPC.
+Assert public submit calls `amd_submit_place_report`, warning lookup calls only `amd_place_report_warning`, no public code path selects `amd_place_reports` directly, and admin transition calls only the admin RPC.
 
 - [ ] **Step 2: Run RED**
 
 Run: `npm test -- tests/place-reports-cloud.test.ts`
 Expected: FAIL because module is missing.
 
-- [ ] **Step 3: Implement cloud module**
+- [ ] **Step 3: Implement reporting-only anonymous fingerprint**
 
-Generate the reporter identity from a reporting-specific browser token, hash it with Web Crypto SHA-256 before sending, and never expose the raw token to admin UI. In tests, allow a deterministic injected fingerprint helper.
+Create a reporting-specific browser token, hash it with Web Crypto SHA-256 before sending, never expose the raw token to admin UI, and do not reuse it for personalization. Tests may inject a deterministic fingerprint helper.
 
-- [ ] **Step 4: Run GREEN and commit**
+- [ ] **Step 4: Implement typed RPC wrappers**
+
+Normalize Supabase RPC payloads to the interfaces above; throw retryable errors for network/backend failures rather than pretending submission succeeded.
+
+- [ ] **Step 5: Run GREEN and commit**
 
 Run: `npm test -- tests/place-reports-cloud.test.ts`
 Expected: PASS.
@@ -125,16 +134,16 @@ git commit -m "feat: add place report cloud client"
 
 - [ ] **Step 1: Write failing UI tests**
 
-Test valid submit, optional message max 500, duplicate message, rate-limit message, retryable error, and TH/EN labels. Assert source no longer references `localStorage` or `around-dorm-place-reports-v1`.
+Cover valid submit, max-500 note, duplicate response, rate-limit response, retryable error preserving text, and TH/EN labels. Assert source no longer references `localStorage` or `around-dorm-place-reports-v1`.
 
 - [ ] **Step 2: Run RED**
 
 Run: `npm test -- tests/report-place-sheet.test.tsx`
 Expected: FAIL against current local demo.
 
-- [ ] **Step 3: Implement async states**
+- [ ] **Step 3: Implement enum-backed async states**
 
-Use stable enum values internally and localized labels externally. Preserve entered note on network error. Apply client cooldown only after accepted/duplicate response.
+Use stable enum values internally and localized labels externally. Apply client cooldown only after `accepted` or `duplicate`.
 
 - [ ] **Step 4: Run GREEN and commit**
 
@@ -146,7 +155,7 @@ git add components/ReportPlaceSheet.tsx tests/report-place-sheet.test.tsx
 git commit -m "feat: connect public reports to Supabase"
 ```
 
-### Task 4: Add admin report queue and pending warnings
+### Task 4: Add admin report queue and safe pending warnings
 
 **Files:**
 - Create: `components/PlaceReportAdminQueue.tsx`
@@ -156,27 +165,29 @@ git commit -m "feat: connect public reports to Supabase"
 
 **Interfaces:**
 - Admin queue consumes `loadPlaceReports()` / `transitionPlaceReport()`.
-- Place Detail may consume a minimal count/status lookup that exposes only whether an unresolved report exists for the current place/field; it must not expose reporter identity/message publicly.
+- Place Detail consumes `loadPlaceReportWarnings(place.id)` only.
 
 - [ ] **Step 1: Write failing tests**
 
-Cover pending/reviewing/resolved/rejected counts, status transitions, audit-safe UI, and neutral public wording `กำลังตรวจสอบ`/`under review`.
+Cover pending/reviewing/resolved/rejected counts, admin transitions, audit-safe UI, and neutral public wording such as `มีรายงานว่าข้อมูลเวลาเปิดอาจไม่ถูกต้อง • กำลังตรวจสอบ` / `Opening information has been reported as possibly incorrect • under review`.
 
 - [ ] **Step 2: Run RED**
 
 Run: `npm test -- tests/place-report-admin.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement queue and warning boundary**
+- [ ] **Step 3: Implement admin queue**
 
-Keep canonical editing separate: `mark resolved` only changes report status after an admin has corrected/verified the real place data.
+Show place, report type, note, created time, current canonical value/freshness, and duplicate count only to authorized admin UI. `mark resolved` changes report status only after actual data correction/verification.
 
-- [ ] **Step 4: Verify**
+- [ ] **Step 4: Implement public warning display**
+
+Place Detail fetches only safe aggregate warning data for its own `place.id`; it must never fetch/list the admin report table.
+
+- [ ] **Step 5: Verify and commit**
 
 Run: `npm test -- tests/place-report-admin.test.tsx tests/report-place-sheet.test.tsx && npm run typecheck`
 Expected: PASS.
-
-- [ ] **Step 5: Commit**
 
 ```bash
 git add components/PlaceReportAdminQueue.tsx components/DataQualityDashboard.tsx components/PlaceDetail.tsx tests/place-report-admin.test.tsx
