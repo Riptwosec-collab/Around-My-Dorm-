@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["e2e/**", "node_modules/**"],
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
