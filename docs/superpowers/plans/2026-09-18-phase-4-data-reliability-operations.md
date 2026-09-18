@@ -4,7 +4,7 @@
 
 **Goal:** Build a reliability operations layer that derives maintenance work from canonical freshness, public reports, and coverage gaps; lets authorized admins verify shared canonical place fields safely; records append-only audit history; and exposes compact public freshness context without automatic external-provider requests.
 
-**Architecture:** Use a hybrid model. Reliability tasks and priority are derived at read time from `amd_places.record`, Phase 3 reports, and stored-data-only coverage analysis; only operational state and verification audit events persist. Canonical writes go through strict admin-only Supabase RPCs that update one supported field domain, its verification metadata, audit history, and optional linked report status atomically.
+**Architecture:** Use a hybrid model. Reliability tasks/priority are derived from `amd_places.record`, unresolved Phase 3 reports, and stored-data-only coverage gaps; only operational task state and verification audit events persist. A focused `ReliabilityOperations` controller owns admin report/state loading and selected verification work, while canonical writes go through strict admin-only Supabase RPCs that atomically update one supported field domain, field verification metadata, audit history, and optional linked report status.
 
 **Tech Stack:** Next.js 15, React 19, TypeScript 5.8, Vitest 3.2 + Testing Library, Supabase/PostgreSQL RPC + RLS, Playwright 1.55, Cloudflare Workers/Wrangler, Node >=22.
 
@@ -12,51 +12,54 @@
 
 ## Global Constraints
 
-- Production canonical place data is `public.amd_places.record`; do not target legacy `public.places` without explicit live-catalog proof.
+- Production canonical place data is `public.amd_places.record`; do not target legacy `public.places` without live-catalog proof.
 - Supported Phase 4 V1 verification domains are exactly `openingHours`, `price`, `phone`, `parking`, and `location`; `reportReview` is queue-only.
-- Field-level Quick Verify must not change whole-place `verified`, `dataStatus`, or `lastVerified`.
-- External Google/Routes/Parking/Photo/Geocoding requests must never run automatically from dashboard open, task derivation, Quick Verify open, or public Place Detail open.
-- Public reports never mutate canonical data directly and cannot be resolved/rejected in the Phase 4 flow without successful canonical verification.
-- `manual_verified` and `official` provenance must follow the existing provenance model; a URL alone never implies `official`.
-- Public UI must not expose admin priority score, operational task state, audit metadata, reporter fingerprints, reviewer metadata, or report notes.
-- Derived freshness states remain computed; never persist moving `fresh/aging/stale/unknown` truth.
-- Verification audit history is append-only. Rollback creates a new event and never deletes prior events.
+- Field-level Quick Verify must never change whole-place `verified`, `dataStatus`, or `lastVerified`.
+- External Google/Routes/Parking/Photo/Geocoding requests must never run automatically from dashboard open, task derivation, Quick Verify open, coverage analysis, or public Place Detail open.
+- Public reports never mutate canonical data directly and cannot be resolved/rejected in the Phase 4 reliability flow without successful canonical verification.
+- `manual_verified` and `official` provenance follow the existing provenance model; a URL alone never implies `official`.
+- Public UI must not expose admin priority score, operational state, audit metadata, reporter fingerprints, reviewer metadata, or report notes.
+- Derived `fresh/aging/stale/unknown` states remain computed and are never persisted as task truth.
+- Verification audit history is append-only; rollback creates a new event and never deletes prior events.
 - TH/EN copy and mobile safe-area behavior are required for all new UI.
 - Use TDD for every production behavior change: verify RED before implementation and GREEN after minimal implementation.
-- Final verification commands are `npm test`, `npm run typecheck`, `npm run build`, `npm run build:cloudflare`, `npm run validate:data`, and `npm run test:e2e`.
+- Final verification commands: `npm test`, `npm run typecheck`, `npm run build`, `npm run build:cloudflare`, `npm run validate:data`, `npm run test:e2e`.
 
 ---
 
 ## File Structure
 
-New focused modules:
+Create:
 
-- `lib/reliability/types.ts` — shared reliability task, reason, severity, and operational-state types.
-- `lib/reliability/report-domain.ts` — maps Phase 3 report types to Phase 4 verification domains.
-- `lib/reliability/priority.ts` — deterministic score calculation and severity banding.
-- `lib/reliability/tasks.ts` — derives place-field and coverage tasks, revisions, merge/dedupe, and sort order.
-- `lib/cloud/reliability.ts` — load/save operational state through Supabase.
-- `lib/cloud/place-verification.ts` — typed client wrappers for verify, rollback, and audit-history RPCs.
-- `components/ReliabilitySummary.tsx` — counts and health overview only.
-- `components/ReliabilityWorkQueue.tsx` — filtering/search/sorting and task actions.
-- `components/PlaceQuickVerifySheet.tsx` — typed field-specific verification UI.
-- `components/VerificationHistoryPanel.tsx` — admin audit timeline + eligible rollback action.
-- `components/PlaceFreshnessSummary.tsx` — compact public freshness display only.
-- `supabase/phase-4-data-reliability.sql` — task-state table, audit table, RLS/grants, verify/rollback/history/state RPCs.
+- `lib/reliability/types.ts` — all Phase 4 task/state/score types.
+- `lib/reliability/report-domain.ts` — report type → reliability domain mapping.
+- `lib/reliability/priority.ts` — deterministic scoring and severity.
+- `lib/reliability/tasks.ts` — task derivation, revision, dedupe, state application, sorting.
+- `lib/cloud/reliability.ts` — operational task-state client.
+- `lib/cloud/place-verification.ts` — verify/history/rollback RPC client.
+- `components/ReliabilityOperations.tsx` — admin controller: reports + task state + selected task + refresh orchestration.
+- `components/ReliabilitySummary.tsx` — task counts only.
+- `components/ReliabilityWorkQueue.tsx` — filters/search/task actions only.
+- `components/PlaceQuickVerifySheet.tsx` — typed field verification UI.
+- `components/VerificationHistoryPanel.tsx` — append-only audit history + eligible rollback.
+- `components/PlaceFreshnessSummary.tsx` — public freshness-only UI.
+- `supabase/phase-4-data-reliability.sql` — task state, audit, RLS/grants, admin RPCs.
+- `e2e/phase4-reliability.spec.ts` — mobile/admin/public Phase 4 E2E.
 
-Existing composition points to modify:
+Modify:
 
-- `components/DataQualityDashboard.tsx` — compose ReliabilitySummary + ReliabilityWorkQueue without absorbing engine logic.
-- `components/PlaceReportAdminQueue.tsx` — route unresolved report work into Quick Verify rather than blind resolution in the reliability flow.
-- `components/CoverageDashboard.tsx` — send `Review existing` to a filtered reliability queue and keep `Search candidates` explicit.
-- `components/PlaceDecisionPanel.tsx` — mount public freshness summary below report warning and above ETA/parking.
-- `lib/cloud/place-reports.ts` — expose unresolved report rows in a shape reusable by the reliability task builder, without exposing sensitive fields publicly.
+- `components/DataManagement.tsx` — pass existing `onReload` to Data Quality/Reliability composition.
+- `components/DataQualityDashboard.tsx` — mount `ReliabilityOperations`; keep diagnostics/review composition lean.
+- `components/PlaceReportAdminQueue.tsx` — become controlled by `ReliabilityOperations` and route active reports to Quick Verify.
+- `components/CoverageDashboard.tsx` — keep analysis local; route explicit actions to reliability/candidate callbacks.
+- `components/PlaceDecisionPanel.tsx` — mount public freshness after report warning and before ETA/parking.
+- `lib/cloud/place-reports.ts` — reuse existing admin `loadPlaceReports()` type/function without public-sensitive leakage.
 
-Tests remain in `tests/` and use `.test.ts` / `.test.tsx`, which Vitest now discovers.
+Tests remain in `tests/` with `.test.ts` / `.test.tsx`.
 
 ---
 
-### Task 1: Reliability Domain Types, Report Mapping, Priority, Revision, and Task Derivation
+### Task 1: Reliability Types, Report Mapping, Priority, Revision, and Derived Tasks
 
 **Files:**
 - Create: `lib/reliability/types.ts`
@@ -66,17 +69,63 @@ Tests remain in `tests/` and use `.test.ts` / `.test.tsx`, which Vitest now disc
 - Test: `tests/reliability-priority.test.ts`
 - Test: `tests/reliability-tasks.test.ts`
 
-**Interfaces:**
-- Consumes: `Place`, `getFieldFreshness()`, Phase 3 `PlaceReportRow`, `CoverageGap`.
-- Produces:
-  - `type ReliabilityField = "openingHours" | "price" | "phone" | "parking" | "location"`
-  - `type ReliabilityTask = PlaceReliabilityTask | CoverageReliabilityTask`
-  - `mapReportTypeToReliabilityDomain(reportType): ReliabilityField | "reportReview"`
-  - `scoreReliabilityTask(input): { priority: number; severity: ReliabilitySeverity; breakdown: ReliabilityScorePart[] }`
-  - `buildReliabilityTasks({ places, reports, coverageGaps, operationalState, now }): ReliabilityTask[]`
-  - `buildPlaceTaskRevision(...)` and `buildCoverageTaskRevision(...)`
+**Interfaces produced:**
 
-- [ ] **Step 1: Write failing report-domain and priority tests**
+```ts
+export type ReliabilityField = "openingHours" | "price" | "phone" | "parking" | "location";
+export type ReliabilityDomain = ReliabilityField | "reportReview" | "coverage";
+export type ReliabilitySeverity = "critical" | "high" | "normal" | "low";
+export type ReliabilityTaskStatus = "open" | "in_review" | "snoozed" | "done";
+export type ReliabilityScorePart = { code: string; points: number };
+
+export type ReliabilityTaskState = {
+  taskKey: string;
+  taskRevision: string;
+  placeId: string | null;
+  fieldName: ReliabilityDomain;
+  status: ReliabilityTaskStatus;
+  snoozedUntil: string | null;
+  assignedTo: string | null;
+  lastOpenedAt: string | null;
+  note: string | null;
+  updatedAt: string;
+};
+
+export type ReliabilityTaskStateWrite = Omit<ReliabilityTaskState, "assignedTo" | "lastOpenedAt" | "updatedAt">;
+
+export type PlaceReliabilityTask = {
+  kind: "place_field";
+  id: string;
+  revision: string;
+  placeId: string;
+  placeName: string;
+  field: ReliabilityField | "reportReview";
+  reasons: string[];
+  priority: number;
+  severity: ReliabilitySeverity;
+  reportIds: string[];
+  freshnessStatus: "fresh" | "aging" | "stale" | "unknown" | null;
+  relatedCoverageGapIds: string[];
+  scoreBreakdown: ReliabilityScorePart[];
+};
+
+export type CoverageReliabilityTask = {
+  kind: "coverage_gap";
+  id: string;
+  revision: string;
+  placeId: null;
+  label: string;
+  field: "coverage";
+  coverageGapId: string;
+  priority: number;
+  severity: ReliabilitySeverity;
+  scoreBreakdown: ReliabilityScorePart[];
+};
+
+export type ReliabilityTask = PlaceReliabilityTask | CoverageReliabilityTask;
+```
+
+- [ ] **Step 1: Write failing mapping/scoring tests**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -84,7 +133,7 @@ import { mapReportTypeToReliabilityDomain } from "@/lib/reliability/report-domai
 import { scoreReliabilityTask } from "@/lib/reliability/priority";
 
 describe("Phase 4 reliability priority", () => {
-  it("maps report types to the approved verification domains", () => {
+  it("maps reports to the approved domains", () => {
     expect(mapReportTypeToReliabilityDomain("opening_hours")).toBe("openingHours");
     expect(mapReportTypeToReliabilityDomain("closed")).toBe("openingHours");
     expect(mapReportTypeToReliabilityDomain("price")).toBe("price");
@@ -95,7 +144,7 @@ describe("Phase 4 reliability priority", () => {
     expect(mapReportTypeToReliabilityDomain("other")).toBe("reportReview");
   });
 
-  it("caps the deterministic score at 100 and explains each contribution", () => {
+  it("caps score at 100 and returns a breakdown", () => {
     const result = scoreReliabilityTask({
       reportStatus: "pending",
       freshnessStatus: "stale",
@@ -115,13 +164,13 @@ describe("Phase 4 reliability priority", () => {
 });
 ```
 
-- [ ] **Step 2: Run the priority tests and verify RED**
+- [ ] **Step 2: Run RED**
 
 Run: `npx vitest run tests/reliability-priority.test.ts`
 
-Expected: FAIL because `@/lib/reliability/report-domain` and `@/lib/reliability/priority` do not exist.
+Expected: FAIL because Phase 4 reliability modules do not exist.
 
-- [ ] **Step 3: Implement minimal report mapping and deterministic scorer**
+- [ ] **Step 3: Implement `types.ts`, report mapping, and scorer**
 
 ```ts
 // lib/reliability/report-domain.ts
@@ -138,27 +187,11 @@ const DOMAIN: Record<PlaceReportType, ReliabilityField | "reportReview"> = {
   location: "location",
   other: "reportReview",
 };
-
-export function mapReportTypeToReliabilityDomain(type: PlaceReportType) {
-  return DOMAIN[type];
-}
+export const mapReportTypeToReliabilityDomain = (type: PlaceReportType) => DOMAIN[type];
 ```
 
 ```ts
 // lib/reliability/priority.ts
-import type { ReliabilityField, ReliabilitySeverity, ReliabilityScorePart } from "@/lib/reliability/types";
-
-type ScoreInput = {
-  reportStatus: "pending" | "reviewed" | null;
-  freshnessStatus: "fresh" | "aging" | "stale" | "unknown" | null;
-  recommended: boolean;
-  localFavorite: boolean;
-  field: ReliabilityField | "reportReview" | "coverage";
-  highSeverityCoverageGap: boolean;
-  independentIssueCategoryCount: number;
-  coverageOnly: boolean;
-};
-
 export function scoreReliabilityTask(input: ScoreInput) {
   const breakdown: ReliabilityScorePart[] = [];
   const add = (code: string, points: number) => breakdown.push({ code, points });
@@ -181,52 +214,63 @@ export function scoreReliabilityTask(input: ScoreInput) {
 }
 ```
 
-- [ ] **Step 4: Run priority tests and verify GREEN**
+- [ ] **Step 4: Run GREEN for scorer**
 
 Run: `npx vitest run tests/reliability-priority.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Write failing task derivation/revision tests**
+- [ ] **Step 5: Write failing derived-task/revision tests**
 
-Use `PLACES[0]` as a canonical fixture and fixed `now = new Date("2026-09-18T09:00:00Z")`. Assert:
+Use `PLACES[0]` and fixed `now = new Date("2026-09-18T09:00:00Z")`. Test that:
 
 ```ts
-expect(tasks.filter((task) => task.kind === "place_field").map((task) => task.id)).toContain(`${place.id}:openingHours`);
+expect(tasks.map((task) => task.id)).toContain(`${place.id}:openingHours`);
 expect(tasks.find((task) => task.id === `${place.id}:openingHours`)?.reportIds).toEqual([report.id]);
-expect(firstRevision).not.toBe(secondRevision); // report status or field verification timestamp changed
+expect(firstRevision).not.toBe(secondRevision);
 expect(tasks.every((task) => task.priority <= 100)).toBe(true);
 expect(tasks.find((task) => task.kind === "coverage_gap")?.placeId).toBeNull();
 ```
 
-Also assert old operational state is ignored when `task_revision` differs and a matching `snoozed` state suppresses the task only until `snoozed_until`.
+Also prove matching-revision snooze suppresses only until `snoozedUntil`, while a changed task revision ignores prior `done/snoozed/in_review` state.
 
-- [ ] **Step 6: Run task tests and verify RED**
+- [ ] **Step 6: Run RED**
 
 Run: `npx vitest run tests/reliability-tasks.test.ts`
 
 Expected: FAIL because `buildReliabilityTasks()` does not exist.
 
-- [ ] **Step 7: Implement minimal task builder**
+- [ ] **Step 7: Implement deterministic task derivation**
 
-Implementation requirements:
+Create this exact input type in `lib/reliability/tasks.ts`:
+
+```ts
+export type BuildReliabilityTasksInput = {
+  places: Place[];
+  reports: PlaceReportRow[];
+  coverageGaps: CoverageGap[];
+  operationalState: ReliabilityTaskState[];
+  now?: Date;
+};
+```
+
+Implementation rules:
 
 ```ts
 export function buildReliabilityTasks(input: BuildReliabilityTasksInput): ReliabilityTask[] {
-  // derive supported field freshness via getFieldFreshness(place, field, now)
-  // group unresolved reports by mapped placeId + domain
-  // attach coverage-gap relevance without creating duplicate place-field tasks
-  // create separate coverage_gap tasks for standalone gaps
-  // calculate revision from current verification timestamp + sorted report id/status/duplicateCount + sorted gap ids
-  // apply operational state only when task_revision matches current revision
-  // suppress active snooze until snoozed_until; never suppress a new revision
-  // score, severity-band, and sort according to the spec
+  const now = input.now ?? new Date();
+  const unresolved = input.reports.filter((report) => report.status === "pending" || report.status === "reviewed");
+  // Build exactly one task per placeId + mapped domain, merge freshness/report/gap signals,
+  // derive revision from field verification timestamp + sorted report id/status/duplicateCount + sorted gap ids,
+  // create standalone coverage_gap tasks, apply state only when taskRevision matches,
+  // suppress only currently-active snooze, score, then sort by priority/report/oldest/distance/name.
+  return deriveAndSortReliabilityTasks({ ...input, reports: unresolved, now });
 }
 ```
 
-Use a stable string serialization helper and a deterministic non-secret hash suitable for in-app revision keys; cryptographic secrecy is not required because task revisions contain no sensitive data.
+Implement `deriveAndSortReliabilityTasks()` in the same file; it is private and must be covered through `buildReliabilityTasks()` tests. Use stable JSON serialization plus a deterministic non-secret string hash for revisions.
 
-- [ ] **Step 8: Run the focused tests, then commit**
+- [ ] **Step 8: Run focused GREEN and commit**
 
 Run: `npx vitest run tests/reliability-priority.test.ts tests/reliability-tasks.test.ts`
 
@@ -241,22 +285,22 @@ git commit -m "feat: add reliability task engine"
 
 ---
 
-### Task 2: Persist Operational Task State Without Persisting Freshness
+### Task 2: Persist Only Operational Task State
 
 **Files:**
 - Create: `lib/cloud/reliability.ts`
 - Test: `tests/reliability-cloud-state.test.ts`
-- Modify later migration file in Task 3: `supabase/phase-4-data-reliability.sql`
 
-**Interfaces:**
-- Produces:
-  - `loadReliabilityTaskState(): Promise<ReliabilityTaskState[]>`
-  - `saveReliabilityTaskState(input: ReliabilityTaskStateWrite): Promise<ReliabilityTaskState>`
-- Consumes: `supabase`, authenticated admin session already established by admin UI.
+**Interfaces produced:**
 
-- [ ] **Step 1: Write failing cloud-wrapper tests with a mocked Supabase client**
+```ts
+loadReliabilityTaskState(): Promise<ReliabilityTaskState[]>
+saveReliabilityTaskState(input: ReliabilityTaskStateWrite): Promise<ReliabilityTaskState>
+```
 
-Assert `loadReliabilityTaskState()` selects only operational columns and `saveReliabilityTaskState()` invokes RPC `amd_admin_set_reliability_task_state` with `task_key`, `task_revision`, status, snooze time, and note.
+- [ ] **Step 1: Write failing Supabase wrapper tests**
+
+Assert `loadReliabilityTaskState()` reads only operational columns and `saveReliabilityTaskState()` calls:
 
 ```ts
 expect(rpc).toHaveBeenCalledWith("amd_admin_set_reliability_task_state", {
@@ -270,33 +314,52 @@ expect(rpc).toHaveBeenCalledWith("amd_admin_set_reliability_task_state", {
 });
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [ ] **Step 2: Run RED**
 
 Run: `npx vitest run tests/reliability-cloud-state.test.ts`
 
-Expected: FAIL because the module does not exist.
+Expected: FAIL.
 
-- [ ] **Step 3: Implement the wrapper**
+- [ ] **Step 3: Implement explicit row/RPC mapping**
 
 ```ts
-export async function loadReliabilityTaskState(): Promise<ReliabilityTaskState[]> {
-  const { data, error } = await supabase
-    .from("amd_reliability_task_state")
+const fromRow = (row: any): ReliabilityTaskState => ({
+  taskKey: row.task_key,
+  taskRevision: row.task_revision,
+  placeId: row.place_id,
+  fieldName: row.field_name,
+  status: row.status,
+  snoozedUntil: row.snoozed_until,
+  assignedTo: row.assigned_to,
+  lastOpenedAt: row.last_opened_at,
+  note: row.note,
+  updatedAt: row.updated_at,
+});
+
+export async function loadReliabilityTaskState() {
+  const { data, error } = await supabase.from("amd_reliability_task_state")
     .select("task_key,task_revision,place_id,field_name,status,snoozed_until,assigned_to,last_opened_at,note,updated_at");
   if (error) throw error;
-  return (data || []).map(fromReliabilityStateRow);
+  return (data || []).map(fromRow);
 }
 
 export async function saveReliabilityTaskState(input: ReliabilityTaskStateWrite) {
-  const { data, error } = await supabase.rpc("amd_admin_set_reliability_task_state", toRpcArgs(input));
+  const { data, error } = await supabase.rpc("amd_admin_set_reliability_task_state", {
+    p_task_key: input.taskKey,
+    p_task_revision: input.taskRevision,
+    p_place_id: input.placeId,
+    p_field_name: input.fieldName,
+    p_status: input.status,
+    p_snoozed_until: input.snoozedUntil,
+    p_note: input.note,
+  });
   if (error) throw error;
-  return fromReliabilityStateRow(Array.isArray(data) ? data[0] : data);
+  const row = Array.isArray(data) ? data[0] : data;
+  return fromRow(row);
 }
 ```
 
-Do not write freshness or priority into this table.
-
-- [ ] **Step 4: Run test and commit**
+- [ ] **Step 4: Run GREEN and commit**
 
 Run: `npx vitest run tests/reliability-cloud-state.test.ts`
 
@@ -306,12 +369,12 @@ Commit:
 
 ```bash
 git add lib/cloud/reliability.ts tests/reliability-cloud-state.test.ts
-git commit -m "feat: add reliability operational state client"
+git commit -m "feat: add reliability task state client"
 ```
 
 ---
 
-### Task 3: Canonical Verification Migration, RPC Security, Audit History, and Rollback
+### Task 3: Canonical Verification SQL, Security, Audit, History, and Rollback
 
 **Files:**
 - Create: `supabase/phase-4-data-reliability.sql`
@@ -319,26 +382,33 @@ git commit -m "feat: add reliability operational state client"
 - Test: `tests/phase4-reliability-schema.test.ts`
 - Test: `tests/place-verification-cloud.test.ts`
 
-**Interfaces:**
-- Produces SQL objects:
-  - table `public.amd_reliability_task_state`
-  - table `public.amd_place_verification_events`
-  - RPC `public.amd_admin_set_reliability_task_state(...)`
-  - RPC `public.amd_admin_verify_place_field(...)`
-  - RPC `public.amd_admin_rollback_place_verification(...)`
-  - RPC `public.amd_admin_place_verification_history(p_place_id text)`
-- Produces client functions:
-  - `verifyCanonicalPlaceField(input): Promise<PlaceVerificationResult>`
-  - `rollbackPlaceVerification(eventId, note?): Promise<PlaceVerificationResult>`
-  - `loadPlaceVerificationHistory(placeId): Promise<PlaceVerificationEvent[]>`
+**Client types produced in `lib/cloud/place-verification.ts`:**
 
-- [ ] **Step 1: Inspect the live Supabase production catalog before writing SQL**
+```ts
+export type PlaceVerificationAction = "verified_unchanged" | "updated_and_verified" | "rollback";
+export type PlaceVerificationResult = { placeId: string; fieldName: ReliabilityField; action: PlaceVerificationAction; eventId: string };
+export type PlaceVerificationEvent = {
+  id: string;
+  placeId: string;
+  fieldName: ReliabilityField;
+  action: PlaceVerificationAction;
+  beforeValue: unknown;
+  afterValue: unknown;
+  source: string;
+  sourceUrl: string | null;
+  note: string | null;
+  linkedReportIds: string[];
+  createdAt: string;
+  rollbackOf: string | null;
+  rollbackEligible: boolean;
+};
+```
 
-Verify the actual `public.amd_places` columns, primary key, `record` type, report table name/columns, and existing admin JWT pattern. Record the findings in a short comment at the top of the migration SQL before implementation. Do not assume the legacy `public.places` schema.
+- [ ] **Step 1: Inspect live Supabase catalog before writing SQL**
 
-Expected evidence must include that the canonical record column is JSON/JSONB and the exact place-id column used by `amd_places`.
+Verify exact `public.amd_places` id column, `record` JSON/JSONB type, `public.amd_place_reports` columns/statuses, Phase 3 report RPCs, and current JWT admin predicate. Put the verified table/column facts in comments at the top of the migration SQL. Do not use legacy `public.places`.
 
-- [ ] **Step 2: Write failing schema contract tests**
+- [ ] **Step 2: Write failing SQL contract tests**
 
 ```ts
 const sql = fs.readFileSync("supabase/phase-4-data-reliability.sql", "utf8");
@@ -348,51 +418,67 @@ expect(sql).toContain("amd_reliability_task_state");
 expect(sql).toContain("amd_place_verification_events");
 expect(sql).toContain("amd_admin_verify_place_field");
 expect(sql).toContain("amd_admin_rollback_place_verification");
+expect(sql).toContain("amd_admin_place_verification_history");
+expect(sql).toContain("amd_admin_set_reliability_task_state");
 expect(sql).toContain("auth.jwt() -> 'app_metadata'");
 expect(sql).toContain("amd_admin");
 expect(sql).toContain("is_anonymous");
 expect(sql).toMatch(/for\s+update/i);
-expect(sql).toMatch(/field_name/i);
 expect(sql).toMatch(/verified_unchanged/);
 expect(sql).toMatch(/updated_and_verified/);
 expect(sql).toMatch(/rollback/);
+expect(sql).not.toMatch(/grant\s+execute[^;]+to\s+anon/i);
 ```
 
-Add negative assertions that the RPC never sets JSON keys `verified`, `dataStatus`, or `lastVerified` as part of field verification, and that anon receives no execute grants.
+Add assertions that field verification SQL never assigns whole-place JSON keys `verified`, `dataStatus`, or `lastVerified`.
 
-- [ ] **Step 3: Run and verify RED**
+- [ ] **Step 3: Run SQL RED**
 
 Run: `npx vitest run tests/phase4-reliability-schema.test.ts`
 
 Expected: FAIL because migration SQL does not exist.
 
-- [ ] **Step 4: Implement the migration with strict allowlists and atomic report transition**
+- [ ] **Step 4: Implement migration**
 
-The verification RPC must:
+Use this exact authorization predicate in every privileged RPC:
 
 ```sql
--- authorization predicate shape
 coalesce((((auth.jwt() -> 'app_metadata') ->> 'amd_admin'))::boolean, false)
 and not coalesce(((auth.jwt() ->> 'is_anonymous'))::boolean, false)
 ```
 
-Use `SELECT ... FOR UPDATE` on the target `amd_places` row. Validate `p_field_name` against the five V1 domains before mutation. Validate linked report IDs belong to the same place, are `pending`/`reviewed`, and map to the selected domain. For `other`, require explicit supported-domain selection from the client payload.
+Create:
 
-Each supported field domain updates only its approved business-value keys, corresponding `*VerifiedAt` field, `fieldProvenance[field]`, `lastChecked`, and `lastUpdated`. It leaves `verified`, `dataStatus`, and `lastVerified` unchanged.
+```sql
+public.amd_reliability_task_state(
+  task_key text primary key,
+  task_revision text not null,
+  place_id text null,
+  field_name text not null,
+  status text not null check (status in ('open','in_review','snoozed','done')),
+  snoozed_until timestamptz null,
+  assigned_to uuid null,
+  last_opened_at timestamptz null,
+  note text null,
+  updated_at timestamptz not null default now()
+);
+```
 
-Audit event inserts include before/after values, before/after metadata, source, source URL, note, report IDs, `verified_by = auth.uid()`, and action.
+Create append-only `public.amd_place_verification_events` with the exact fields from the approved spec: id, place_id, field_name, action, before/after values, before/after metadata, source, source_url, note, linked_report_ids, verified_by, created_at, rollback_of.
 
-Rollback is allowed only if the source event remains the latest event for the same `place_id + field_name`; otherwise raise a conflict exception. Rollback restores prior field value + prior field-specific provenance/timestamp, writes a new `rollback` event, and updates `lastChecked`/`lastUpdated` to rollback time.
+`amd_admin_verify_place_field` must `SELECT ... FOR UPDATE` the canonical place row, validate one of five domains, validate linked reports belong to the same place and are `pending/reviewed`, update only approved business keys + field verification timestamp + `fieldProvenance[field]` + `lastChecked` + `lastUpdated`, insert audit event, and transition linked reports only inside the same transaction. Leave `verified`, `dataStatus`, `lastVerified` unchanged.
 
-Operational-state RPC upserts only state columns and requires the same admin guard.
+`amd_admin_rollback_place_verification` must reject rollback when a newer event exists for the same place+field, restore prior field value/provenance/field verification timestamp, update `lastChecked/lastUpdated` to rollback time, and append a rollback event without changing reports.
 
-- [ ] **Step 5: Run schema tests and verify GREEN**
+Enable RLS on both tables; no anon access. Audit has admin SELECT only and no app-facing UPDATE/DELETE policy. Task state has admin SELECT and state mutation only through the security-definer state RPC.
+
+- [ ] **Step 5: Run SQL GREEN**
 
 Run: `npx vitest run tests/phase4-reliability-schema.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Write failing client-wrapper tests**
+- [ ] **Step 6: Write failing client RPC tests**
 
 ```ts
 expect(rpc).toHaveBeenCalledWith("amd_admin_verify_place_field", {
@@ -408,17 +494,23 @@ expect(rpc).toHaveBeenCalledWith("amd_admin_verify_place_field", {
 });
 ```
 
-Also test `verify_unchanged`, official source, linked `resolved` report, linked `rejected` report, history load, and rollback wrapper.
+Also test verify unchanged, `official`, linked resolved/rejected report, history, and rollback.
 
-- [ ] **Step 7: Run RED, implement `lib/cloud/place-verification.ts`, then run GREEN**
+- [ ] **Step 7: Run RED, implement wrappers, run GREEN**
 
-Run before implementation: `npx vitest run tests/place-verification-cloud.test.ts`
+Run before: `npx vitest run tests/place-verification-cloud.test.ts`
 
 Expected: FAIL.
 
-Implement typed wrappers around the four RPCs. Do not expose raw table update helpers.
+Implement exact exports:
 
-Run after implementation: `npx vitest run tests/place-verification-cloud.test.ts tests/phase4-reliability-schema.test.ts`
+```ts
+verifyCanonicalPlaceField(input: VerifyCanonicalPlaceFieldInput): Promise<PlaceVerificationResult>
+loadPlaceVerificationHistory(placeId: string): Promise<PlaceVerificationEvent[]>
+rollbackPlaceVerification(eventId: string, note: string | null): Promise<PlaceVerificationResult>
+```
+
+Run after: `npx vitest run tests/place-verification-cloud.test.ts tests/phase4-reliability-schema.test.ts`
 
 Expected: PASS.
 
@@ -431,87 +523,99 @@ git commit -m "feat: add canonical verification transaction"
 
 ---
 
-### Task 4: Reliability Summary and Admin Work Queue UI
+### Task 4: ReliabilityOperations Controller + Admin Queue Composition
 
 **Files:**
+- Create: `components/ReliabilityOperations.tsx`
 - Create: `components/ReliabilitySummary.tsx`
 - Create: `components/ReliabilityWorkQueue.tsx`
 - Modify: `components/DataQualityDashboard.tsx`
+- Modify: `components/DataManagement.tsx`
+- Test: `tests/reliability-operations.test.tsx`
 - Test: `tests/reliability-work-queue.test.tsx`
-- Test: `tests/data-quality-reliability-composition.test.tsx`
 
-**Interfaces:**
-- Consumes: `buildReliabilityTasks()`, `loadReliabilityTaskState()`, report rows, coverage gaps, `Place[]`.
-- Produces UI callbacks:
-  - `onVerifyTask(task: PlaceReliabilityTask)`
-  - `onReviewCoverage(task: CoverageReliabilityTask)`
-  - `onSearchCandidates(task: CoverageReliabilityTask)`
-
-- [ ] **Step 1: Write failing queue UI tests**
-
-Render mixed tasks and assert:
+**Controller contract:**
 
 ```ts
-expect(screen.getByText("Critical")).toBeInTheDocument();
-expect(screen.getByRole("button", { name: /Reports/i })).toBeInTheDocument();
-expect(screen.getByRole("button", { name: /Opening hours/i })).toBeInTheDocument();
-fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Noodle" } });
-expect(screen.getByText("Noodle Place")).toBeInTheDocument();
-expect(screen.queryByText("Cafe Place")).not.toBeInTheDocument();
-expect(screen.getByText(/80\/100/)).toBeInTheDocument();
+export function ReliabilityOperations({
+  places,
+  language,
+  onReload,
+  onSearchCoverageGap,
+}: {
+  places: Place[];
+  language: "th" | "en";
+  onReload: () => void;
+  onSearchCoverageGap: (gap: CoverageGap) => void;
+})
 ```
 
-TH test must assert equivalent Thai labels. A coverage-only task must show `Review existing` and `Search candidates`; a place-field task must show `Verify`.
+- [ ] **Step 1: Write failing controller tests**
 
-- [ ] **Step 2: Run and verify RED**
+Mock `loadPlaceReports()`, `loadReliabilityTaskState()`, `buildCoverageReport()`, and assert one initial admin refresh produces the inputs for `buildReliabilityTasks()`. Assert no Google/Routes/Parking/Photo function is invoked.
 
-Run: `npx vitest run tests/reliability-work-queue.test.tsx tests/data-quality-reliability-composition.test.tsx`
+After mocked successful `onVerified`, assert:
 
-Expected: FAIL because the components do not exist.
+```ts
+expect(onReload).toHaveBeenCalledTimes(1);
+expect(loadPlaceReports).toHaveBeenCalledTimes(2);
+expect(loadReliabilityTaskState).toHaveBeenCalledTimes(2);
+```
 
-- [ ] **Step 3: Implement summary + queue as isolated components**
+- [ ] **Step 2: Write failing queue UI tests**
 
-`ReliabilitySummary` accepts already-derived tasks and renders counts by severity/report/stale/unknown only.
+Assert Critical/High filters, Reports/Opening/Price/Parking/Phone/Location filters, searchbox behavior, TH/EN labels, coverage actions, and `Verify` action for place-field tasks.
 
-`ReliabilityWorkQueue` owns only presentation filters/search. It must not call external APIs or derive provider data. On task open, persist `in_review` through `saveReliabilityTaskState()` using the current revision.
+- [ ] **Step 3: Run RED**
 
-`DataQualityDashboard` composes the new components and continues to compose existing report, coverage, and review panels. Do not move reliability engine logic into `DataQualityDashboard.tsx`.
+Run: `npx vitest run tests/reliability-operations.test.tsx tests/reliability-work-queue.test.tsx`
 
-- [ ] **Step 4: Run focused tests and commit**
+Expected: FAIL.
 
-Run: `npx vitest run tests/reliability-work-queue.test.tsx tests/data-quality-reliability-composition.test.tsx`
+- [ ] **Step 4: Implement controller and presentational children**
+
+`ReliabilityOperations` owns:
+
+```ts
+const [reports, setReports] = useState<PlaceReportRow[]>([]);
+const [taskState, setTaskState] = useState<ReliabilityTaskState[]>([]);
+const [selectedTask, setSelectedTask] = useState<PlaceReliabilityTask | null>(null);
+const coverageReport = useMemo(() => buildCoverageReport(places), [places]);
+const tasks = useMemo(() => buildReliabilityTasks({ places, reports, coverageGaps: coverageReport.gaps, operationalState: taskState }), [places, reports, coverageReport.gaps, taskState]);
+```
+
+`refreshAdminData()` loads `loadPlaceReports()` and `loadReliabilityTaskState()` together. Successful verification calls `onReload()` then `refreshAdminData()`; updated `places` from parent completes canonical refresh on the next render.
+
+`DataManagement` passes its existing `onReload` into `DataQualityDashboard`; `DataQualityDashboard` passes it to `ReliabilityOperations`. Do not add reliability engine logic to `AroundMyDormApp.tsx`.
+
+- [ ] **Step 5: Run GREEN and commit**
+
+Run: `npx vitest run tests/reliability-operations.test.tsx tests/reliability-work-queue.test.tsx`
 
 Expected: PASS.
 
 Commit:
 
 ```bash
-git add components/ReliabilitySummary.tsx components/ReliabilityWorkQueue.tsx components/DataQualityDashboard.tsx tests/reliability-work-queue.test.tsx tests/data-quality-reliability-composition.test.tsx
-git commit -m "feat: add reliability admin work queue"
+git add components/ReliabilityOperations.tsx components/ReliabilitySummary.tsx components/ReliabilityWorkQueue.tsx components/DataQualityDashboard.tsx components/DataManagement.tsx tests/reliability-operations.test.tsx tests/reliability-work-queue.test.tsx
+git commit -m "feat: add reliability operations workspace"
 ```
 
 ---
 
-### Task 5: Quick Verify Sheet and Verification History With Rollback
+### Task 5: Quick Verify Sheet + Verification History
 
 **Files:**
 - Create: `components/PlaceQuickVerifySheet.tsx`
 - Create: `components/VerificationHistoryPanel.tsx`
+- Modify: `components/ReliabilityOperations.tsx`
 - Test: `tests/place-quick-verify.test.tsx`
 - Test: `tests/verification-history.test.tsx`
 
-**Interfaces:**
-- Consumes: `verifyCanonicalPlaceField()`, `rollbackPlaceVerification()`, `loadPlaceVerificationHistory()`.
-- Produces:
-  - `onVerified(result)` callback so parent reloads canonical places/tasks/reports after success.
-
-- [ ] **Step 1: Write failing Quick Verify behavior tests**
-
-Test phone `verify unchanged`:
+- [ ] **Step 1: Write failing Quick Verify tests**
 
 ```ts
 render(<PlaceQuickVerifySheet open task={phoneTask} place={place} language="en" onClose={vi.fn()} onVerified={onVerified} />);
-expect(screen.getByDisplayValue(place.phone ?? "")).toBeInTheDocument();
 fireEvent.click(screen.getByRole("button", { name: "Verify unchanged" }));
 await waitFor(() => expect(verifyCanonicalPlaceField).toHaveBeenCalledWith(expect.objectContaining({
   placeId: place.id,
@@ -521,76 +625,81 @@ await waitFor(() => expect(verifyCanonicalPlaceField).toHaveBeenCalledWith(expec
 })));
 ```
 
-Test update+verify, official/manual source selector, source URL, note, report outcome, and error state. Add a `closed` report test proving closure flags appear only for the opening/closure domain. Add an `other` report test proving action is blocked until admin selects one supported domain.
+Also test update+verify, manual/official source, source URL, note, linked report outcome, server error, `closed` report closure flags, and `other` report blocked until admin chooses a supported domain.
 
-- [ ] **Step 2: Run and verify RED**
+- [ ] **Step 2: Run RED**
 
 Run: `npx vitest run tests/place-quick-verify.test.tsx`
 
 Expected: FAIL.
 
-- [ ] **Step 3: Implement typed field editors**
+- [ ] **Step 3: Implement typed editors inside the sheet**
 
-Use explicit components/controls inside `PlaceQuickVerifySheet`:
+Implement explicit controls, not a raw JSON editor:
 
-- opening domain: structured hours + optional temporary/permanent closure flags when linked `closed` report exists;
-- price domain: existing price model fields only;
-- phone domain: normalized text input;
-- parking domain: availability + typed `parkingDetails` fields;
-- location domain: address, latitude, longitude with numeric/range validation.
+- `openingHours`: seven-day structured controls plus `temporaryClosed/permanentlyClosed` only when reviewing a linked `closed` report;
+- `price`: pricing type, min/max/fixed/unit using existing `Pricing` shape;
+- `phone`: normalized text;
+- `parking`: availability + typed `ParkingDetails` values;
+- `location`: address + latitude [-90,90] + longitude [-180,180].
 
-Button rules:
+`Verify unchanged` sends `newValue: null`. `Update and verify` stays disabled until a valid changed payload exists. Report `resolved/rejected` is sent only through `verifyCanonicalPlaceField()`. Snooze calls `saveReliabilityTaskState()` and never canonical verification.
 
-- `Verify unchanged` sends no business-value mutation.
-- `Update and verify` disabled until field payload validates and differs from canonical value.
-- Report outcome selector is available only when linked reports exist.
-- `resolved`/`rejected` is submitted only as part of verification RPC.
-- `Snooze` writes operational state, never canonical data.
-- Opening sheet does not invoke any external lookup on mount.
+- [ ] **Step 4: Write failing history tests**
 
-- [ ] **Step 4: Write failing history/rollback tests**
+Assert latest event can rollback and older event cannot:
 
 ```ts
 expect(screen.getByText("updated_and_verified")).toBeInTheDocument();
 fireEvent.click(screen.getByRole("button", { name: /Rollback/i }));
-await waitFor(() => expect(rollbackPlaceVerification).toHaveBeenCalledWith(event.id, expect.anything()));
+await waitFor(() => expect(rollbackPlaceVerification).toHaveBeenCalledWith(latest.id, expect.any(String)));
+expect(screen.getByTestId(`rollback-${older.id}`)).toBeDisabled();
 ```
 
-A non-latest event must render rollback disabled with an explanatory TH/EN label.
+- [ ] **Step 5: Implement history panel/controller integration**
 
-- [ ] **Step 5: Implement history panel, run tests, commit**
+Load history when a place task is selected. After verify or rollback succeeds, close/refresh as appropriate, call controller `onReload`, then refresh reports/task state/history.
 
-Run: `npx vitest run tests/place-quick-verify.test.tsx tests/verification-history.test.tsx`
+- [ ] **Step 6: Run GREEN and commit**
+
+Run: `npx vitest run tests/place-quick-verify.test.tsx tests/verification-history.test.tsx tests/reliability-operations.test.tsx`
 
 Expected: PASS.
 
 Commit:
 
 ```bash
-git add components/PlaceQuickVerifySheet.tsx components/VerificationHistoryPanel.tsx tests/place-quick-verify.test.tsx tests/verification-history.test.tsx
-git commit -m "feat: add admin quick verify workflow"
+git add components/PlaceQuickVerifySheet.tsx components/VerificationHistoryPanel.tsx components/ReliabilityOperations.tsx tests/place-quick-verify.test.tsx tests/verification-history.test.tsx tests/reliability-operations.test.tsx
+git commit -m "feat: add quick verify and audit history"
 ```
 
 ---
 
-### Task 6: Wire Reports and Coverage Into Verification-First Reliability Operations
+### Task 6: Verification-First Report Queue + Coverage Operations
 
 **Files:**
 - Modify: `components/PlaceReportAdminQueue.tsx`
 - Modify: `components/CoverageDashboard.tsx`
+- Modify: `components/ReliabilityOperations.tsx`
 - Modify: `components/DataQualityDashboard.tsx`
-- Modify: `lib/cloud/place-reports.ts` only if required to share typed unresolved report rows with the reliability layer
 - Test: `tests/phase4-report-verification-flow.test.tsx`
 - Test: `tests/phase4-coverage-operations.test.tsx`
 
-**Interfaces:**
-- Report queue opens Quick Verify with mapped domain and linked report IDs.
-- Coverage `Review existing` applies a reliability-queue filter.
-- Coverage `Search candidates` calls existing explicit admin candidate-search callback only after button click.
+**Controlled Report Queue contract:**
 
-- [ ] **Step 1: Write failing report-flow tests**
+```ts
+PlaceReportAdminQueue({
+  places,
+  language,
+  reports,
+  loading,
+  error,
+  onRefresh,
+  onOpenQuickVerify,
+})
+```
 
-Assert the Phase 4 path has no blind resolve button for a pending report task:
+- [ ] **Step 1: Write failing report-flow test**
 
 ```ts
 expect(screen.getByRole("button", { name: /Verify data|ตรวจข้อมูล/i })).toBeInTheDocument();
@@ -599,7 +708,7 @@ fireEvent.click(screen.getByRole("button", { name: /Verify data|ตรวจข�
 expect(onOpenQuickVerify).toHaveBeenCalledWith(expect.objectContaining({ reportIds: [report.id] }));
 ```
 
-For `other`, assert Quick Verify starts in `reportReview` and requires supported-domain selection before submission.
+`other` opens `reportReview` and cannot submit until a supported domain is selected.
 
 - [ ] **Step 2: Write failing coverage tests**
 
@@ -607,35 +716,40 @@ For `other`, assert Quick Verify starts in `reportReview` and requires supported
 fireEvent.click(screen.getByRole("button", { name: "Review existing" }));
 expect(onReviewGap).toHaveBeenCalledWith(gap);
 expect(searchCandidates).not.toHaveBeenCalled();
-
 fireEvent.click(screen.getByRole("button", { name: "Search candidates" }));
 expect(searchCandidates).toHaveBeenCalledTimes(1);
 ```
 
-No provider function may be invoked merely by rendering `CoverageDashboard`.
+Provider mocks remain zero on initial render.
 
-- [ ] **Step 3: Run RED, implement minimal wiring, run GREEN**
+- [ ] **Step 3: Run RED**
 
-Run before: `npx vitest run tests/phase4-report-verification-flow.test.tsx tests/phase4-coverage-operations.test.tsx`
+Run: `npx vitest run tests/phase4-report-verification-flow.test.tsx tests/phase4-coverage-operations.test.tsx`
 
 Expected: FAIL.
 
-Implementation must preserve report status counts/history display but route active unresolved work through Quick Verify. Coverage buttons remain explicit user actions.
+- [ ] **Step 4: Implement controlled report queue and coverage routing**
 
-Run after: same command.
+Move active report data ownership to `ReliabilityOperations`; the queue keeps filters/counts/display but no independent report fetch. Pending/reviewed rows expose `Verify data`, not blind `Resolved/Reject` mutation in the Phase 4 path. Historical resolved/rejected rows remain visible read-only.
+
+Coverage `Review existing` sets a queue filter using the selected `coverageGapId`; `Search candidates` calls the explicit callback supplied by Data Quality/Data Management and never runs on mount.
+
+- [ ] **Step 5: Run GREEN and commit**
+
+Run: `npx vitest run tests/phase4-report-verification-flow.test.tsx tests/phase4-coverage-operations.test.tsx tests/reliability-operations.test.tsx`
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+Commit:
 
 ```bash
-git add components/PlaceReportAdminQueue.tsx components/CoverageDashboard.tsx components/DataQualityDashboard.tsx lib/cloud/place-reports.ts tests/phase4-report-verification-flow.test.tsx tests/phase4-coverage-operations.test.tsx
-git commit -m "feat: connect reports and coverage to reliability flow"
+git add components/PlaceReportAdminQueue.tsx components/CoverageDashboard.tsx components/ReliabilityOperations.tsx components/DataQualityDashboard.tsx tests/phase4-report-verification-flow.test.tsx tests/phase4-coverage-operations.test.tsx
+git commit -m "feat: connect reports and coverage to reliability"
 ```
 
 ---
 
-### Task 7: Public Freshness Summary Without Admin Leakage or Provider Calls
+### Task 7: Public Freshness Summary
 
 **Files:**
 - Create: `components/PlaceFreshnessSummary.tsx`
@@ -643,31 +757,19 @@ git commit -m "feat: connect reports and coverage to reliability flow"
 - Test: `tests/place-freshness-summary.test.tsx`
 - Test: `tests/phase4-public-safety.test.tsx`
 
-**Interfaces:**
-- Consumes: `Place`, `language`, existing `getFieldFreshness()` and `dataAgeLabel()`.
-- Produces no callbacks and no API requests.
-
-- [ ] **Step 1: Write failing display tests**
-
-Cases:
+- [ ] **Step 1: Write failing freshness display tests**
 
 ```ts
-// all fresh
 expect(screen.getByText(/Last checked|ตรวจล่าสุด/)).toBeInTheDocument();
-expect(screen.queryByText(/outdated|ข้อมูลบางส่วนอาจเก่า/)).not.toBeInTheDocument();
-
-// stale
 expect(screen.getByText(/Some information may be outdated|ข้อมูลบางส่วนอาจเก่า/)).toBeInTheDocument();
-
-// unknown
 expect(screen.getByText(/Verification date is unavailable|ยังไม่ทราบวันที่ตรวจข้อมูล/)).toBeInTheDocument();
 ```
 
-Add structural assertion that `PlaceReportWarning` renders before `PlaceFreshnessSummary`, and freshness renders before ETA/parking in the Decision Panel.
+Use separate fixtures for all-fresh, stale, and unknown. All-fresh must omit stale/unknown warnings.
 
-- [ ] **Step 2: Write failing public safety test**
+- [ ] **Step 2: Write failing public privacy/API test**
 
-Render Place Detail/Decision Panel with mocks for Google search/routes/photo/parking and admin reliability cloud functions. Assert none are called on render. Assert public DOM does not contain `Priority`, `task_revision`, `verified_by`, report message text, fingerprint, reviewer metadata, or audit history.
+Render Decision Panel with provider/admin mocks. Assert zero Google search/routes/photo/parking/admin-reliability calls on render and DOM absence of `Priority`, `task_revision`, `verified_by`, report note/message, reporter fingerprint, reviewer metadata, and audit history.
 
 - [ ] **Step 3: Run RED**
 
@@ -675,11 +777,18 @@ Run: `npx vitest run tests/place-freshness-summary.test.tsx tests/phase4-public-
 
 Expected: FAIL.
 
-- [ ] **Step 4: Implement compact freshness summary and mount it**
+- [ ] **Step 4: Implement compact public component**
 
-The component calculates the five V1 field statuses using existing thresholds. It renders one highest-severity neutral message plus `dataAgeLabel(place, language)`; it does not render all field details unless the design's compact state needs a single short list.
+Use existing `getFieldFreshness()` for the five V1 domains and `dataAgeLabel()` for last-check copy. Render one highest-severity neutral warning; do not import Supabase, reliability admin modules, Google provider modules, route modules, or parking search modules.
 
-Do not import Supabase, Google provider modules, route modules, or reliability admin modules into `PlaceFreshnessSummary`.
+Mount order in `PlaceDecisionPanel`:
+
+```tsx
+<PlaceReportWarning ... />
+<PlaceFreshnessSummary ... />
+<PlaceEtaPanel ... />
+<NearbyParkingPanel ... />
+```
 
 - [ ] **Step 5: Run GREEN and commit**
 
@@ -691,215 +800,177 @@ Commit:
 
 ```bash
 git add components/PlaceFreshnessSummary.tsx components/PlaceDecisionPanel.tsx tests/place-freshness-summary.test.tsx tests/phase4-public-safety.test.tsx
-git commit -m "feat: show public place freshness context"
+git commit -m "feat: show public freshness context"
 ```
 
 ---
 
-### Task 8: Cross-Subsystem Safety, Localization, Mobile, and Acceptance Coverage
+### Task 8: Cross-Subsystem API Safety, TH/EN, Mobile E2E, and Acceptance Tests
 
 **Files:**
 - Create: `tests/phase4-api-safety.test.tsx`
 - Create: `tests/phase4-localization.test.tsx`
 - Create: `tests/phase4-acceptance.test.ts`
-- Modify or extend existing Playwright mobile test file under `e2e/` that covers Place Detail/Admin UI; use the existing file rather than creating a duplicate suite if one already owns the route.
+- Create: `e2e/phase4-reliability.spec.ts`
 
-**Interfaces:**
-- No production interface changes unless a failing test identifies a real acceptance gap.
+- [ ] **Step 1: Add API-safety tests**
 
-- [ ] **Step 1: Add API-safety regression tests**
+Assert zero external-provider calls for initial render of Data Management/Reliability Operations, derived task build, Quick Verify open, Coverage Dashboard, and public Place Detail. Assert candidate/provider search occurs only after its explicit admin button click.
 
-Assert zero external-provider calls for:
+- [ ] **Step 2: Add TH/EN coverage**
 
-- admin Data Quality dashboard initial render;
-- reliability task derivation;
-- Quick Verify initial open;
-- coverage dashboard initial render;
-- public Place Detail initial render.
+Render Reliability Summary, Queue, Quick Verify, History, Report Queue Phase 4 actions, Coverage actions, and Public Freshness in both languages. Assert English UI does not emit Thai-only Phase 4 labels and Thai UI has the approved Thai copy.
 
-Assert exactly one request only after the existing explicit candidate-search/admin external action is clicked; do not add new automatic provider behavior.
-
-- [ ] **Step 2: Add TH/EN copy coverage**
-
-Render Reliability Summary, Queue, Quick Verify, History, Coverage operation copy, and Public Freshness Summary in both languages. Assert no Thai-only units/labels leak into the English Phase 4 components and vice versa where translated copy exists.
-
-- [ ] **Step 3: Add acceptance-structure test**
-
-`tests/phase4-acceptance.test.ts` reads the relevant source/SQL and asserts the critical architecture contracts:
+- [ ] **Step 3: Add architecture acceptance test**
 
 ```ts
+const migration = fs.readFileSync("supabase/phase-4-data-reliability.sql", "utf8");
+const appShell = fs.readFileSync("components/AroundMyDormApp.tsx", "utf8");
+const freshness = fs.readFileSync("components/PlaceFreshnessSummary.tsx", "utf8");
 expect(migration).toContain("amd_admin_verify_place_field");
 expect(migration).toContain("amd_admin_rollback_place_verification");
-expect(queueSource).toContain("buildReliabilityTasks");
-expect(quickVerifySource).toContain("verifyCanonicalPlaceField");
-expect(publicFreshnessSource).not.toContain("supabase");
-expect(publicFreshnessSource).not.toContain("google");
+expect(appShell).not.toContain("buildReliabilityTasks(");
+expect(appShell).not.toContain("verifyCanonicalPlaceField(");
+expect(freshness).not.toContain("supabase");
+expect(freshness.toLowerCase()).not.toContain("google");
 ```
 
-Also assert `AroundMyDormApp.tsx` does not gain reliability scoring or canonical verification code.
+- [ ] **Step 4: Implement `e2e/phase4-reliability.spec.ts`**
 
-- [ ] **Step 4: Extend mobile E2E**
+Use Playwright mobile viewport and intercepted/mocked external-provider endpoints. Cover:
 
-At mobile viewport, verify:
-
-- reliability queue chips/buttons are tappable and do not overflow horizontally;
-- Quick Verify sheet respects safe-area/bottom navigation and can scroll to the submit buttons;
-- TH and EN render without clipped controls;
-- public freshness message fits without covering ETA/parking content.
-
-Use mocked/local app data; the E2E must not spend external API quota.
+- Reliability Queue chips/buttons have no horizontal overflow;
+- Quick Verify sheet scroll reaches Verify/Update buttons and respects safe-area/bottom navigation;
+- TH and EN controls are not clipped;
+- public freshness summary does not overlap ETA/parking;
+- intercepted external-provider request counter remains zero until an explicit provider/search action is clicked.
 
 - [ ] **Step 5: Run focused Phase 4 suite and commit**
 
 Run:
 
 ```bash
-npx vitest run tests/reliability-priority.test.ts tests/reliability-tasks.test.ts tests/reliability-cloud-state.test.ts tests/phase4-reliability-schema.test.ts tests/place-verification-cloud.test.ts tests/reliability-work-queue.test.tsx tests/data-quality-reliability-composition.test.tsx tests/place-quick-verify.test.tsx tests/verification-history.test.tsx tests/phase4-report-verification-flow.test.tsx tests/phase4-coverage-operations.test.tsx tests/place-freshness-summary.test.tsx tests/phase4-public-safety.test.tsx tests/phase4-api-safety.test.tsx tests/phase4-localization.test.tsx tests/phase4-acceptance.test.ts
+npx vitest run tests/reliability-priority.test.ts tests/reliability-tasks.test.ts tests/reliability-cloud-state.test.ts tests/phase4-reliability-schema.test.ts tests/place-verification-cloud.test.ts tests/reliability-operations.test.tsx tests/reliability-work-queue.test.tsx tests/place-quick-verify.test.tsx tests/verification-history.test.tsx tests/phase4-report-verification-flow.test.tsx tests/phase4-coverage-operations.test.tsx tests/place-freshness-summary.test.tsx tests/phase4-public-safety.test.tsx tests/phase4-api-safety.test.tsx tests/phase4-localization.test.tsx tests/phase4-acceptance.test.ts
 ```
+
+Expected: PASS.
+
+Run: `npx playwright test e2e/phase4-reliability.spec.ts`
 
 Expected: PASS.
 
 Commit:
 
 ```bash
-git add tests e2e
+git add tests/phase4-api-safety.test.tsx tests/phase4-localization.test.tsx tests/phase4-acceptance.test.ts e2e/phase4-reliability.spec.ts
 git commit -m "test: cover Phase 4 reliability acceptance"
 ```
 
 ---
 
-### Task 9: Apply Production Migration and Verify Live Security/Catalog Before Merge
+### Task 9: Apply Production Migration and Verify Live Security/Catalog
 
 **Files:**
-- No production code changes unless live schema compatibility requires a reviewed fix.
-- Update plan evidence only if repository practice requires recording migration evidence; otherwise keep evidence in PR body.
+- Production artifact already created: `supabase/phase-4-data-reliability.sql`
 
-**Interfaces:**
-- Uses the approved Supabase production project for Around My Dorm.
-
-- [ ] **Step 1: Re-run schema contract tests immediately before migration**
+- [ ] **Step 1: Re-run schema/client tests immediately before migration**
 
 Run: `npx vitest run tests/phase4-reliability-schema.test.ts tests/place-verification-cloud.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 2: Reinspect the live catalog immediately before apply**
+- [ ] **Step 2: Reinspect production catalog**
 
-Verify `amd_places`, `amd_place_reports`, existing Phase 3 report RPCs, current JWT admin pattern, and absence of conflicting Phase 4 object names.
+Verify live `amd_places`, `amd_place_reports`, Phase 3 report RPCs, JWT admin pattern, and absence of conflicting Phase 4 object names. If any assumption differs, create a failing schema regression test, fix SQL, and get it green before applying.
 
-If live schema differs from the migration assumptions, stop and fix the migration through a new RED→GREEN schema test before apply.
+- [ ] **Step 3: Apply named migration**
 
-- [ ] **Step 3: Apply `supabase/phase-4-data-reliability.sql` as a named migration**
-
-Use a migration name equivalent to `around_my_dorm_phase_4_data_reliability_operations`.
+Migration name: `around_my_dorm_phase_4_data_reliability_operations`.
 
 Expected: migration succeeds atomically.
 
-- [ ] **Step 4: Verify live catalog and grants after migration**
+- [ ] **Step 4: Verify catalog/RLS/grants/RPC definitions after apply**
 
-Confirm:
+Confirm both Phase 4 tables exist with RLS enabled; anon has no access; audit has no app UPDATE/DELETE policy; intended authenticated RPC grants exist; every privileged RPC has `amd_admin` + non-anonymous guard; verify RPC targets `amd_places`; report transition is inside verification transaction; rollback is latest-event-only.
 
-- both new tables exist with RLS enabled;
-- anon has no write/read access to audit or operational admin state;
-- authenticated execution exists only for intended security-definer RPCs;
-- RPC definitions contain the non-anonymous `amd_admin` JWT guard;
-- `amd_admin_verify_place_field` targets `amd_places`;
-- no RPC grants canonical update ability to anon;
-- audit table has no app-facing UPDATE/DELETE policy;
-- report transition remains atomic inside verify RPC.
+Run Supabase Security Advisor after DDL. Report Phase 4 findings separately from unrelated pre-existing project warnings; never claim global advisor cleanliness without evidence.
 
-Run Supabase Security Advisor after DDL and distinguish new Phase 4 findings from unrelated pre-existing warnings. Do not claim the entire project is warning-free unless the advisor output actually proves that.
+- [ ] **Step 5: Record migration version and catalog/security evidence in PR body**
 
-- [ ] **Step 5: Record migration version and verification evidence in the PR body**
-
-Include migration version/name and concise catalog checks. Do not deploy the application merely because migration succeeds.
+Do not deploy the app merely because database migration succeeded.
 
 ---
 
-### Task 10: Full Verification, Review, PR Readiness, and Merge Gate
+### Task 10: Full Verification and PR/Merge Gate
 
 **Files:**
-- No new files unless verification reveals a defect that goes through its own RED→GREEN fix.
+- No planned production file changes. Any defect found here gets its own RED→GREEN fix before proceeding.
 
-**Interfaces:**
-- Gate for PR readiness only.
-
-- [ ] **Step 1: Run all unit/component tests**
+- [ ] **Step 1: Unit/component suite**
 
 Run: `npm test`
 
-Expected: zero failed test files and zero failed tests.
+Expected: zero failed test files/tests.
 
-- [ ] **Step 2: Run typecheck**
+- [ ] **Step 2: TypeScript**
 
 Run: `npm run typecheck`
 
 Expected: exit code 0.
 
-- [ ] **Step 3: Run production build**
+- [ ] **Step 3: Production build**
 
 Run: `npm run build`
 
 Expected: exit code 0.
 
-- [ ] **Step 4: Run Cloudflare dry-run build**
+- [ ] **Step 4: Cloudflare dry run**
 
 Run: `npm run build:cloudflare`
 
 Expected: exit code 0 and Wrangler dry-run success.
 
-- [ ] **Step 5: Validate canonical data**
+- [ ] **Step 5: Canonical data validation**
 
 Run: `npm run validate:data`
 
 Expected: exit code 0.
 
-- [ ] **Step 6: Run mobile/browser E2E**
+- [ ] **Step 6: Full E2E**
 
 Run: `npm run test:e2e`
 
 Expected: zero failed Playwright tests.
 
-- [ ] **Step 7: Review all 24 spec acceptance criteria against evidence**
+- [ ] **Step 7: Map all 24 Spec acceptance criteria to evidence**
 
-Create a checklist in the PR body mapping each criterion to either a test file, live catalog verification, or explicit manual UI/E2E evidence. Every item must have evidence; do not mark a criterion complete from code inspection alone when runtime behavior is involved.
+PR body must map each criterion to a unit/component test, E2E result, or live catalog/security verification. Runtime criteria require runtime evidence, not code inspection alone.
 
-- [ ] **Step 8: Review diff for scope and security**
+- [ ] **Step 8: Diff/security review**
 
-Verify:
+Confirm no automatic provider calls, no reliability logic moved into `AroundMyDormApp.tsx`, no generic canonical JSON editor, no public audit/admin-sensitive leakage, no field verify mutation of whole-place status, strict five-domain allowlist, append-only latest-event rollback.
 
-- no automatic provider calls were introduced;
-- `AroundMyDormApp.tsx` did not absorb reliability engine logic;
-- no raw generic canonical JSON editor exists;
-- no public audit/admin/report-sensitive data exposure exists;
-- whole-place `verified`, `dataStatus`, `lastVerified` remain unaffected by field verification;
-- only approved Phase 4 V1 fields can be mutated through verify RPC;
-- rollback is latest-event-only and append-only.
+- [ ] **Step 9: Open PR only on exact verified head SHA**
 
-- [ ] **Step 9: Open PR only after the exact head SHA has green verification**
+Title: `Phase 4 data reliability and operations`.
 
-PR title: `Phase 4 data reliability and operations`
+PR body includes summary, migration version, verification outputs, security/catalog evidence, explicit-provider-cost guard, and statement that deployment is separate.
 
-PR body must include summary, migration version, full verification commands/results, security/catalog evidence, explicit-provider-cost guard, and note that deployment is a separate action.
+- [ ] **Step 10: Merge only after checks pass and head SHA is unchanged**
 
-- [ ] **Step 10: Merge only after PR head remains unchanged and required checks pass**
-
-Use expected-head-SHA merge protection. After merge, verify `main` points to the merge commit. Do not claim production app deployment until a separate deployment run is verified.
+Use expected-head-SHA merge protection. Verify `main` points to the merge commit after merge. Do not claim production app deployment until a separate deployment run is verified.
 
 ---
 
 ## Spec-to-Task Coverage
 
-- Hybrid derived reliability model + no moving freshness persistence: Tasks 1–2.
-- Deterministic priority/revision/sorting and operational-state reset: Tasks 1–2.
-- Admin work queue/search/filter/severity: Task 4.
-- Quick Verify typed editors + verify unchanged: Task 5.
-- Canonical transactional write + strict allowlist + provenance/timestamps: Task 3.
-- Report verification-first resolve/reject: Tasks 3 and 6.
-- Append-only audit and latest-event rollback: Tasks 3 and 5.
-- Coverage operations and explicit candidate search: Task 6.
-- Public freshness and privacy boundaries: Task 7.
-- No automatic external provider usage: Tasks 6–8.
-- TH/EN + mobile safe area: Task 8.
-- Production migration/RLS/RPC catalog verification: Task 9.
-- Full unit/type/build/Cloudflare/data/E2E acceptance: Task 10.
+- Derived reliability model, priority, revisions, dedupe, reset: Task 1.
+- Persist only operational state: Task 2.
+- Canonical transactional verification, strict allowlist, provenance/timestamps, atomic report transition, audit, rollback: Task 3.
+- Admin workspace/controller, queue filters/search/severity, canonical refresh orchestration: Task 4.
+- Typed Quick Verify, verify unchanged, history/rollback UX: Task 5.
+- Report verification-first flow + coverage operations + explicit candidate search: Task 6.
+- Public last-checked/stale/unknown UI + privacy boundary: Task 7.
+- No automatic external-provider activity, TH/EN, mobile safe area, architecture regression: Task 8.
+- Production migration + RLS/RPC/catalog/security proof: Task 9.
+- Full unit/type/build/Cloudflare/data/E2E acceptance + PR/merge evidence: Task 10.
