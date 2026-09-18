@@ -6,7 +6,7 @@ import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";
 import { PlaceDecisionPanel } from "@/components/PlaceDecisionPanel";
 import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
-import { formatDistance, formatPrice } from "@/lib/place-utils";
+import { formatDisplayDistance, formatDisplayPrice } from "@/lib/place-display-format";
 import type { Place } from "@/types/place";
 
 const apiMocks = vi.hoisted(() => ({
@@ -35,7 +35,7 @@ const place = {
   distanceKm: 0.42,
   straightLineDistanceKm: 0.42,
   is24Hours: true,
-  priceText: undefined,
+  priceText: null,
   minPrice: 60,
   maxPrice: 120,
   pricing: {
@@ -62,12 +62,12 @@ beforeEach(() => {
 
 describe("Phase 3 TH/EN localization", () => {
   it("formats Phase 3 price and straight-line distance in the selected language", () => {
-    expect(formatDistance(0.42, "th")).toBe("420 ม.");
-    expect(formatDistance(0.42, "en")).toBe("420 m");
-    expect(formatDistance(null, "en")).toBe("Coordinates not verified");
+    expect(formatDisplayDistance(0.42, "th")).toBe("420 ม.");
+    expect(formatDisplayDistance(0.42, "en")).toBe("420 m");
+    expect(formatDisplayDistance(null, "en")).toBe("Coordinates not verified");
 
-    expect(formatPrice(place, "th")).toBe("60–120 บาท");
-    expect(formatPrice(place, "en")).toBe("60–120 THB");
+    expect(formatDisplayPrice(place, "th")).toBe("60–120 บาท");
+    expect(formatDisplayPrice(place, "en")).toBe("60–120 THB");
   });
 
   it("renders equivalent English Decision Panel labels without Thai units", () => {
