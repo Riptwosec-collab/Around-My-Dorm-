@@ -106,4 +106,9 @@ describe("Phase 3 explicit API safety", () => {
     expect(detailSource).not.toContain("calculateRoute(");
     expect(detailSource).not.toContain("searchTransientParking(");
   });
+
+  it("passes the canonical place collection from the app shell into PlaceDetail", () => {
+    const appSource = fs.readFileSync("components/AroundMyDormApp.tsx", "utf8");
+    expect(appSource).toMatch(/<PlaceDetail\s+place=\{detailPlace\}\s+allPlaces=\{allPlaces\}/);
+  });
 });
