@@ -4,12 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PLACES } from "@/data/places";
 import type { Place } from "@/types/place";
 
-const runtimeMocks = vi.hoisted(() => ({
+const parkingMocks = vi.hoisted(() => ({
   searchTransientParking: vi.fn(),
 }));
 
 vi.mock("@/lib/google-parking-runtime", () => ({
-  searchTransientParking: runtimeMocks.searchTransientParking,
+  searchTransientParking: parkingMocks.searchTransientParking,
 }));
 
 import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";
@@ -17,8 +17,8 @@ import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";
 const seed = PLACES[0]!;
 const target = {
   ...seed,
-  id: "target-place",
-  name: "Target Place",
+  id: "manual-parking-target",
+  name: "Manual Parking Target",
   latitude: 13.82,
   longitude: 100.59,
 } as Place;
@@ -30,89 +30,84 @@ const localParking = {
   name: "Local Parking",
   category: "parking" as const,
   categories: ["parking" as const],
-  latitude: 13.821,
-  longitude: 100.591,
-  distance: {
-    straightLineMeters: null,
-    walkingDistanceMeters: 180,
-    walkingMinutes: 3,
-    motorcycleDistanceMeters: null,
-    motorcycleMinutes: null,
-    drivingDistanceMeters: null,
-    drivingMinutes: null,
-  },
+  latitude: 13.8205,
+  longitude: 100.5905,
   parkingDetails: {
     parkingType: "hourly" as const,
     hourlyPrice: 20,
     dailyPrice: null,
     monthlyPrice: null,
     deposit: null,
-    accessHours: null,
+    accessHours: "24 hours",
     access24Hours: true,
-    coveredParking: true,
+    coveredParking: false,
     cctv: true,
     securityGuard: true,
     gateAccess: null,
     overnightAllowed: true,
     evCharging: false,
-    estimatedCapacity: 30,
+    estimatedCapacity: 20,
     availabilityStatus: "available" as const,
-    availabilityVerifiedAt: "2026-09-17T10:00:00.000Z",
+    availabilityVerifiedAt: "2026-09-17T08:00:00.000Z",
   },
 } as Place;
 
-const transientCandidate = {
-  id: "google_places_admin:google-parking-1",
-  candidateKey: "google_places_admin:google-parking-1",
-  sourceProvider: "google_places_admin",
-  sourceId: "google-parking-1",
-  proposedPlace: {
-    name: "Google Parking One",
-    googlePlaceId: "google-parking-1",
-    category: "parking" as const,
-    categories: ["parking" as const],
-    latitude: 13.822,
-    longitude: 100.592,
-    googleMapsUrl: "https://www.google.com/maps/search/?api=1&query=parking",
-  },
-  possibleMatchIds: [],
-  matchScore: 0,
-  validationIssues: [],
-  completenessScore: 50,
-  status: "new" as const,
-  createdAt: "2026-09-17T12:00:00.000Z",
-  updatedAt: "2026-09-17T12:00:00.000Z",
-  reviewedAt: null,
-  reviewedBy: null,
-};
-
 afterEach(() => cleanup());
 
-describe("NearbyParkingPanel manual Google fallback", () => {
-  beforeEach(() => {
-    runtimeMocks.searchTransientParking.mockReset();
-    runtimeMocks.searchTransientParking.mockResolvedValue([transientCandidate]);
-  });
+beforeEach(() => {
+  parkingMocks.searchTransientParking.mockReset();
+  parkingMocks.searchTransientParking.mockResolvedValue([
+    {
+      googlePlaceId: "google-parking-1",
+      name: "Google Parking Candidate",
+      address: "Bangkok",
+      latitude: 13.821,
+      longitude: 100.591,
+      rating: 4.4,
+      userRatingCount: 24,
+      openNow: true,
+      googleMapsUrl: "https://www.google.com/maps/search/?api=1&query=13.821,100.591",
+    },
+    {
+      googlePlaceId: "google-parking-2",
+      name: "Google Parking Candidate 2",
+      address: "Bangkok",
+      latitude: 13.822,
+      longitude: 100.592,
+      rating: null,
+      userRatingCount: null,
+      openNow: null,
+      googleMapsUrl: "https://www.google.com/maps/search/?api=1&query=13.822,100.592",
+    },
+  ]);
+});
 
-  it("makes zero Google parking requests on render or local-only interactions", () => {
+describe("manual Google parking fallback", () => {
+  it("does not search Google when parking panel renders", () => {
     render(<NearbyParkingPanel target={target} places={[localParking]} language="th" />);
-
     expect(screen.getByText("Local Parking")).toBeInTheDocument();
-    expect(runtimeMocks.searchTransientParking).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "ดูรายละเอียด" }));
-    expect(runtimeMocks.searchTransientParking).not.toHaveBeenCalled();
+    expect(parkingMocks.searchTransientParking).not.toHaveBeenCalled();
   });
 
-  it("runs one transient search only after the explicit button and labels results as additional", async () => {
+  it("searches Google only after explicit user action", async () => {
     render(<NearbyParkingPanel target={target} places={[localParking]} language="th" />);
 
     fireEvent.click(screen.getByRole("button", { name: "ค้นหาที่จอดเพิ่ม" }));
 
-    await waitFor(() => expect(runtimeMocks.searchTransientParking).toHaveBeenCalledTimes(1));
-    expect(runtimeMocks.searchTransientParking).toHaveBeenCalledWith(target, expect.objectContaining({ language: "th", places: [localParking] }));
-    expect(await screen.findByText("ผลค้นหาเพิ่มเติม")).toBeInTheDocument();
-    expect(screen.getByText("Google Parking One")).toBeInTheDocument();
-    expect(screen.getByText(/ยังไม่บันทึกลงฐานข้อมูล/)).toBeInTheDocument();
+    await waitFor(() => expect(parkingMocks.searchTransientParking).toHaveBeenCalledTimes(1));
+    expect(parkingMocks.searchTransientParking).toHaveBeenCalledWith(target);
+    expect(await screen.findByText("Google Parking Candidate")).toBeInTheDocument();
+    expect(await screen.findByText("Google Parking Candidate 2")).toBeInTheDocument();
+    expect(screen.getAllByText(/ยังไม่บันทึกลงฐานข้อมูล/)).toHaveLength(2);
+  });
+
+  it("keeps Google fallback results transient and exposes map actions", async () => {
+    render(<NearbyParkingPanel target={target} places={[localParking]} language="en" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Find more parking" }));
+
+    expect(await screen.findByText("Google Parking Candidate")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Open in Google Maps" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /save|บันทึก/i })).not.toBeInTheDocument();
   });
 });
