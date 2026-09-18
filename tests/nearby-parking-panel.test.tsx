@@ -83,11 +83,14 @@ describe("NearbyParkingPanel", () => {
     expect(screen.getByRole("button", { name: "ค้นหาที่จอดเพิ่ม" })).toBeInTheDocument();
   });
 
-  it("keeps matching out of AroundMyDormApp and mounts the panel in PlaceDetail", () => {
+  it("keeps matching out of AroundMyDormApp and composes parking through the decision panel", () => {
     const detailSource = fs.readFileSync("components/PlaceDetail.tsx", "utf8");
+    const decisionSource = fs.readFileSync("components/PlaceDecisionPanel.tsx", "utf8");
     const appSource = fs.readFileSync("components/AroundMyDormApp.tsx", "utf8");
-    expect(detailSource).toContain('import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";');
-    expect(detailSource).toContain("<NearbyParkingPanel");
+    expect(detailSource).toContain('import { PlaceDecisionPanel } from "@/components/PlaceDecisionPanel";');
+    expect(detailSource).toContain("<PlaceDecisionPanel");
+    expect(decisionSource).toContain('import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";');
+    expect(decisionSource).toContain("<NearbyParkingPanel");
     expect(appSource).not.toContain("rankNearbyParking(");
   });
 });
