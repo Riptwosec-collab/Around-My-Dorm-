@@ -74,7 +74,7 @@ describe("Phase 3 TH/EN localization", () => {
     render(<PlaceDecisionPanel place={place} allPlaces={[place]} language="en" />);
 
     expect(screen.getByText("Data freshness")).toBeInTheDocument();
-    expect(screen.getByText("Price")).toBeInTheDocument();
+    expect(screen.getAllByText("Price")).toHaveLength(2);
     expect(screen.getByText("Straight-line distance")).toBeInTheDocument();
     expect(screen.getByText("60–120 THB")).toBeInTheDocument();
     expect(screen.getByText("420 m")).toBeInTheDocument();
