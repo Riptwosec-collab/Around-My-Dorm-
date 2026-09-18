@@ -31,7 +31,10 @@ grant select on table public.amd_place_reports to authenticated;
 do $$ begin
   create policy "amd admin read place reports" on public.amd_place_reports
   for select to authenticated
-  using (public.amd_is_admin());
+  using (
+    coalesce((((auth.jwt() -> 'app_metadata') ->> 'amd_admin'))::boolean, false)
+    and not coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)
+  );
 exception when duplicate_object then null; end $$;
 
 create or replace function public.amd_submit_place_report(
@@ -151,8 +154,13 @@ set search_path = public, pg_catalog
 as $$
 declare
   v_report public.amd_place_reports;
+  v_is_admin boolean;
 begin
-  if not public.amd_is_admin() then
+  v_is_admin :=
+    coalesce((((auth.jwt() -> 'app_metadata') ->> 'amd_admin'))::boolean, false)
+    and not coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false);
+
+  if not v_is_admin then
     raise exception 'admin required';
   end if;
 
