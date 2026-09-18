@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, Clock3, MapPin, WalletCards } from "lucide-react";
 import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";
 import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";
+import { PlaceReportWarning } from "@/components/PlaceReportWarning";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { getRuntimeLoadedPlaces } from "@/lib/database/runtime-places";
 import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
@@ -95,6 +96,7 @@ export function PlaceDecisionPanel({
         </div>
       </div>
 
+      <PlaceReportWarning place={place} language={language} />
       <PlaceEtaPanel place={place} language={language} />
       <NearbyParkingPanel target={place} places={parkingPlaces} language={language} />
 
