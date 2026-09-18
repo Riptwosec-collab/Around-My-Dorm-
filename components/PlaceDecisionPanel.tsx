@@ -6,8 +6,9 @@ import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";
 import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
 import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
+import { formatDisplayDistance, formatDisplayPrice } from "@/lib/place-display-format";
 import { formatFreshnessLabel, getFieldFreshness } from "@/lib/place-freshness";
-import { formatDistance, formatPrice, getPlaceOpenStatus } from "@/lib/place-utils";
+import { getPlaceOpenStatus } from "@/lib/place-utils";
 import type { Place } from "@/types/place";
 
 function SignalRow({ label, value }: { label: string; value: string }) {
@@ -69,8 +70,8 @@ export function PlaceDecisionPanel({
 
         <div className="mt-3 rounded-2xl border border-white/[0.06] bg-black/10 px-3">
           <SignalRow label={copy.opening} value={`${opening.primary}${opening.secondary ? ` · ${opening.secondary}` : ""}`} />
-          <SignalRow label={copy.price} value={formatPrice(place)} />
-          <SignalRow label={copy.straight} value={formatDistance(straightLineDistance)} />
+          <SignalRow label={copy.price} value={formatDisplayPrice(place, language)} />
+          <SignalRow label={copy.straight} value={formatDisplayDistance(straightLineDistance, language)} />
         </div>
 
         <div className="mt-3 rounded-2xl border border-white/[0.06] bg-black/10 p-3">
