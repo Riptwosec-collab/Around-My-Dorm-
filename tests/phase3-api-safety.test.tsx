@@ -3,6 +3,7 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PLACES } from "@/data/places";
+import { resetRuntimeLoadedPlacesForTests, setRuntimeLoadedPlaces } from "@/lib/database/runtime-places";
 import type { Place } from "@/types/place";
 
 const apiMocks = vi.hoisted(() => ({
@@ -40,7 +41,39 @@ const place = {
   is24Hours: true,
 } as Place;
 
-afterEach(() => cleanup());
+const canonicalParking = {
+  ...seed,
+  id: "phase3-canonical-parking",
+  slug: "phase3-canonical-parking",
+  name: "Canonical Runtime Parking",
+  category: "parking" as const,
+  categories: ["parking" as const],
+  latitude: 13.8205,
+  longitude: 100.5905,
+  parkingDetails: {
+    parkingType: "hourly" as const,
+    hourlyPrice: 20,
+    dailyPrice: null,
+    monthlyPrice: null,
+    deposit: null,
+    accessHours: "24 hours",
+    access24Hours: true,
+    coveredParking: false,
+    cctv: true,
+    securityGuard: true,
+    gateAccess: null,
+    overnightAllowed: true,
+    evCharging: false,
+    estimatedCapacity: 20,
+    availabilityStatus: "available" as const,
+    availabilityVerifiedAt: "2026-09-17T08:00:00.000Z",
+  },
+} as Place;
+
+afterEach(() => {
+  cleanup();
+  resetRuntimeLoadedPlacesForTests();
+});
 
 beforeEach(() => {
   apiMocks.calculateRoute.mockReset();
@@ -107,8 +140,13 @@ describe("Phase 3 explicit API safety", () => {
     expect(detailSource).not.toContain("searchTransientParking(");
   });
 
-  it("passes the canonical place collection from the app shell into PlaceDetail", () => {
-    const appSource = fs.readFileSync("components/AroundMyDormApp.tsx", "utf8");
-    expect(appSource).toMatch(/<PlaceDetail\s+place=\{detailPlace\}\s+allPlaces=\{allPlaces\}/);
+  it("falls back to the canonical runtime collection when detail supplies only the current place", () => {
+    setRuntimeLoadedPlaces([place, canonicalParking]);
+
+    render(<PlaceDecisionPanel place={place} allPlaces={[place]} language="en" />);
+
+    expect(screen.getByText("Canonical Runtime Parking")).toBeInTheDocument();
+    expect(apiMocks.calculateRoute).not.toHaveBeenCalled();
+    expect(apiMocks.searchTransientParking).not.toHaveBeenCalled();
   });
 });
