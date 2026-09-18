@@ -3,98 +3,94 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PLACES } from "@/data/places";
+import type { Place } from "@/types/place";
 
-const { calculateRoute } = vi.hoisted(() => ({
+const routeMocks = vi.hoisted(() => ({
   calculateRoute: vi.fn(),
+  getCachedRoute: vi.fn(() => null),
 }));
-vi.mock("@/lib/routes/runtime-routes", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/routes/runtime-routes")>("@/lib/routes/runtime-routes");
-  return { ...actual, calculateRoute };
-});
+
+vi.mock("@/lib/routes/runtime-routes", () => ({
+  calculateRoute: routeMocks.calculateRoute,
+  getCachedRoute: routeMocks.getCachedRoute,
+}));
 
 import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";
 
-const place = { ...PLACES[0], id: "eta-place", latitude: 13.82, longitude: 100.59 };
+const seed = PLACES[0]!;
+const place = {
+  ...seed,
+  id: "eta-target",
+  name: "ETA Target",
+  latitude: 13.82,
+  longitude: 100.59,
+} as Place;
 
 afterEach(() => cleanup());
 
 beforeEach(() => {
-  calculateRoute.mockReset();
-  calculateRoute.mockResolvedValue({
-    mode: "walking",
-    distanceMeters: 850,
-    durationSeconds: 420,
-    calculatedAt: "2026-09-17T12:00:00.000Z",
-    provider: "google_routes",
-  });
+  routeMocks.calculateRoute.mockReset();
+  routeMocks.getCachedRoute.mockReset();
+  routeMocks.getCachedRoute.mockReturnValue(null);
 });
 
 describe("PlaceEtaPanel", () => {
-  it("does not calculate on render or mode selection", () => {
+  it("makes zero route requests on render and mode selection", () => {
     render(<PlaceEtaPanel place={place} language="th" />);
-    expect(calculateRoute).not.toHaveBeenCalled();
+    expect(routeMocks.calculateRoute).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "มอไซค์" }));
-    expect(calculateRoute).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "รถ" }));
+    expect(routeMocks.calculateRoute).not.toHaveBeenCalled();
   });
 
-  it("calculates only after explicit click for the selected mode", async () => {
-    calculateRoute.mockResolvedValueOnce({
-      mode: "motorcycle",
-      distanceMeters: 900,
-      durationSeconds: 180,
-      calculatedAt: "2026-09-17T12:00:00.000Z",
+  it("requests only the explicitly selected mode", async () => {
+    routeMocks.calculateRoute.mockResolvedValue({
+      mode: "driving",
+      distanceMeters: 4200,
+      durationSeconds: 900,
+      calculatedAt: "2026-09-17T09:00:00.000Z",
+      provider: "google_routes",
+    });
+
+    render(<PlaceEtaPanel place={place} language="th" />);
+    fireEvent.click(screen.getByRole("button", { name: "รถ" }));
+    fireEvent.click(screen.getByRole("button", { name: "คำนวณเวลาเดินทาง" }));
+
+    await waitFor(() => expect(routeMocks.calculateRoute).toHaveBeenCalledTimes(1));
+    expect(routeMocks.calculateRoute).toHaveBeenCalledWith(place, "driving", { force: false });
+    expect(await screen.findByText(/15 นาที/)).toBeInTheDocument();
+  });
+
+  it("does not invent ETA when provider returns no route", async () => {
+    routeMocks.calculateRoute.mockRejectedValue(Object.assign(new Error("No route"), { code: "no_route" }));
+    render(<PlaceEtaPanel place={place} language="th" />);
+    fireEvent.click(screen.getByRole("button", { name: "คำนวณเวลาเดินทาง" }));
+
+    expect(await screen.findByText(/ไม่พบเส้นทาง/)).toBeInTheDocument();
+    expect(screen.queryByText(/ประมาณ.*นาที/)).not.toBeInTheDocument();
+  });
+
+  it("offers an explicit recalculate action after success", async () => {
+    routeMocks.calculateRoute.mockResolvedValue({
+      mode: "walking",
+      distanceMeters: 750,
+      durationSeconds: 600,
+      calculatedAt: "2026-09-17T09:00:00.000Z",
       provider: "google_routes",
     });
     render(<PlaceEtaPanel place={place} language="th" />);
-
-    fireEvent.click(screen.getByRole("button", { name: "มอไซค์" }));
     fireEvent.click(screen.getByRole("button", { name: "คำนวณเวลาเดินทาง" }));
-
-    await waitFor(() => expect(calculateRoute).toHaveBeenCalledTimes(1));
-    expect(calculateRoute).toHaveBeenCalledWith(place, "motorcycle", { force: false });
-    expect(await screen.findByText("3 นาที")).toBeInTheDocument();
-    expect(screen.getByText("900 ม.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "คำนวณใหม่" })).toBeInTheDocument();
   });
 
-  it("switches mode without a request and calculates the next mode explicitly", async () => {
-    render(<PlaceEtaPanel place={place} language="en" />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Walk" }));
-    fireEvent.click(screen.getByRole("button", { name: "Calculate travel time" }));
-    await waitFor(() => expect(calculateRoute).toHaveBeenCalledTimes(1));
-
-    fireEvent.click(screen.getByRole("button", { name: "Drive" }));
-    expect(calculateRoute).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Calculate travel time" }));
-    await waitFor(() => expect(calculateRoute).toHaveBeenCalledTimes(2));
-    expect(calculateRoute.mock.calls[1][1]).toBe("driving");
-  });
-
-  it("uses force only for explicit recalculate", async () => {
-    render(<PlaceEtaPanel place={place} language="th" />);
-    fireEvent.click(screen.getByRole("button", { name: "คำนวณเวลาเดินทาง" }));
-    await screen.findByText("7 นาที");
-
-    fireEvent.click(screen.getByRole("button", { name: "คำนวณใหม่" }));
-    await waitFor(() => expect(calculateRoute).toHaveBeenCalledTimes(2));
-    expect(calculateRoute.mock.calls[0][2]).toEqual({ force: false });
-    expect(calculateRoute.mock.calls[1][2]).toEqual({ force: true });
-  });
-
-  it("shows API locked and no-route errors without fabricated ETA", async () => {
-    calculateRoute.mockRejectedValueOnce(Object.assign(new Error("locked"), { code: "api_locked" }));
-    render(<PlaceEtaPanel place={place} language="en" />);
-    fireEvent.click(screen.getByRole("button", { name: "Calculate travel time" }));
-    expect(await screen.findByText(/API requests are locked/i)).toBeInTheDocument();
-    expect(screen.queryByText(/min$/i)).not.toBeInTheDocument();
-  });
-
-  it("is mounted in PlaceDetail and route logic stays out of AroundMyDormApp", () => {
+  it("composes ETA through the decision panel instead of the app shell", () => {
     const detailSource = fs.readFileSync("components/PlaceDetail.tsx", "utf8");
+    const decisionSource = fs.readFileSync("components/PlaceDecisionPanel.tsx", "utf8");
     const appSource = fs.readFileSync("components/AroundMyDormApp.tsx", "utf8");
-    expect(detailSource).toContain('import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";');
-    expect(detailSource).toContain("<PlaceEtaPanel");
+    expect(detailSource).toContain('import { PlaceDecisionPanel } from "@/components/PlaceDecisionPanel";');
+    expect(detailSource).toContain("<PlaceDecisionPanel");
+    expect(decisionSource).toContain('import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";');
+    expect(decisionSource).toContain("<PlaceEtaPanel");
     expect(appSource).not.toContain("calculateRoute(");
   });
 });

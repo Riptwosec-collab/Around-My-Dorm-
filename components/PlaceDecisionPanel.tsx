@@ -4,10 +4,13 @@ import { useState } from "react";
 import { AlertTriangle, Clock3, MapPin, WalletCards } from "lucide-react";
 import { NearbyParkingPanel } from "@/components/NearbyParkingPanel";
 import { PlaceEtaPanel } from "@/components/PlaceEtaPanel";
+import { PlaceReportWarning } from "@/components/PlaceReportWarning";
 import { ReportPlaceSheet } from "@/components/ReportPlaceSheet";
+import { getRuntimeLoadedPlaces } from "@/lib/database/runtime-places";
 import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
+import { formatDisplayDistance, formatDisplayPrice } from "@/lib/place-display-format";
 import { formatFreshnessLabel, getFieldFreshness } from "@/lib/place-freshness";
-import { formatDistance, formatPrice, getPlaceOpenStatus } from "@/lib/place-utils";
+import { getPlaceOpenStatus } from "@/lib/place-utils";
 import type { Place } from "@/types/place";
 
 function SignalRow({ label, value }: { label: string; value: string }) {
@@ -35,6 +38,8 @@ export function PlaceDecisionPanel({
   const priceFreshness = getFieldFreshness(place, "price");
   const parkingFreshness = getFieldFreshness(place, "parking");
   const straightLineDistance = place.straightLineDistanceKm ?? place.distanceKm;
+  const runtimePlaces = getRuntimeLoadedPlaces();
+  const parkingPlaces = allPlaces.length > 1 ? allPlaces : runtimePlaces.length ? runtimePlaces : allPlaces;
 
   const copy = language === "en"
     ? {
@@ -69,8 +74,8 @@ export function PlaceDecisionPanel({
 
         <div className="mt-3 rounded-2xl border border-white/[0.06] bg-black/10 px-3">
           <SignalRow label={copy.opening} value={`${opening.primary}${opening.secondary ? ` · ${opening.secondary}` : ""}`} />
-          <SignalRow label={copy.price} value={formatPrice(place)} />
-          <SignalRow label={copy.straight} value={formatDistance(straightLineDistance)} />
+          <SignalRow label={copy.price} value={formatDisplayPrice(place, language)} />
+          <SignalRow label={copy.straight} value={formatDisplayDistance(straightLineDistance, language)} />
         </div>
 
         <div className="mt-3 rounded-2xl border border-white/[0.06] bg-black/10 p-3">
@@ -91,8 +96,9 @@ export function PlaceDecisionPanel({
         </div>
       </div>
 
+      <PlaceReportWarning place={place} language={language} />
       <PlaceEtaPanel place={place} language={language} />
-      <NearbyParkingPanel target={place} places={allPlaces} language={language} />
+      <NearbyParkingPanel target={place} places={parkingPlaces} language={language} />
 
       <button type="button" onClick={() => setReportOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300/12 bg-amber-300/[0.045] text-[10px] font-bold text-amber-100">
         <AlertTriangle className="h-4 w-4" />{copy.report}

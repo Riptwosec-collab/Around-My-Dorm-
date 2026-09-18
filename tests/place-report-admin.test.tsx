@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 const queue = readFileSync("components/PlaceReportAdminQueue.tsx", "utf8");
 const dashboard = readFileSync("components/DataQualityDashboard.tsx", "utf8");
 const detail = readFileSync("components/PlaceDetail.tsx", "utf8");
+const decision = readFileSync("components/PlaceDecisionPanel.tsx", "utf8");
+const warning = readFileSync("components/PlaceReportWarning.tsx", "utf8");
 
 describe("place report admin and public warning UI", () => {
   it("provides admin-only queue states and transitions", () => {
@@ -15,14 +17,18 @@ describe("place report admin and public warning UI", () => {
   });
 
   it("loads only aggregate warning RPC data in public detail", () => {
-    expect(detail).toContain("loadPlaceReportWarnings(place.id)");
-    expect(detail).not.toContain("loadPlaceReports(");
-    expect(detail).toContain("กำลังตรวจสอบ");
-    expect(detail).toContain("under review");
+    expect(detail).toContain("<PlaceDecisionPanel");
+    expect(decision).toContain('import { PlaceReportWarning } from "@/components/PlaceReportWarning";');
+    expect(decision).toContain("<PlaceReportWarning");
+    expect(warning).toContain("loadPlaceReportWarnings(place.id)");
+    expect(warning).not.toContain("loadPlaceReports(");
+    expect(warning).toContain("กำลังตรวจสอบ");
+    expect(warning).toContain("under review");
   });
 
-  it("passes language to the report sheet", () => {
-    expect(detail).toContain("<ReportPlaceSheet place={place}");
-    expect(detail).toContain("language={language}");
+  it("passes language through the decision panel to the report sheet", () => {
+    expect(detail).toContain("<PlaceDecisionPanel");
+    expect(decision).toContain("<ReportPlaceSheet place={place}");
+    expect(decision).toContain("language={language}");
   });
 });
