@@ -65,7 +65,7 @@ describe("NearbyParkingPanel", () => {
     expect(screen.getAllByTestId("parking-match")).toHaveLength(3);
     expect(screen.getByText("Parking A")).toBeInTheDocument();
     expect(screen.queryByText("Parking D")).not.toBeInTheDocument();
-    expect(screen.getByText(/20 THB\/hr/)).toBeInTheDocument();
+    expect(screen.getAllByText(/20 THB\/hr/)).toHaveLength(3);
   });
 
   it("does not turn straight-line distance into walking time", () => {
