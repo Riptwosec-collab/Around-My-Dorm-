@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const queue = readFileSync("components/PlaceReportAdminQueue.tsx", "utf8");
 const dashboard = readFileSync("components/DataQualityDashboard.tsx", "utf8");
 const detail = readFileSync("components/PlaceDetail.tsx", "utf8");
+const decision = readFileSync("components/PlaceDecisionPanel.tsx", "utf8");
 
 describe("place report admin and public warning UI", () => {
   it("provides admin-only queue states and transitions", () => {
@@ -21,8 +22,9 @@ describe("place report admin and public warning UI", () => {
     expect(detail).toContain("under review");
   });
 
-  it("passes language to the report sheet", () => {
-    expect(detail).toContain("<ReportPlaceSheet place={place}");
-    expect(detail).toContain("language={language}");
+  it("passes language through the decision panel to the report sheet", () => {
+    expect(detail).toContain("<PlaceDecisionPanel");
+    expect(decision).toContain("<ReportPlaceSheet place={place}");
+    expect(decision).toContain("language={language}");
   });
 });
