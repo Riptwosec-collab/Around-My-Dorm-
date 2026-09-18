@@ -1,3 +1,3 @@
 Cloudflare deploy trigger
-2026-09-14
-Deploy latest main with app-wide render stability fixes: disable page-entry replay, remove full-surface transitions, avoid fixed-background mobile repaints, lower mobile glass blur cost, stabilize fixed navigation/map compositor layers, and remove cached place-photo fade flashes. Precise live GPS behavior remains enabled.
+2026-09-18
+Deploy latest main after Phase 3 Decision Intelligence and report-backend migration merge. Includes Freshness Engine, Opening Intelligence, public report flow, on-demand ETA, local-first parking match, manual Google parking fallback, and production report RLS/RPC authorization fixes.
