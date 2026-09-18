@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { loadPlacesFromDatabase, type PlaceDatabaseResult } from "@/lib/database/places";
+import { setRuntimeLoadedPlaces } from "@/lib/database/runtime-places";
 import type { Place } from "@/types/place";
 
 export type PlaceLoader = () => Promise<PlaceDatabaseResult>;
@@ -28,11 +29,13 @@ export function usePlaceDatabase(options: UsePlaceDatabaseOptions = {}): PlaceDa
     try {
       const result = await loader();
       setPlaces(result.places);
+      setRuntimeLoadedPlaces(result.places);
       setDatabaseSource(result.source);
       setWarning(result.warning);
       setError(null);
     } catch (cause) {
       setPlaces([]);
+      setRuntimeLoadedPlaces([]);
       setDatabaseSource("supabase");
       setWarning(null);
       setError(cause instanceof Error ? cause.message : "Cloud database unavailable");

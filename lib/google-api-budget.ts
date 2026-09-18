@@ -46,12 +46,12 @@ type UsageSummaryRow = {
 };
 
 export type TrackedGoogleRequestInput = {
-  requestType: "place_photo";
+  requestType: "place_photo" | "routes";
   placeId?: string;
   placeName?: string;
   googlePlaceId?: string;
   status: "success" | "failed";
-  resultCode?: "photo_loaded" | "no_photo" | "failed";
+  resultCode?: "photo_loaded" | "no_photo" | "route_loaded" | "no_route" | "failed";
   attempted?: number;
   retryCount?: number;
   durationMs?: number;

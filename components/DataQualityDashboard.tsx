@@ -3,8 +3,9 @@
 import React, { useMemo, useState } from "react";
 import { BarChart3, CheckCircle2, ImageOff, MapPinned, PhoneOff, TimerOff } from "lucide-react";
 import { CoverageDashboard } from "@/components/CoverageDashboard";
+import { PlaceReportAdminQueue } from "@/components/PlaceReportAdminQueue";
 import { ReviewQueuePanel } from "@/components/ReviewQueuePanel";
-import { buildDataCompletenessDashboard } from "@/lib/data-quality";
+import { buildDataCompletenessDashboard, buildFreshnessSummary } from "@/lib/data-quality";
 import type { PlaceCandidate } from "@/lib/maintenance/place-candidates";
 import { buildReviewQueue } from "@/lib/maintenance/review-queue";
 import { buildDataHealthSummary } from "@/lib/place-data/data-health";
@@ -32,6 +33,7 @@ export function DataQualityDashboard({
   onReviewLater?: (candidateId: string) => void;
 }) {
   const quality = useMemo(() => buildDataCompletenessDashboard(places), [places]);
+  const freshness = useMemo(() => buildFreshnessSummary(places), [places]);
   const health = useMemo(() => buildDataHealthSummary(places), [places]);
   const reviewItems = useMemo(() => buildReviewQueue({ places, candidates, pendingChanges }), [places, candidates, pendingChanges]);
   const [phase2Message, setPhase2Message] = useState<string | null>(null);
@@ -41,6 +43,12 @@ export function DataQualityDashboard({
     { label: language === "en" ? "Missing photo" : "ไม่มีรูปจริง", value: quality.missingPhoto, icon: ImageOff },
     { label: language === "en" ? "Missing hours" : "ไม่มีเวลาเปิด", value: quality.missingHours, icon: TimerOff },
     { label: language === "en" ? "Missing phone" : "ไม่มีเบอร์โทร", value: quality.missingPhone, icon: PhoneOff },
+  ];
+  const freshnessCards = [
+    { label: language === "en" ? "Opening hours fresh" : "เวลาเปิดสด", value: freshness.opening.freshPercent, suffix: "%" },
+    { label: language === "en" ? "Price fresh" : "ราคาสด", value: freshness.price.freshPercent, suffix: "%" },
+    { label: language === "en" ? "Parking fresh" : "ที่จอดสด", value: freshness.parking.freshPercent, suffix: "%" },
+    { label: language === "en" ? "Location fresh" : "พิกัดสด", value: freshness.location.freshPercent, suffix: "%" },
   ];
 
   return <>
@@ -52,6 +60,21 @@ export function DataQualityDashboard({
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-gradient-to-r from-[#007AFF] to-[#19E6FF]" style={{ width: `${quality.average}%` }} /></div>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{cards.map((item) => <div key={item.label} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3"><item.icon className="h-4 w-4 text-white/38" /><p className="mt-2 text-[18px] font-bold">{item.value}</p><p className="mt-1 text-[8px] leading-3 text-white/38">{item.label}</p></div>)}</div>
       <div className="mt-3 flex flex-wrap gap-2 text-[8px]"><span className="flex items-center gap-1 rounded-full border border-emerald-300/10 bg-emerald-300/[0.05] px-2.5 py-1.5 text-emerald-200"><CheckCircle2 className="h-3 w-3" /> A: {quality.excellent}</span><span className="rounded-full border border-cyan-300/10 bg-cyan-300/[0.05] px-2.5 py-1.5 text-cyan-100">B: {quality.good}</span><span className="rounded-full border border-amber-300/10 bg-amber-300/[0.05] px-2.5 py-1.5 text-amber-100">C/D: {quality.needsWork}</span></div>
+
+      <div className="mt-4 border-t border-white/[0.06] pt-4" data-testid="freshness-dashboard">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] font-bold text-[var(--amd-text-2)]">{language === "en" ? "Field freshness" : "ความสดของข้อมูลรายฟิลด์"}</p>
+          <p className="text-[8px] text-[var(--amd-text-3)]">{language === "en" ? "Derived from verification timestamps" : "คำนวณจากเวลายืนยันข้อมูล"}</p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {freshnessCards.map((item) => <div key={item.label} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3"><p className="text-[18px] font-bold">{item.value}{item.suffix}</p><p className="mt-1 text-[8px] leading-3 text-white/38">{item.label}</p></div>)}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-[9px] sm:grid-cols-3">
+          <div className="rounded-xl border border-amber-300/10 bg-amber-300/[0.04] p-3"><p className="font-bold text-amber-100">{freshness.opening.staleIds.length}</p><p className="mt-1 text-white/42">{language === "en" ? "Stale opening hours" : "เวลาเปิดเกินกำหนดตรวจ"}</p></div>
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3"><p className="font-bold">{freshness.price.unknownIds.length}</p><p className="mt-1 text-white/42">{language === "en" ? "Unknown price verification" : "ราคาไม่ทราบวันที่ยืนยัน"}</p></div>
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3"><p className="font-bold">{freshness.parking.staleIds.length}</p><p className="mt-1 text-white/42">{language === "en" ? "Stale parking data" : "ข้อมูลที่จอดเกินกำหนดตรวจ"}</p></div>
+        </div>
+      </div>
 
       <div className="mt-4 border-t border-white/[0.06] pt-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -70,6 +93,8 @@ export function DataQualityDashboard({
           : `สถานะ: ยืนยันแล้ว ${health.status.verified} • บางส่วน ${health.status.partial} • เก่า ${health.status.stale} • ยังไม่ยืนยัน ${health.status.unverified} • คู่ซ้ำที่ควรตรวจ ${health.duplicateCandidates}`}</p>
       </div>
     </section>
+
+    <PlaceReportAdminQueue places={places} language={language} />
 
     <CoverageDashboard
       places={places}
