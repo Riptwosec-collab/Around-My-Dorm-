@@ -62,7 +62,7 @@ describe("PlaceEtaPanel", () => {
   });
 
   it("does not invent ETA when provider returns no route", async () => {
-    routeMocks.calculateRoute.mockResolvedValue(null);
+    routeMocks.calculateRoute.mockRejectedValue(Object.assign(new Error("No route"), { code: "no_route" }));
     render(<PlaceEtaPanel place={place} language="th" />);
     fireEvent.click(screen.getByRole("button", { name: "คำนวณเวลาเดินทาง" }));
 
