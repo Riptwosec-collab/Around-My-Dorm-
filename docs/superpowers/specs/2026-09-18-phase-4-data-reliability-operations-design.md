@@ -69,7 +69,7 @@ Canonical Place ◄── Admin Verification RPC
       │
       ├── field verification timestamp
       ├── fieldProvenance
-      ├── lastChecked / lastUpdated / lastVerified as applicable
+      ├── lastChecked / lastUpdated
       └── append-only verification audit event
 ```
 
@@ -87,31 +87,62 @@ Statuses such as `fresh`, `aging`, `stale`, and `unknown` must be computed from 
 
 ### 5.1 Task model
 
-A reliability task represents a place-field issue, not a copy of a place.
+The queue contains two task kinds: place-field work and coverage-gap work. A task never stores a copy of the canonical place.
 
 Conceptual shape:
 
 ```ts
-type ReliabilityTask = {
+type PlaceReliabilityTask = {
+  kind: "place_field";
   id: string;
+  revision: string;
   placeId: string;
-  field: ReliabilityField | "coverage";
+  field: ReliabilityField | "reportReview";
   reasons: ReliabilityReason[];
   priority: number;
   severity: "critical" | "high" | "normal" | "low";
   reportIds: string[];
   freshnessStatus: "fresh" | "aging" | "stale" | "unknown" | null;
-  coverageGapId: string | null;
-  suggestedAction: "verify" | "review_report" | "review_existing" | "search_candidates";
+  relatedCoverageGapIds: string[];
+  suggestedAction: "verify" | "review_report";
   scoreBreakdown: ReliabilityScorePart[];
 };
+
+type CoverageReliabilityTask = {
+  kind: "coverage_gap";
+  id: string;
+  revision: string;
+  placeId: null;
+  field: "coverage";
+  coverageGapId: string;
+  priority: number;
+  severity: "critical" | "high" | "normal" | "low";
+  suggestedAction: "review_existing" | "search_candidates";
+  scoreBreakdown: ReliabilityScorePart[];
+};
+
+type ReliabilityTask = PlaceReliabilityTask | CoverageReliabilityTask;
 ```
 
-`id` must be deterministic for derived tasks, for example `placeId:field`, so operational state can attach to the task without persisting the derived task itself.
+Place-field task IDs are deterministic, for example `placeId:field`. Coverage task IDs are deterministic from the coverage gap ID.
 
-### 5.2 Supported reliability fields
+### 5.2 Task revision
 
-Phase 4 V1 supports:
+Persistent operational state applies only to the exact task revision for which it was written.
+
+For a place-field task, `revision` is derived deterministically from:
+
+- the current field verification timestamp, or `unknown` when absent;
+- sorted unresolved report entries relevant to the task, including `id`, `status`, and `duplicateCount`;
+- sorted related coverage-gap IDs.
+
+For a coverage task, `revision` is derived from its stable gap ID plus the current severity and affected-count inputs used by the gap calculation.
+
+When any of these inputs changes, the revision changes and old `done`, `snoozed`, or `in_review` state is ignored. This is the required stale-cycle reset rule.
+
+### 5.3 Supported reliability fields
+
+Phase 4 V1 Quick Verify supports:
 
 - `openingHours`
 - `price`
@@ -121,7 +152,26 @@ Phase 4 V1 supports:
 
 `location` covers coordinates and address as one verification workflow in V1.
 
-### 5.3 Task sources
+A queue-only `reportReview` domain exists for a public report that cannot be mapped safely until an admin chooses one of the supported domains.
+
+### 5.4 Public report mapping
+
+Report types map as follows:
+
+| Report type | Reliability domain |
+| --- | --- |
+| `opening_hours` | `openingHours` |
+| `closed` | `openingHours` operational domain; the editor additionally exposes `temporaryClosed` / `permanentlyClosed` when this report is linked |
+| `price` | `price` |
+| `parking` | `parking` |
+| `phone` | `phone` |
+| `location` | `location` |
+| `moved` | `location` |
+| `other` | `reportReview` until admin explicitly selects a supported verification domain |
+
+An `other` report cannot be resolved or rejected through the Phase 4 reliability flow until the admin selects a supported domain and completes a canonical verification for that domain.
+
+### 5.5 Task sources
 
 Tasks are derived from:
 
@@ -130,7 +180,7 @@ Tasks are derived from:
 3. coverage gaps from stored canonical data;
 4. place importance modifiers such as `recommended` and `localFavorite`.
 
-Multiple signals for the same `placeId + field` combine into one task with a score breakdown.
+Multiple signals for the same `placeId + field` combine into one place-field task with a score breakdown.
 
 ## 6. Priority Engine
 
@@ -152,7 +202,9 @@ Priority is deterministic, capped at 100, and explainable.
 | High-severity coverage gap | +10 |
 | Multiple independent issues on the same place | +5 to +15 |
 
-The multi-issue bonus is calculated as +5 for two active issue categories, +10 for three, and +15 for four or more. A single report plus stale freshness for the same field is not counted as two issue categories for this bonus; the bonus is meant to reflect breadth across distinct maintenance concerns.
+The multi-issue bonus is calculated as +5 for two active issue categories, +10 for three, and +15 for four or more. A single report plus stale freshness for the same field is not counted as two issue categories for this bonus; the bonus reflects breadth across distinct maintenance concerns.
+
+A standalone coverage-gap task receives the existing gap severity contribution plus a base 20-point operational visibility score so a configured coverage gap is visible in the queue even when it is not attached to a specific place-field task.
 
 ### 6.2 Severity bands
 
@@ -168,10 +220,10 @@ These are admin operational labels only. They must not modify the place's public
 Default ordering:
 
 1. priority descending;
-2. tasks with unresolved public reports first;
-3. oldest relevant verification timestamp first;
+2. place-field tasks with unresolved public reports first;
+3. oldest relevant verification timestamp first for place-field tasks;
 4. shortest straight-line distance from the verified Baan Supha home origin, if available;
-5. stable place-name tie-breaker.
+5. stable place/gap label tie-breaker.
 
 Straight-line distance is only a tie-breaker. It is not a walking or driving ETA and must not trigger Routes API usage.
 
@@ -184,7 +236,8 @@ Proposed table:
 ```text
 public.amd_reliability_task_state
 - task_key text primary key
-- place_id text not null
+- task_revision text not null
+- place_id text null
 - field_name text not null
 - status text not null
 - snoozed_until timestamptz null
@@ -201,9 +254,9 @@ Allowed `status` values:
 - `snoozed`
 - `done`
 
-A derived task that becomes healthy disappears from the queue regardless of a stored `done` value. Operational state must never force an otherwise healthy field to remain visible.
+Operational state is applied only when `task_revision` equals the currently derived task revision. A mismatch means the task has entered a new cycle and behaves as `open` until new state is written.
 
-If a task reappears later because the field becomes stale again, stale operational state must not suppress it indefinitely. The implementation plan must define a deterministic reset rule, recommended as: a verification event newer than the operational state's `updated_at` invalidates `done` and prior snooze state for future stale cycles.
+A derived task that becomes healthy disappears from the queue regardless of stored operational state. Operational state must never force an otherwise healthy field to remain visible.
 
 ## 8. Quick Verify UI
 
@@ -239,7 +292,7 @@ No provider request runs merely because the sheet opens.
 
 V1 uses typed editors, not raw JSON:
 
-- opening hours: existing structured/opening-hours editor;
+- opening hours: existing structured/opening-hours editor; when a `closed` report is linked, also expose `temporaryClosed` and `permanentlyClosed` controls;
 - price: range/fixed/unit fields mapped to the existing pricing model;
 - phone: normalized text input;
 - parking: typed parking availability/details editor;
@@ -275,6 +328,8 @@ p_report_outcome text null
 
 Only the V1 fields are accepted. The RPC must reject unknown field names before any mutation.
 
+The opening-hours domain may update the closure flags only when they are part of the validated opening/closure payload. No arbitrary top-level record field can be written through the JSON payload.
+
 ### 9.3 Transaction behavior
 
 The RPC performs, in one database transaction:
@@ -283,12 +338,12 @@ The RPC performs, in one database transaction:
 2. lock the target `amd_places` row;
 3. load the current canonical `record`;
 4. validate the field-specific incoming value or verify-unchanged request;
-5. snapshot the prior field value and relevant provenance/timestamps;
-6. update the canonical record if value changes;
-7. update the field-specific verification timestamp;
-8. update `fieldProvenance[field]`;
-9. update `lastChecked` and `lastUpdated` as appropriate;
-10. update `lastVerified` only according to the explicit whole-place rule in section 9.6;
+5. verify every linked report belongs to the same `place_id`, is in `pending` or `reviewed`, and maps to the selected domain or has been explicitly assigned from `other` by the admin;
+6. snapshot the prior field value and relevant provenance/timestamps;
+7. update the canonical record if value changes;
+8. update the field-specific verification timestamp;
+9. update `fieldProvenance[field]`;
+10. update `lastChecked` and `lastUpdated`;
 11. write an append-only verification audit event;
 12. transition linked reports only if requested and valid;
 13. commit.
@@ -316,23 +371,24 @@ The server must not infer `official` merely because a `source_url` is present.
 
 The updated provenance entry contains `checkedAt`, `verifiedAt`, confidence, and source metadata consistent with the existing `FieldProvenanceEntry` shape.
 
-### 9.6 Whole-place `verified` and `lastVerified`
+### 9.6 Whole-place status fields
 
-Field verification must **not** automatically mark the whole place `verified=true` after a single field is checked.
+A field-level Quick Verify must never imply that the entire place has been fully verified.
 
 For Phase 4 V1:
 
-- the field-specific timestamp and provenance are always updated after successful verification;
+- the field-specific timestamp and provenance are updated after successful verification;
 - `lastChecked` is updated;
-- `lastUpdated` is updated when canonical record content or verification metadata changes;
-- `lastVerified` changes only if the existing place already represents a whole-place verified record or a separate future whole-place verification action is added;
-- `verified` is not promoted from false to true by a single-field Quick Verify.
+- `lastUpdated` is updated because verification metadata is part of the canonical record;
+- `verified` is left unchanged;
+- `dataStatus` is left unchanged by the verification RPC;
+- `lastVerified` is left unchanged.
 
-This prevents a phone-number check from incorrectly certifying every field in the place.
+A future whole-place verification action may manage those whole-place fields separately, but it is outside Phase 4 V1.
 
 ### 9.7 Verify unchanged
 
-`Verify unchanged` updates the field verification timestamp, provenance, audit event, and maintenance timestamps without requiring a value change.
+`Verify unchanged` updates the field verification timestamp, provenance, audit event, `lastChecked`, and `lastUpdated` without changing the field's business value.
 
 Audit action: `verified_unchanged`.
 
@@ -381,9 +437,10 @@ Rollback:
 2. locks the target canonical place;
 3. verifies the source event is rollback-eligible;
 4. restores the prior field value and relevant field metadata from the audit snapshot;
-5. writes a new `rollback` event pointing to the original event;
-6. leaves the original event intact;
-7. does not automatically reopen or alter public reports.
+5. updates `lastChecked` and `lastUpdated` to the rollback time while restoring the field-specific verification/provenance metadata captured before the reverted event;
+6. writes a new `rollback` event pointing to the original event;
+7. leaves the original event intact;
+8. does not automatically reopen or alter public reports.
 
 ### 11.1 Rollback eligibility
 
@@ -410,11 +467,19 @@ pending/reviewed report
 → report becomes rejected in the same transaction
 ```
 
-### 12.3 No blind resolution in reliability flow
+### 12.3 Phase 4 report-queue behavior
 
-Quick Verify never offers a report-only `Resolve` action. A report linked to Quick Verify can only be resolved/rejected through a successful verification transaction.
+For `pending` and `reviewed` reports, the current direct `Resolved` and direct `Reject` controls are replaced by a Quick Verify entry point in the Phase 4 admin workflow.
 
-The existing report admin queue may retain legacy status controls temporarily during implementation, but Phase 4 acceptance requires report-driven reliability tasks to use the verification-first path. The implementation plan should either redirect those controls into Quick Verify or clearly separate legacy report administration from the new verified-resolution flow.
+The existing `Review` transition from `pending` to `reviewed` may remain because it is only an operational status change and does not claim the canonical data is correct.
+
+Final outcomes are verification-first:
+
+- `resolved` requires a successful `Update and verify` or `Verify unchanged` transaction appropriate to the report;
+- `rejected` requires a successful `Verify unchanged` or other supported canonical verification demonstrating the reported issue is not present;
+- `other` reports require the admin to select a supported verification domain before a final outcome can be submitted.
+
+The verification RPC performs the linked report transition inside the same database transaction. The client must not call the old report-transition RPC afterward as a second step.
 
 ## 13. Coverage Operations
 
@@ -445,7 +510,13 @@ Coverage distinguishes:
 
 Place Detail shows a compact freshness summary near Decision Intelligence.
 
-### 14.2 Display rules
+### 14.2 Verification timestamp shown to the public
+
+The public `Last checked` / `ตรวจล่าสุด` timestamp is the most recent non-null timestamp among the Phase 4 V1 field verification timestamps. If `verified=true` and `lastVerified` is newer, `lastVerified` may also participate in that maximum. `lastUpdated` alone is never presented as proof of verification.
+
+If none of these timestamps exists, the UI says the verification date is unknown.
+
+### 14.3 Display rules
 
 - all relevant fields fresh: show only `Last checked …` / `ตรวจล่าสุด…`;
 - any aging field: add a neutral `Some information should be checked again soon` message;
@@ -455,7 +526,7 @@ Place Detail shows a compact freshness summary near Decision Intelligence.
 
 The public UI does not show admin priority scores or maintenance workflow state.
 
-### 14.3 Fields included
+### 14.4 Fields included
 
 The compact public summary uses the same V1 fields as Quick Verify: opening hours, price, phone, parking, and location.
 
@@ -507,7 +578,7 @@ Phase 4 privileged RPCs must require:
 - `app_metadata.amd_admin = true`;
 - `is_anonymous = false`.
 
-Because production compatibility issues were previously found around a helper function dependency, Phase 4 privileged RPCs should use the direct JWT-claim authorization pattern already proven in the Phase 3 report migration unless the implementation first verifies an equivalent helper exists and is correct in the live production database.
+Because production compatibility issues were previously found around a helper-function dependency, Phase 4 privileged RPCs should use the direct JWT-claim authorization pattern already proven in the Phase 3 report migration unless the implementation first verifies an equivalent helper exists and is correct in the live production database.
 
 No email-based fallback is introduced by Phase 4.
 
@@ -591,12 +662,12 @@ Cover at minimum:
 - priority scoring and cap at 100;
 - score breakdown explanations;
 - multi-issue bonus deduplication;
-- deterministic task IDs;
+- deterministic task IDs and revisions;
 - field freshness-to-task mapping;
-- report-to-field task mapping;
-- operational state merge and reset rules;
+- report-to-domain mapping including `closed`, `moved`, and `other`;
+- operational-state revision matching/reset;
 - coverage quality/discovery distinction;
-- public freshness display states;
+- public freshness display states and verification timestamp selection;
 - typed Quick Verify payload construction;
 - no automatic external-provider calls.
 
@@ -607,22 +678,26 @@ Assert:
 - tables and constraints exist;
 - canonical target is `amd_places`;
 - strict field allowlist exists in verification RPC;
+- linked report ownership/place/status validation exists;
 - direct admin JWT authorization is present;
 - anon execution is revoked;
 - anonymous authenticated sessions are rejected;
 - audit events are append-only from application roles;
-- report transition occurs only after successful verification logic;
-- rollback latest-event guard exists.
+- report transition occurs only inside successful verification logic;
+- rollback latest-event guard exists;
+- field Quick Verify does not promote `verified`, mutate `dataStatus`, or change `lastVerified`.
 
 ### 20.3 Integration/UI tests
 
 Cover:
 
 - stale task disappears after verification;
+- old snooze/done state is ignored when task revision changes;
 - verify unchanged updates freshness without changing field value;
 - update-and-verify refreshes the visible canonical data;
 - correct report → verify → resolved;
 - incorrect report → verify unchanged → rejected;
+- `other` report cannot finalize before supported domain selection and verification;
 - failed verification leaves report unresolved;
 - coverage `Review existing` filters local queue with zero provider calls;
 - public users cannot see admin score/audit data;
@@ -669,17 +744,17 @@ Phase 4 is complete only when all criteria below are satisfied:
 2. Priority score is deterministic, capped at 100, and exposes an explainable score breakdown.
 3. Queue filters by severity, field, report involvement, and place-name search.
 4. A derived stale task disappears after its field is verified fresh.
-5. Snooze/in-review operational state persists without duplicating canonical place truth.
-6. Quick Verify supports opening hours, price, phone, parking, and location/address.
-7. Admin can verify an unchanged value without modifying the field value.
+5. Snooze/in-review operational state persists only for the matching task revision and never duplicates canonical place truth.
+6. Quick Verify supports opening hours/closure state, price, phone, parking, and location/address.
+7. Admin can verify an unchanged value without modifying the field's business value.
 8. Shared canonical data mutation uses an admin-only transactional RPC targeting live `amd_places`.
-9. Successful verification updates the field timestamp, provenance, maintenance timestamps, and an audit event in one transaction.
+9. Successful verification updates the field timestamp, provenance, `lastChecked`, `lastUpdated`, and an audit event in one transaction while leaving whole-place `verified`, `dataStatus`, and `lastVerified` unchanged.
 10. Public reports cannot automatically mutate canonical data.
 11. A report is resolved through the reliability flow only after successful canonical verification.
-12. An incorrect report supports `verify unchanged → rejected` atomically.
+12. An incorrect report supports `verify unchanged → rejected` atomically, and an `other` report requires explicit domain selection first.
 13. Verification audit history is append-only from application roles, and rollback creates a new event.
 14. Rollback restores the prior value only when the source event is still the latest event for that field and never deletes history.
-15. Public Place Detail shows last-checked/freshness context and neutral stale/unknown warnings from the existing Phase 3 thresholds.
+15. Public Place Detail shows last-verified-field/freshness context and neutral stale/unknown warnings from the existing Phase 3 thresholds.
 16. Public UI exposes neither admin priority scores nor sensitive audit/report operational data.
 17. Coverage `Review existing` opens a relevant Reliability Queue view without any external API call.
 18. Coverage candidate discovery occurs only after explicit admin action and uses the existing staged candidate workflow.
