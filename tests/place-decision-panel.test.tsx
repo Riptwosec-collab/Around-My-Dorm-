@@ -82,7 +82,7 @@ describe("PlaceDecisionPanel", () => {
     expect(screen.getByTestId("place-decision-panel")).toBeInTheDocument();
     expect(screen.getByText(/เปิด 24 ชั่วโมง|เปิดตลอด 24 ชั่วโมง/)).toBeInTheDocument();
     expect(screen.getByText("ความสดของข้อมูล")).toBeInTheDocument();
-    expect(screen.getByText("ราคา")).toBeInTheDocument();
+    expect(screen.getAllByText("ราคา")).toHaveLength(2);
     expect(screen.getByText("ระยะเส้นตรง")).toBeInTheDocument();
     expect(screen.getByTestId("place-eta-panel")).toBeInTheDocument();
     expect(screen.getByText("Decision Parking")).toBeInTheDocument();
@@ -95,7 +95,7 @@ describe("PlaceDecisionPanel", () => {
     render(<PlaceDecisionPanel place={place} allPlaces={[place, parking]} language="en" />);
 
     expect(screen.getByText("Data freshness")).toBeInTheDocument();
-    expect(screen.getByText("Price")).toBeInTheDocument();
+    expect(screen.getAllByText("Price")).toHaveLength(2);
     expect(screen.getByText("Straight-line distance")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Report incorrect data" })).toBeInTheDocument();
   });
