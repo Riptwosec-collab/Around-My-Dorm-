@@ -4,8 +4,10 @@ import React, { useMemo, useState } from "react";
 import { BarChart3, CheckCircle2, ImageOff, MapPinned, PhoneOff, TimerOff } from "lucide-react";
 import { CoverageDashboard } from "@/components/CoverageDashboard";
 import { PlaceReportAdminQueue } from "@/components/PlaceReportAdminQueue";
+import { ReliabilityOperations } from "@/components/ReliabilityOperations";
 import { ReviewQueuePanel } from "@/components/ReviewQueuePanel";
 import { buildDataCompletenessDashboard, buildFreshnessSummary } from "@/lib/data-quality";
+import type { CoverageGap } from "@/lib/coverage/coverage";
 import type { PlaceCandidate } from "@/lib/maintenance/place-candidates";
 import { buildReviewQueue } from "@/lib/maintenance/review-queue";
 import { buildDataHealthSummary } from "@/lib/place-data/data-health";
@@ -18,6 +20,8 @@ export function DataQualityDashboard({
   language,
   candidates = [],
   pendingChanges = [],
+  onReload = () => undefined,
+  onSearchCoverageGap,
   onPublishCandidate = () => undefined,
   onRejectCandidate = () => undefined,
   onKeepSeparate = () => undefined,
@@ -27,6 +31,8 @@ export function DataQualityDashboard({
   language: "th" | "en";
   candidates?: PlaceCandidate[];
   pendingChanges?: PendingChanges;
+  onReload?: () => void;
+  onSearchCoverageGap?: (gap: CoverageGap) => void;
   onPublishCandidate?: (candidateId: string) => void;
   onRejectCandidate?: (candidateId: string) => void;
   onKeepSeparate?: (candidateId: string) => void;
@@ -50,6 +56,11 @@ export function DataQualityDashboard({
     { label: language === "en" ? "Parking fresh" : "ที่จอดสด", value: freshness.parking.freshPercent, suffix: "%" },
     { label: language === "en" ? "Location fresh" : "พิกัดสด", value: freshness.location.freshPercent, suffix: "%" },
   ];
+  const searchCoverageGap = onSearchCoverageGap ?? ((gap: CoverageGap) => {
+    setPhase2Message(language === "en"
+      ? `Use the explicit Admin Search Nearby Places action for ${gap.message}. No request was sent.`
+      : `ใช้ปุ่ม Admin Search Nearby Places เพื่อค้นหา ${gap.message} • ยังไม่มีการส่ง request`);
+  });
 
   return <>
     <section data-testid="data-quality-dashboard" className="amd-glass amd-card mt-4 p-4">
@@ -94,13 +105,20 @@ export function DataQualityDashboard({
       </div>
     </section>
 
+    <ReliabilityOperations
+      places={places}
+      language={language}
+      onReload={onReload}
+      onSearchCoverageGap={searchCoverageGap}
+    />
+
     <PlaceReportAdminQueue places={places} language={language} />
 
     <CoverageDashboard
       places={places}
       language={language}
       onReviewGap={(gap) => setPhase2Message(language === "en" ? `Review ${gap.message}` : `ตรวจข้อมูลเดิม: ${gap.message}`)}
-      onSearchGap={(gap) => setPhase2Message(language === "en" ? `Use the explicit Admin Search Nearby Places action for ${gap.message}. No request was sent.` : `ใช้ปุ่ม Admin Search Nearby Places เพื่อค้นหา ${gap.message} • ยังไม่มีการส่ง request`)}
+      onSearchGap={searchCoverageGap}
     />
 
     {phase2Message && <p className="mt-3 rounded-xl border border-cyan-300/10 bg-cyan-300/[0.05] px-3 py-2 text-[9px] leading-4 text-cyan-100">{phase2Message}</p>}
