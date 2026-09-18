@@ -19,6 +19,13 @@ describe("place reports schema", () => {
     expect(sql).not.toContain("select 1 from public.places where id = p_place_id");
   });
 
+  it("uses the production JWT admin claim instead of a missing helper function", () => {
+    expect(sql).toContain("auth.jwt() -> 'app_metadata'");
+    expect(sql).toContain("'amd_admin'");
+    expect(sql).toContain("auth.jwt() ->> 'is_anonymous'");
+    expect(sql).not.toContain("public.amd_is_admin()");
+  });
+
   it("exposes RPC boundaries rather than public table policies", () => {
     expect(sql).toContain("amd_submit_place_report");
     expect(sql).toContain("amd_place_report_warning");
