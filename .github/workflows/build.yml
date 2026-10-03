@@ -1,42 +1,51 @@
 name: Build Check
 
 on:
-  push:
   pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'screenshots/**'
+      - '.github/ISSUE_TEMPLATE/**'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'screenshots/**'
+      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     env:
       CI: 'true'
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-
       - name: Unit tests
         run: npm test
-
       - name: Type check
         run: npm run typecheck
-
       - name: Build production
         run: npm run build
-
       - name: Validate Cloudflare Workers bundle
         run: npx wrangler deploy --dry-run
