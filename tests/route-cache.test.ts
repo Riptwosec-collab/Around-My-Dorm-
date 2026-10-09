@@ -18,9 +18,14 @@ function place(): Place {
   };
 }
 
+// Use a fresh, runtime-relative fixture: a fixed 2026 expiry made this test
+// fail after October 1 without an application regression.
+const fetchedAt = new Date(Date.now() - 5 * 60_000).toISOString();
+const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
+
 const rows: RouteCacheRow[] = [
-  { origin_id: "baan-supha-apartment", place_id: "p1", travel_mode: "WALK", distance_meters: 920, duration_seconds: 660, status: "ROUTE_EXISTS", fetched_at: "2026-09-12T08:00:00Z", expires_at: "2026-10-01T00:00:00Z" },
-  { origin_id: "baan-supha-apartment", place_id: "p1", travel_mode: "DRIVE", distance_meters: 1200, duration_seconds: 300, status: "ROUTE_EXISTS", fetched_at: "2026-09-12T08:00:00Z", expires_at: "2026-10-01T00:00:00Z" },
+  { origin_id: "baan-supha-apartment", place_id: "p1", travel_mode: "WALK", distance_meters: 920, duration_seconds: 660, status: "ROUTE_EXISTS", fetched_at: fetchedAt, expires_at: expiresAt },
+  { origin_id: "baan-supha-apartment", place_id: "p1", travel_mode: "DRIVE", distance_meters: 1200, duration_seconds: 300, status: "ROUTE_EXISTS", fetched_at: fetchedAt, expires_at: expiresAt },
 ];
 
 describe("route cache", () => {
@@ -34,8 +39,19 @@ describe("route cache", () => {
     expect(merged.distance?.motorcycleMinutes).toBeNull();
   });
 
+  it("does not merge expired route rows", () => {
+    const expired: RouteCacheRow[] = [{
+      ...rows[0],
+      expires_at: new Date(Date.now() - 60_000).toISOString(),
+    }];
+    const original = place();
+    const merged = mergeRouteCacheIntoPlaces([original], expired)[0];
+    expect(merged.distance?.straightLineMeters).toBe(800);
+    expect(merged.distance?.walkingDistanceMeters).toBeNull();
+  });
+
   it("does not invent motorcycle time when TWO_WHEELER data is unavailable", () => {
-    const unavailable: RouteCacheRow[] = [{ origin_id: "baan-supha-apartment", place_id: "p1", travel_mode: "TWO_WHEELER", distance_meters: null, duration_seconds: null, status: "ROUTE_NOT_FOUND", fetched_at: "2026-09-12T08:00:00Z", expires_at: "2026-10-01T00:00:00Z" }];
+    const unavailable: RouteCacheRow[] = [{ origin_id: "baan-supha-apartment", place_id: "p1", travel_mode: "TWO_WHEELER", distance_meters: null, duration_seconds: null, status: "ROUTE_NOT_FOUND", fetched_at: fetchedAt, expires_at: expiresAt }];
     const merged = mergeRouteCacheIntoPlaces([place()], unavailable)[0];
     expect(merged.distance?.motorcycleMinutes).toBeNull();
   });
