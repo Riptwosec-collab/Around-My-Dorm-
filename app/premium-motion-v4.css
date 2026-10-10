@@ -281,6 +281,16 @@
   box-shadow: 0 0 0 1px rgba(25,230,255,.10), 0 14px 34px rgba(0,0,0,.31), 0 0 24px rgba(0,153,255,.09);
 }
 
+
+.amd-search-suggestion {
+  opacity: 0;
+  transform: translateY(5px);
+  animation: amd-search-suggestion-in 240ms var(--amd-ease-snappy) forwards;
+}
+@keyframes amd-search-suggestion-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Local radar artwork for Home / Recent map cards. */
 .amd-radar-home {
   position: relative;
@@ -393,6 +403,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .amd-search-suggestion,
   .amd-intelligence-hero::after,
   .amd-live-dot::after,
   .amd-radar-home::before,
