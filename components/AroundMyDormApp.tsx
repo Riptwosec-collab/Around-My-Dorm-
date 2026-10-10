@@ -33,6 +33,7 @@ import {
   Plus,
   Search,
   Settings,
+  Share2,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -70,7 +71,7 @@ import { SearchAssistPanel } from "@/components/SearchAssistPanel";
 import { Toast, type ToastTone } from "@/components/Toast";
 import { getCopy } from "@/locales";
 import { addRecentView, getTodayRecentStats, resolveRecentPlaces } from "@/lib/storage/recent";
-import { loadCloudAppState, recordRecentViewCloud, saveCollectionsCloud, saveSettingsCloud, setFavoriteCloud, logRuntimeEventCloud } from "@/lib/cloud/store";
+import { loadCloudAppState, recordRecentViewCloud, saveCollectionsCloud, saveSettingsCloud, saveNotificationRulesCloud, setFavoriteCloud, logRuntimeEventCloud } from "@/lib/cloud/store";
 import type { RecentView } from "@/types/app";
 import {
   DORM_CENTER,
@@ -305,6 +306,22 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     if (!cloudReady && !offlineFallbackActive) return;
     saveOfflineAppSnapshot({ favorites, recentViews, settings, collections });
   }, [favorites, recentViews, settings, collections, cloudReady, offlineFallbackActive]);
+
+  useEffect(() => {
+    if (!cloudReady) return;
+    const timer = window.setTimeout(() => {
+      void saveNotificationRulesCloud({
+        enabled: settings.notifications,
+        newPlaces: settings.newPlaceAlerts,
+        promotions: settings.promoAlerts,
+        parking: settings.parkingAlerts,
+        nearby: settings.notifications,
+        closingSoon: settings.notifications,
+        favoritesOpening: settings.notifications,
+      }).catch(() => undefined);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [cloudReady, settings.notifications, settings.newPlaceAlerts, settings.promoAlerts, settings.parkingAlerts]);
 
   const categoryAffinity = useMemo(() => {
     const affinity = new Map<CategoryId, number>();
@@ -579,6 +596,24 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     setFoodNowResults(ranked);
   }
 
+  async function shareCurrentCollection() {
+    const items = filteredFavoritePlaces.slice(0, 12);
+    if (!items.length) return;
+    const collectionTitle = selectedCollection
+      ? collections.find((item) => item.id === selectedCollection)?.title
+      : smartCollectionFilter
+        ? (settings.language === "en" ? "Smart collection" : "Smart Collection")
+        : copy.saved;
+    const text = [collectionTitle || copy.saved, ...items.map((place) => `• ${place.name}`)].join("\n");
+    try {
+      if (navigator.share) await navigator.share({ title: collectionTitle || "Around My Dorm", text, url: window.location.href });
+      else {
+        await navigator.clipboard.writeText(text);
+        showToast(settings.language === "en" ? "Collection copied" : "คัดลอก Collection แล้ว");
+      }
+    } catch {}
+  }
+
   function createCollection() { setCollectionEditor({ mode: "create" }); }
   function renameCollection(collection: SavedCollection) { setCollectionEditor({ mode: "rename", collection }); }
   function deleteCollection(collection: SavedCollection) { if (!["wishlist", "regular", "late", "work"].includes(collection.id)) setCollectionEditor({ mode: "delete", collection }); }
@@ -807,7 +842,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               {selectedCollection && (() => { const collection = collections.find((item) => item.id === selectedCollection); return collection ? <div className="mt-3 flex items-center justify-end gap-2"><button type="button" onClick={() => renameCollection(collection)} className="amd-chip px-3 text-[10px]">{copy.rename}</button>{!["wishlist", "regular", "late", "work"].includes(collection.id) && <button type="button" onClick={() => deleteCollection(collection)} className="amd-chip flex items-center gap-1 px-3 text-[10px] text-rose-300"><Trash2 className="h-3.5 w-3.5" /> {copy.delete}</button>}</div> : null; })()}
 
-              <div className="mt-7 flex items-center gap-2"><Bookmark className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[19px] font-semibold">{copy.latestSaved}</h2></div>
+              <div className="mt-7 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><Bookmark className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[19px] font-semibold">{copy.latestSaved}</h2></div>{filteredFavoritePlaces.length > 0 && <button type="button" onClick={() => void shareCurrentCollection()} className="amd-chip flex min-h-10 items-center gap-1.5 px-3 text-[9px] font-bold"><Share2 className="h-3.5 w-3.5" />{settings.language === "en" ? "Share" : "แชร์"}</button>}</div>
               <div className="mt-3 space-y-3">
                 {filteredFavoritePlaces.map((place) => <div key={place.id}><PlaceCard place={place} saved onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} /><div className="mt-1 flex justify-end"><button type="button" onClick={() => setCollectionSelectorPlace(place)} className="amd-chip h-9 min-h-0 px-3 text-[9px] font-semibold text-[#149CFF]">{copy.manageCollections}</button></div></div>)}
                 {!filteredFavoritePlaces.length && <div className="amd-glass amd-card p-9 text-center"><Bookmark className="mx-auto h-8 w-8 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.emptySaved}</p><button type="button" onClick={() => changeTab("explore")} className="mt-3 text-[11px] font-semibold text-[#149CFF]">{copy.explore}</button></div>}
