@@ -148,7 +148,7 @@ export function PlaceCard({
 
           <div className="mt-3 space-y-1.5 text-[12px] leading-5">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className={`amd-status font-bold ${statusClass}`}>{openingIntelligence.primary}</span>
+              <span className={`amd-status inline-flex items-center gap-1.5 font-bold ${statusClass}`}>{status.isOpen === true && <span className="amd-live-dot inline-block h-1.5 w-1.5 rounded-full bg-current" />}{openingIntelligence.primary}</span>
               {openingIntelligence.secondary && <><span className="text-[var(--amd-text-3)]">•</span><span className="font-medium text-[var(--amd-text-2)]">{openingIntelligence.secondary}</span></>}
             </div>
             {freshnessWarning && <p className="text-[10px] font-semibold leading-4 text-amber-200">{freshnessWarning}</p>}
@@ -185,13 +185,13 @@ export function PlaceCard({
           </div>
 
           <div className="mt-3 grid grid-cols-[minmax(0,1fr)_44px_minmax(92px,1.15fr)] gap-2">
-            <button type="button" onClick={onDetail} className="amd-btn amd-btn-secondary flex h-11 min-w-0 items-center justify-center rounded-xl px-2 text-[11px] font-bold leading-none">
+            <button type="button" onClick={onDetail} className="amd-btn amd-btn-secondary amd-micro-action flex h-11 min-w-0 items-center justify-center rounded-xl px-2 text-[11px] font-bold leading-none">
               <span className="truncate">{copy.details}</span>
             </button>
-            <button type="button" onClick={onMap} aria-label={language === "en" ? "View on map" : "ดูบนแผนที่"} className="amd-btn amd-icon-btn flex h-11 w-11 items-center justify-center rounded-xl text-[#39ddff]">
+            <button type="button" onClick={onMap} aria-label={language === "en" ? "View on map" : "ดูบนแผนที่"} className="amd-btn amd-icon-btn amd-micro-action flex h-11 w-11 items-center justify-center rounded-xl text-[#39ddff]">
               <MapPin className="h-[17px] w-[17px]" />
             </button>
-            <a href={googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="amd-btn amd-btn-primary flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-extrabold leading-none">
+            <a href={googleMapsDirectionsUrl(place)} target="_blank" rel="noreferrer" className="amd-btn amd-btn-primary amd-micro-action flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-extrabold leading-none">
               <Navigation className="h-[17px] w-[17px] shrink-0" />
               <span className="truncate">{copy.navigate}</span>
             </a>
