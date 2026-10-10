@@ -68,7 +68,7 @@ function CompactPlace({ place, language, crowd, onOpen, onMap, onCrowd }: {
         {smartContextReasons(place, language).slice(0, 3).map((reason) => <span key={reason} className="rounded-lg bg-cyan-300/[0.06] px-2 py-1 text-[8px] text-cyan-100">{reason}</span>)}
         <span className={`rounded-lg px-2 py-1 text-[8px] ${freshness.state === "stale" ? "bg-amber-300/[0.07] text-amber-100" : "bg-white/[0.045] text-white/45"}`}>{freshness.label}</span>
       </div>
-      {crowd && <p className="mt-2 text-[8px] text-white/40"><Users className="mr-1 inline h-3 w-3" />{crowdLabel(crowd, language)}</p>}
+      {crowd && <div className="mt-2 flex items-center gap-1.5 text-[8px] text-white/40"><Users className="h-3 w-3" /><span className="amd-crowd-wave text-cyan-200" aria-hidden="true"><span /><span /><span /><span /></span><span>{crowdLabel(crowd, language)}</span></div>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" onClick={onMap} className="amd-btn min-h-9 rounded-xl px-3 text-[9px]"><MapPin className="mr-1 inline h-3.5 w-3.5" />{language === "en" ? "Map" : "แผนที่"}</button>
         {routes.map((route) => <a key={route.mode} href={route.url} target="_blank" rel="noreferrer" className="amd-btn min-h-9 rounded-xl px-3 text-[9px]"><Navigation className="mr-1 inline h-3.5 w-3.5" />{route.label}{route.minutes != null ? ` ${route.minutes}m` : ""}</a>)}
