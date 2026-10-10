@@ -69,7 +69,7 @@ export function MapPlaceRail({
               data-map-card-id={place.id}
               aria-pressed={selected}
               onClick={() => onSelectPlace(place)}
-              className={`w-[210px] snap-center rounded-2xl border p-3 text-left transition ${selected ? "border-cyan-300/45 bg-cyan-300/[0.08] shadow-[0_0_20px_rgba(0,217,255,.12)]" : "border-white/[0.07] bg-white/[0.035]"}`}
+              className={`amd-map-rail-card w-[210px] snap-center rounded-2xl border p-3 text-left ${selected ? "amd-map-rail-card-active bg-cyan-300/[0.08]" : "border-white/[0.07] bg-white/[0.035]"}`}
             >
               <p className="truncate text-[11px] font-bold">{place.name}</p>
               <div className="mt-2 flex items-center gap-2 text-[8px] text-white/45">
