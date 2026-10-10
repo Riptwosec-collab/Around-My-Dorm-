@@ -19,11 +19,13 @@ describe("permanent image startup layer", () => {
     expect(places).toContain("mergePermanentImagesIntoPlaces");
     expect(places).toContain("applyPermanentImageLayer");
 
-    const userLayer = places.indexOf("personalizedPlaces = await applyCloudUserLayer(sharedPlaces)");
+    const userLayer = places.indexOf("personalizedPlaces = await applyCloudUserLayer(canonical)");
+    const googleLayer = places.indexOf("personalizedPlaces = await applyGoogleCloudPlaceLayer(personalizedPlaces)");
     const permanentLayer = places.indexOf("personalizedPlaces = await applyPermanentImageLayer(personalizedPlaces)");
     const normalize = places.indexOf("normalizePlaces(personalizedPlaces)");
     expect(userLayer).toBeGreaterThan(-1);
-    expect(permanentLayer).toBeGreaterThan(userLayer);
+    expect(googleLayer).toBeGreaterThan(userLayer);
+    expect(permanentLayer).toBeGreaterThan(googleLayer);
     expect(normalize).toBeGreaterThan(permanentLayer);
   });
 
