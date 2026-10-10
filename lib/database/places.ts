@@ -47,7 +47,8 @@ async function applyCloudUserLayer(places: Place[]) {
   });
   const known = new Set(base.map((place) => place.id));
   const additions = (additionsResult.data || []).map((row: any) => row.record).filter(isPlaceRecord).filter((place) => !known.has(place.id));
-  return applyGoogleCloudPlaceLayer([...base, ...additions]);
+  // The public Google layer is loaded once after all user overrides/additions are merged.
+  return [...base, ...additions];
 }
 
 async function applyPermanentImageLayer(places: Place[]): Promise<Place[]> {
@@ -64,18 +65,20 @@ export async function loadPlacesFromDatabase(): Promise<PlaceDatabaseResult> {
   const canonical = await loadCanonicalCloudPlaces();
   let warning: string | null = null;
 
-  let sharedPlaces = canonical;
+  // Merge user overrides/additions first. The public Google link/cache query
+  // must run only once per load (previously twice), including on PWA refresh.
+  let personalizedPlaces = canonical;
   try {
-    sharedPlaces = await applyGoogleCloudPlaceLayer(canonical);
-  } catch (error) {
-    warning = error instanceof Error ? error.message : "Google cloud enrichment unavailable";
-  }
-
-  let personalizedPlaces = sharedPlaces;
-  try {
-    personalizedPlaces = await applyCloudUserLayer(sharedPlaces);
+    personalizedPlaces = await applyCloudUserLayer(canonical);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Cloud profile unavailable";
+    warning = warning ? `${warning} • ${message}` : message;
+  }
+
+  try {
+    personalizedPlaces = await applyGoogleCloudPlaceLayer(personalizedPlaces);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google cloud enrichment unavailable";
     warning = warning ? `${warning} • ${message}` : message;
   }
 

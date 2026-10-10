@@ -162,6 +162,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   } = usePlaceDatabase();
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
   const [exploreDisplayLimit, setExploreDisplayLimit] = useState(16);
+  const [savedDisplayLimit, setSavedDisplayLimit] = useState(16);
+  const [recentDisplayLimit, setRecentDisplayLimit] = useState(16);
   const [googleDiscoveryOpen, setGoogleDiscoveryOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
@@ -404,6 +406,9 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     if (recentQuickFilter === "parking") return recentPlaces.filter((place) => place.categories.includes("parking") || place.categories.includes("monthly_parking"));
     return recentPlaces;
   }, [recentPlaces, recentQuickFilter]);
+
+  useEffect(() => { setSavedDisplayLimit(16); }, [selectedCollection, smartCollectionFilter]);
+  useEffect(() => { setRecentDisplayLimit(16); }, [recentQuickFilter]);
 
   const filteredFavoritePlaces = useMemo(() => {
     let result = favoritePlaces;
@@ -851,7 +856,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <div className="mt-7 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><Bookmark className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[19px] font-semibold">{copy.latestSaved}</h2></div>{filteredFavoritePlaces.length > 0 && <button type="button" onClick={() => void shareCurrentCollection()} className="amd-chip flex min-h-10 items-center gap-1.5 px-3 text-[9px] font-bold"><Share2 className="h-3.5 w-3.5" />{settings.language === "en" ? "Share" : "แชร์"}</button>}</div>
               <div className="mt-3 space-y-3">
-                {filteredFavoritePlaces.map((place) => <div key={place.id}><PlaceCard place={place} saved onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} /><div className="mt-1 flex justify-end"><button type="button" onClick={() => setCollectionSelectorPlace(place)} className="amd-chip h-9 min-h-0 px-3 text-[9px] font-semibold text-[#149CFF]">{copy.manageCollections}</button></div></div>)}
+                {filteredFavoritePlaces.slice(0, savedDisplayLimit).map((place) => <div key={place.id}><PlaceCard place={place} saved onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} /><div className="mt-1 flex justify-end"><button type="button" onClick={() => setCollectionSelectorPlace(place)} className="amd-chip h-9 min-h-0 px-3 text-[9px] font-semibold text-[#149CFF]">{copy.manageCollections}</button></div></div>)}
+                {filteredFavoritePlaces.length > savedDisplayLimit && <button type="button" onClick={() => setSavedDisplayLimit((n) => n + 16)} className="amd-chip min-h-11 w-full rounded-xl text-[11px] font-semibold">{settings.language === "en" ? "Show more saved" : "แสดงรายการบันทึกเพิ่มเติม"} ({Math.min(savedDisplayLimit, filteredFavoritePlaces.length)}/{filteredFavoritePlaces.length})</button>}
                 {!filteredFavoritePlaces.length && <div className="amd-glass amd-card p-9 text-center"><Bookmark className="mx-auto h-8 w-8 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.emptySaved}</p><button type="button" onClick={() => changeTab("explore")} className="mt-3 text-[11px] font-semibold text-[#149CFF]">{copy.explore}</button></div>}
               </div>
             </div>
@@ -863,7 +869,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
               <section className="amd-hero-map min-h-[164px] p-5">
                 <MiniMapArtwork />
-                <div className="relative z-10 max-w-[55%]"><p className="text-[14px] font-semibold">{copy.todayRecent}</p><div className="mt-4 flex items-end gap-4"><div><p className="text-[40px] font-semibold leading-none text-[#149CFF]">{recentTodayStats.placeCount}</p><p className="mt-1 text-[11px] text-[var(--amd-text-2)]">{copy.places}</p></div><span className="pb-4 text-[var(--amd-text-3)]">•</span><div><p className="text-[40px] font-semibold leading-none text-[#49d8d1]">{recentTodayStats.categoryCount}</p><p className="mt-1 text-[11px] text-[var(--amd-text-2)]">{copy.categories}</p></div><span className="pb-4 text-[var(--amd-text-3)]">•</span><div><p className="text-[40px] font-semibold leading-none text-[#9B6CFF]">{recentTodayStats.areaCount}</p><p className="mt-1 text-[11px] text-[var(--amd-text-2)]">{copy.areas}</p></div></div></div>
+                <div className="relative z-10 w-full min-w-0"><p className="text-[14px] font-semibold">{copy.todayRecent}</p><div className="mt-4 grid grid-cols-3 gap-2"><div><p className="text-[40px] font-semibold leading-none text-[#149CFF]">{recentTodayStats.placeCount}</p><p className="mt-1 text-[11px] text-[var(--amd-text-2)]">{copy.places}</p></div><div><p className="text-[40px] font-semibold leading-none text-[#49d8d1]">{recentTodayStats.categoryCount}</p><p className="mt-1 text-[11px] text-[var(--amd-text-2)]">{copy.categories}</p></div><div><p className="text-[40px] font-semibold leading-none text-[#9B6CFF]">{recentTodayStats.areaCount}</p><p className="mt-1 text-[11px] text-[var(--amd-text-2)]">{copy.areas}</p></div></div></div>
               </section>
 
               <div className="-mx-4 mt-4 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0"><div className="flex w-max gap-2">{[
@@ -875,7 +881,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
               ].map((item) => <button key={item.key} type="button" onClick={() => setRecentQuickFilter((current) => current === item.key ? null : item.key)} className={`amd-chip flex items-center gap-2 px-4 text-[11px] font-semibold ${recentQuickFilter === item.key ? "amd-chip-active" : ""}`}>{item.icon}{item.label}</button>)}</div></div>
 
               <div className="mt-5 space-y-3">
-                {filteredRecentPlaces.map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} contextMeta={relativeViewedLabel(recentViewByPlaceId.get(place.id)?.viewedAt, settings.language)} language={settings.language} />)}
+                {filteredRecentPlaces.slice(0, recentDisplayLimit).map((place) => <PlaceCard key={place.id} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} contextMeta={relativeViewedLabel(recentViewByPlaceId.get(place.id)?.viewedAt, settings.language)} language={settings.language} />)}
+                {filteredRecentPlaces.length > recentDisplayLimit && <button type="button" onClick={() => setRecentDisplayLimit((n) => n + 16)} className="amd-chip min-h-11 w-full rounded-xl text-[11px] font-semibold">{settings.language === "en" ? "Show more recent" : "แสดงรายการดูล่าสุดเพิ่มเติม"} ({Math.min(recentDisplayLimit, filteredRecentPlaces.length)}/{filteredRecentPlaces.length})</button>}
                 {!recentPlaces.length && <div className="amd-glass amd-card p-9 text-center"><History className="mx-auto h-8 w-8 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.emptyRecent}</p></div>}
               </div>
 
