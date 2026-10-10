@@ -27,7 +27,12 @@ type HubMode = "now" | "compare" | "trip" | "dorm" | "emergency";
 function crowdLabel(signal: CrowdSignal | undefined, language: "th" | "en") {
   if (!signal || signal.samples < 1) return language === "en" ? "No recent crowd signal" : "ยังไม่มีสัญญาณความหนาแน่นล่าสุด";
   const label = signal.level === "quiet" ? (language === "en" ? "Quiet" : "ค่อนข้างเงียบ") : signal.level === "busy" ? (language === "en" ? "Busy" : "ค่อนข้างแน่น") : (language === "en" ? "Normal" : "ปกติ");
-  return `${label} · ${signal.samples} ${language === "en" ? "recent check-ins" : "เช็กอินล่าสุด"}`;
+  const confidence = signal.samples >= 6
+    ? (language === "en" ? "high confidence" : "ความมั่นใจสูง")
+    : signal.samples >= 3
+      ? (language === "en" ? "medium confidence" : "ความมั่นใจปานกลาง")
+      : (language === "en" ? "low confidence" : "ความมั่นใจต่ำ");
+  return `${label} · ${signal.samples} ${language === "en" ? "recent check-ins" : "เช็กอินล่าสุด"} · ${confidence}`;
 }
 
 function tripMapsUrl(places: Place[]) {
@@ -106,6 +111,21 @@ export function SmartCapabilityHub({
   const picks = useMemo(() => smartNearby(places, recommendationContext, { budget, maxDistanceKm: 2, openNow: openOnly, localOnly, limit: 6 }), [places, recommendationContext, budget, openOnly, localOnly]);
   const topCandidates = useMemo(() => smartNearby(places, recommendationContext, { maxDistanceKm: 3, limit: 12 }).map((item) => item.place), [places, recommendationContext]);
   const compared = useMemo(() => comparePlaces(compareIds.map((id) => places.find((place) => place.id === id)).filter((place): place is Place => Boolean(place))), [compareIds, places]);
+  const bestComparedId = useMemo(() => {
+    if (compared.length < 2) return compared[0]?.id ?? null;
+    const ranked = [...compared].map((row) => {
+      let score = 0;
+      if (/เปิด|open/i.test(row.openStatus)) score += 24;
+      if (row.distanceKm != null) score += Math.max(0, 18 - row.distanceKm * 7);
+      if (row.priceMax != null) score += Math.max(0, 14 - row.priceMax / 20);
+      if (row.rating != null) score += Math.max(0, row.rating - 3) * 7;
+      if (row.parking) score += 7;
+      if (row.verified) score += 6;
+      if (row.local) score += 4;
+      return { id: row.id, score };
+    }).sort((a, b) => b.score - a.score);
+    return ranked[0]?.id ?? null;
+  }, [compared]);
   const tripPlaces = useMemo(() => tripOrder(tripIds.map((id) => places.find((place) => place.id === id)).filter((place): place is Place => Boolean(place)), origin), [tripIds, places, origin]);
   const dormPlaces = useMemo(() => dormLifePlaces(places).slice(0, 12), [places]);
   const emergency = useMemo(() => emergencyPlaces(places).slice(0, 10), [places]);
@@ -187,7 +207,7 @@ export function SmartCapabilityHub({
       {mode === "compare" && <div className="mt-4">
         <p className="text-[9px] text-white/45">{language === "en" ? "Choose up to 4 places" : "เลือกได้สูงสุด 4 ร้าน"}</p>
         <div className="mt-2 flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">{topCandidates.map((place) => <button key={place.id} type="button" onClick={() => toggleId(place.id, compareIds, setCompareIds, 4)} className={`rounded-lg px-2 py-1.5 text-[8px] ${compareIds.includes(place.id) ? "bg-[#007AFF] text-white" : "bg-white/[0.05] text-white/55"}`}>{compareIds.includes(place.id) && <Check className="mr-1 inline h-3 w-3" />}{place.name}</button>)}</div>
-        {compared.length > 0 && <div className="mt-3 overflow-x-auto"><table className="min-w-full text-left text-[8px]"><thead className="text-white/35"><tr><th className="p-2">Place</th><th className="p-2">Open</th><th className="p-2">Distance</th><th className="p-2">Price</th><th className="p-2">Rating</th><th className="p-2">Parking</th></tr></thead><tbody>{compared.map((row) => <tr key={row.id} className="border-t border-white/[0.05]"><td className="p-2 font-semibold">{row.name}</td><td className="p-2">{row.openStatus}</td><td className="p-2">{row.distanceKm == null ? "—" : `${row.distanceKm.toFixed(1)} km`}</td><td className="p-2">{row.priceMax == null ? "—" : `฿${row.priceMax}`}</td><td className="p-2">{row.rating ?? "—"}</td><td className="p-2">{row.parking ? "✓" : "—"}</td></tr>)}</tbody></table></div>}
+        {compared.length > 0 && <div className="mt-3 overflow-x-auto"><table className="min-w-full text-left text-[8px]"><thead className="text-white/35"><tr><th className="p-2">Place</th><th className="p-2">Open</th><th className="p-2">Distance</th><th className="p-2">Price</th><th className="p-2">Rating</th><th className="p-2">Parking</th></tr></thead><tbody>{compared.map((row) => <tr key={row.id} className={`border-t border-white/[0.05] ${row.id === bestComparedId && compared.length > 1 ? "bg-emerald-300/[0.035]" : ""}`}><td className="p-2 font-semibold">{row.name}{row.id === bestComparedId && compared.length > 1 && <span className="ml-1 rounded bg-emerald-300/[0.09] px-1.5 py-0.5 text-[7px] text-emerald-100">{language === "en" ? "BEST FIT" : "คุ้มสุด"}</span>}</td><td className="p-2">{row.openStatus}</td><td className="p-2">{row.distanceKm == null ? "—" : `${row.distanceKm.toFixed(1)} km`}</td><td className="p-2">{row.priceMax == null ? "—" : `฿${row.priceMax}`}</td><td className="p-2">{row.rating ?? "—"}</td><td className="p-2">{row.parking ? "✓" : "—"}</td></tr>)}</tbody></table></div>}
       </div>}
 
       {mode === "trip" && <div className="mt-4">
