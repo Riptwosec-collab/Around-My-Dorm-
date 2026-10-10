@@ -69,3 +69,40 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(staleWhileRevalidate(request));
   }
 });
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data?.json?.() || {};
+  } catch {
+    payload = { body: event.data?.text?.() || "" };
+  }
+  const title = payload.title || "Around My Dorm";
+  const options = {
+    body: payload.body || "มีอัปเดตใหม่รอบหอ",
+    icon: payload.icon || "/icon-192.png",
+    badge: payload.badge || "/icon-192.png",
+    data: {
+      url: payload.url || "/",
+      ...(payload.data || {}),
+    },
+    tag: payload.tag || "around-my-dorm-update",
+    renotify: Boolean(payload.renotify),
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      const sameOrigin = clients.find((client) => new URL(client.url).origin === self.location.origin);
+      if (sameOrigin) {
+        sameOrigin.navigate?.(target);
+        return sameOrigin.focus();
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
+});
