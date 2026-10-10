@@ -1,4 +1,4 @@
-const VERSION = "amd-v2.3.0-pwa1";
+const VERSION = "amd-v2.3.1-pwa-frame";
 const APP_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const APP_SHELL = ["/", "/map/", "/saved/", "/recent/", "/settings/", "/parking/", "/manifest.webmanifest", "/offline.html"];
