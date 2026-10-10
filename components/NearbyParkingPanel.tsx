@@ -31,6 +31,36 @@ function availabilityLabel(place: Place, language: "th" | "en") {
   return language === "en" ? "Availability not verified" : "สถานะที่ว่างยังไม่ยืนยัน";
 }
 
+function parkingFitScore(place: Place, distanceKm: number, walkingMinutes: number | null | undefined) {
+  const details = place.parkingDetails;
+  let score = 45;
+  if (distanceKm <= 0.3) score += 18;
+  else if (distanceKm <= 0.7) score += 12;
+  else if (distanceKm <= 1.2) score += 6;
+  if (walkingMinutes != null && walkingMinutes <= 5) score += 10;
+  else if (walkingMinutes != null && walkingMinutes <= 10) score += 6;
+  if (details?.availabilityStatus === "available") score += 14;
+  if (details?.availabilityStatus === "full") score -= 45;
+  if (details?.access24Hours === true) score += 5;
+  if (details?.cctv === true) score += 3;
+  if (details?.securityGuard === true) score += 3;
+  if (details?.coveredParking === true) score += 2;
+  if (details?.hourlyPrice != null || details?.dailyPrice != null || details?.monthlyPrice != null) score += 4;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function availabilityAgeLabel(place: Place, language: "th" | "en") {
+  const value = place.parkingDetails?.availabilityVerifiedAt;
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return null;
+  const hours = Math.max(0, Math.floor((Date.now() - time) / 3600000));
+  if (hours < 1) return language === "en" ? "checked <1h ago" : "เช็กไม่ถึง 1 ชม.";
+  if (hours < 24) return language === "en" ? `checked ${hours}h ago` : `เช็ก ${hours} ชม.ก่อน`;
+  const days = Math.floor(hours / 24);
+  return language === "en" ? `checked ${days}d ago` : `เช็ก ${days} วันก่อน`;
+}
+
 export function NearbyParkingPanel({
   target,
   places = getRuntimeLoadedPlaces(),
@@ -111,6 +141,8 @@ export function NearbyParkingPanel({
           {matches.map((match) => {
             const details = match.place.parkingDetails;
             const expanded = expandedId === match.place.id;
+            const fitScore = parkingFitScore(match.place, match.distanceKm, match.walkingMinutes);
+            const availabilityAge = availabilityAgeLabel(match.place, language);
             return (
               <article key={match.place.id} data-testid="parking-match" className="rounded-2xl border border-white/[0.065] bg-black/10 p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -118,9 +150,13 @@ export function NearbyParkingPanel({
                     <p className="truncate text-[11px] font-bold text-white/85">{match.place.name}</p>
                     <p className="mt-1 text-[9px] text-white/45">{distanceLabel(match.distanceKm, language)} • {priceLabel(match.place, language)}</p>
                     <p className="mt-1 text-[9px] text-white/45">{availabilityLabel(match.place, language)}</p>
+                    {availabilityAge && <p className="mt-1 text-[8px] text-white/30">{availabilityAge}</p>}
                     {match.walkingMinutes != null && <p className="mt-1 text-[9px] font-semibold text-cyan-100">{copy.walk} {match.walkingMinutes} {language === "en" ? "min" : "นาที"}</p>}
                   </div>
-                  {details?.access24Hours === true && <span className="shrink-0 rounded-lg border border-cyan-300/10 bg-cyan-300/[0.05] px-2 py-1 text-[8px] font-bold text-cyan-100">24H</span>}
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className={`rounded-lg border px-2 py-1 text-[8px] font-bold ${fitScore >= 80 ? "border-emerald-300/12 bg-emerald-300/[0.06] text-emerald-100" : fitScore >= 60 ? "border-cyan-300/10 bg-cyan-300/[0.05] text-cyan-100" : "border-amber-300/10 bg-amber-300/[0.05] text-amber-100"}`}>{language === "en" ? "Fit" : "เหมาะ"} {fitScore}</span>
+                    {details?.access24Hours === true && <span className="rounded-lg border border-cyan-300/10 bg-cyan-300/[0.05] px-2 py-1 text-[8px] font-bold text-cyan-100">24H</span>}
+                  </div>
                 </div>
 
                 {expanded && (

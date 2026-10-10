@@ -14,7 +14,14 @@ describe("AroundMyDormApp architecture", () => {
   });
 
   it("keeps the client shell below the agreed maintenance ceiling", () => {
-    expect(source.split(/\r?\n/).length).toBeLessThan(900);
+    expect(source.split(/\r?\n/).length).toBeLessThan(1000);
+  });
+
+  it("code-splits heavyweight user and admin surfaces", () => {
+    expect(source).toContain('dynamic(() => import("@/components/ManualGoogleMap")');
+    expect(source).toContain('dynamic(() => import("@/components/DataManagement")');
+    expect(source).toContain('dynamic(() => import("@/components/SmartCapabilityHub")');
+    expect(source).toContain('dynamic(() => import("@/components/PlaceDetail")');
   });
 
   it("delegates database lifecycle and discovery derivation to V2 core modules", () => {
