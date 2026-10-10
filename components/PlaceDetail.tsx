@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, type UIEvent } from "react";
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -71,6 +72,12 @@ export function PlaceDetail({
   const parkingStatus = getParkingStatus(place);
   const dataQuality = scorePlaceDataQuality(place);
   const decisionPlaces = allPlaces?.length ? allPlaces : [place];
+  const heroRef = useRef<HTMLDivElement | null>(null);
+
+  function handleDetailScroll(event: UIEvent<HTMLElement>) {
+    const top = event.currentTarget.scrollTop;
+    heroRef.current?.style.setProperty("--amd-parallax-y", `${Math.min(18, top * 0.055)}px`);
+  }
 
   async function share() {
     const url = googleMapsPlaceUrl(place);
@@ -102,17 +109,16 @@ export function PlaceDetail({
   return (
     <div className="amd-sheet-backdrop">
       <button type="button" aria-label={copy.close} onClick={onClose} className="absolute inset-0" />
-      <section className="amd-sheet amd-glass-strong relative max-h-[92dvh] w-full max-w-[520px] overflow-y-auto rounded-t-[34px] border-b-0 shadow-2xl">
-        <div className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] bg-[var(--amd-glass-strong)] px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-2xl">
+      <section onScroll={handleDetailScroll} className="amd-place-detail-sheet amd-sheet amd-glass-strong relative max-h-[92dvh] w-full max-w-[520px] overflow-y-auto rounded-t-[34px] border-b-0 shadow-2xl">
+        <div className="amd-place-detail-header sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-2xl">
           <div className="h-1.5 w-12 rounded-full bg-white/15" />
           <button type="button" aria-label={copy.close} onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="relative h-[220px] bg-gradient-to-br from-[#10233a] to-[#07101b]">
+        <div ref={heroRef} className="amd-place-detail-hero relative h-[238px] bg-gradient-to-br from-[#10233a] to-[#07101b]">
           <PlacePhoto place={place} eager className="h-full w-full object-cover" fallbackLabel={language === "en" ? "No photo yet" : "ยังไม่มีรูป"} />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#08111d] via-transparent to-transparent" />
         </div>
 
         <div className="relative -mt-9 px-4 pb-[calc(28px+env(safe-area-inset-bottom))]">
@@ -122,7 +128,7 @@ export function PlaceDetail({
               <h2 className="mt-1 text-[25px] font-bold tracking-[-0.035em]">{place.name}</h2>
               {place.nameEn && <p className="mt-1 text-xs text-white/42">{place.nameEn}</p>}
             </div>
-            <button type="button" aria-label={saved ? "นำออกจากรายการโปรด" : "เพิ่มรายการโปรด"} onClick={onSave} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06]">
+            <button type="button" aria-label={saved ? "นำออกจากรายการโปรด" : "เพิ่มรายการโปรด"} onClick={onSave} className="amd-micro-action grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06]">
               <Heart className={`amd-heart h-5 w-5 ${saved ? "amd-heart-saved fill-[#008CFF] text-[#149CFF]" : "text-white/75"}`} />
             </button>
           </div>
@@ -142,14 +148,14 @@ export function PlaceDetail({
           </div>
 
           <div className="mt-4 grid grid-cols-4 gap-2">
-            <button type="button" onClick={onMap} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.08] text-[9px] font-bold text-cyan-200"><MapPin className="h-4 w-4" />{copy.mapAction}</button>
-            <a href={googleMapsDirectionsFallbackUrl(place)} target="_blank" rel="noreferrer" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Navigation className="h-4 w-4" />{copy.navigate}</a>
+            <button type="button" onClick={onMap} className="amd-place-action amd-depth-active flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border text-[9px] font-bold text-cyan-200"><MapPin className="h-4 w-4" />{copy.mapAction}</button>
+            <a href={googleMapsDirectionsFallbackUrl(place)} target="_blank" rel="noreferrer" className="amd-place-action amd-depth-base flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border text-[9px] font-bold"><Navigation className="h-4 w-4" />{copy.navigate}</a>
             {place.phone ? (
-              <a href={`tel:${place.phone}`} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Phone className="h-4 w-4" />{copy.phone}</a>
+              <a href={`tel:${place.phone}`} className="amd-place-action amd-depth-base flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border text-[9px] font-bold"><Phone className="h-4 w-4" />{copy.phone}</a>
             ) : (
               <button type="button" disabled className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/[0.06] bg-white/[0.025] text-[9px] font-bold text-white/25"><Phone className="h-4 w-4" />{copy.noPhone}</button>
             )}
-            <button type="button" onClick={share} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.05] text-[9px] font-bold"><Share2 className="h-4 w-4" />{copy.share}</button>
+            <button type="button" onClick={share} className="amd-place-action amd-depth-base flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border text-[9px] font-bold"><Share2 className="h-4 w-4" />{copy.share}</button>
           </div>
 
           <GoogleLiveEnrichment place={place} language={language} />
@@ -223,7 +229,7 @@ export function PlaceDetail({
             {place.notes && <p className="mt-1 text-[10px] leading-5 text-white/48">{copy.notes}: {place.notes}</p>}
           </div>
 
-          <a href={place.googleMapsUrl || googleMapsDirectionsFallbackUrl(place)} target="_blank" rel="noreferrer" className="mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-300 text-[11px] font-bold text-[#031018]">
+          <a href={place.googleMapsUrl || googleMapsDirectionsFallbackUrl(place)} target="_blank" rel="noreferrer" className="amd-btn amd-btn-primary amd-micro-action mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl text-[11px] font-bold">
             {copy.openGoogleMaps} <ArrowUpRight className="h-4 w-4" />
           </a>
         </div>

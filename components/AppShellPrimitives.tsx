@@ -46,10 +46,10 @@ export function MiniMapArtwork() {
   return (
     <div className="absolute inset-y-0 right-0 w-[48%] overflow-hidden opacity-95">
       <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_0_42%,rgba(0,140,255,.12)_42%_44%,transparent_44%_100%)]" />
-      <div className="absolute right-[26%] top-[29%] grid h-14 w-14 place-items-center rounded-full border border-[#149CFF] bg-[rgba(0,122,255,.2)] shadow-[0_0_28px_rgba(0,122,255,.52)]"><Home className="h-6 w-6 text-white" /></div>
-      <div className="amd-map-dot left-[21%] top-[32%]" />
-      <div className="amd-map-dot bottom-[25%] left-[44%]" />
-      <div className="amd-map-dot right-[18%] top-[18%]" />
+      <div className="amd-radar-home absolute right-[26%] top-[29%] grid h-14 w-14 place-items-center rounded-full border border-[#149CFF] bg-[rgba(0,122,255,.2)] shadow-[0_0_28px_rgba(0,122,255,.52)]"><Home className="h-6 w-6 text-white" /></div>
+      <div className="amd-map-dot amd-radar-dot left-[21%] top-[32%]" />
+      <div className="amd-map-dot amd-radar-dot bottom-[25%] left-[44%]" />
+      <div className="amd-map-dot amd-radar-dot right-[18%] top-[18%]" />
       <div className="absolute left-[12%] top-[18%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(232,238,248,.22)] bg-[#061424]/90 text-[#e8eef8]"><Coffee className="h-4 w-4" /></div>
       <div className="absolute bottom-[17%] left-[38%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(255,157,60,.24)] bg-[#07111f]/90 text-[#ff9d3c]"><Utensils className="h-4 w-4" /></div>
       <div className="absolute bottom-[15%] right-[15%] grid h-8 w-8 place-items-center rounded-full border border-[rgba(0,122,255,.3)] bg-[#07111f]/90 text-[#149CFF]"><Car className="h-4 w-4" /></div>
