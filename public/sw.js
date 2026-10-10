@@ -1,4 +1,4 @@
-const VERSION = "amd-v2.3.1-pwa-frame";
+const VERSION = "amd-v3.0.0-local-life-os";
 const APP_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const APP_SHELL = ["/", "/map/", "/saved/", "/recent/", "/settings/", "/parking/", "/manifest.webmanifest", "/offline.html"];
@@ -8,6 +8,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  if ("navigationPreload" in self.registration) event.waitUntil(self.registration.navigationPreload.enable().catch(() => undefined));
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => ![APP_CACHE, RUNTIME_CACHE].includes(key)).map((key) => caches.delete(key))))
