@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { Car, ChevronDown, ExternalLink, LoaderCircle, MapPin, Navigation, ShieldCheck } from "lucide-react";
 import { getRuntimeLoadedPlaces } from "@/lib/database/runtime-places";
 import { rankNearbyParking } from "@/lib/discovery/parking-match";
@@ -47,6 +47,27 @@ function parkingFitScore(place: Place, distanceKm: number, walkingMinutes: numbe
   if (details?.coveredParking === true) score += 2;
   if (details?.hourlyPrice != null || details?.dailyPrice != null || details?.monthlyPrice != null) score += 4;
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function parkingFitBreakdown(place: Place, distanceKm: number, walkingMinutes: number | null | undefined) {
+  const details = place.parkingDetails;
+  const distance = distanceKm <= 0.3 ? 100 : distanceKm <= 0.7 ? 84 : distanceKm <= 1.2 ? 66 : distanceKm <= 2 ? 42 : 22;
+  const walking = walkingMinutes == null ? 45 : walkingMinutes <= 5 ? 100 : walkingMinutes <= 10 ? 78 : walkingMinutes <= 15 ? 56 : 32;
+  const availability = details?.availabilityStatus === "available" ? 100 : details?.availabilityStatus === "call_to_confirm" ? 62 : details?.availabilityStatus === "full" ? 8 : 42;
+  const securitySignals = [details?.cctv, details?.securityGuard, details?.coveredParking].filter((value) => value === true).length;
+  const security = securitySignals === 3 ? 100 : securitySignals === 2 ? 78 : securitySignals === 1 ? 56 : 34;
+  return { distance, walking, availability, security };
+}
+
+function ParkingScoreGauge({ score, language }: { score: number; language: "th" | "en" }) {
+  return (
+    <div className="amd-score-gauge" style={{ "--amd-score": score } as CSSProperties} aria-label={`${language === "en" ? "Parking fit" : "ความเหมาะสม"} ${score} ${language === "en" ? "out of 100" : "จาก 100"}`}>
+      <div className="text-center">
+        <p className="text-[14px] font-extrabold leading-none text-cyan-100">{score}</p>
+        <p className="mt-0.5 text-[6px] font-bold uppercase tracking-[0.08em] text-white/35">{language === "en" ? "FIT" : "FIT"}</p>
+      </div>
+    </div>
+  );
 }
 
 function availabilityAgeLabel(place: Place, language: "th" | "en") {
@@ -142,9 +163,10 @@ export function NearbyParkingPanel({
             const details = match.place.parkingDetails;
             const expanded = expandedId === match.place.id;
             const fitScore = parkingFitScore(match.place, match.distanceKm, match.walkingMinutes);
+            const fitBreakdown = parkingFitBreakdown(match.place, match.distanceKm, match.walkingMinutes);
             const availabilityAge = availabilityAgeLabel(match.place, language);
             return (
-              <article key={match.place.id} data-testid="parking-match" className="rounded-2xl border border-white/[0.065] bg-black/10 p-3">
+              <article key={match.place.id} data-testid="parking-match" className="amd-depth-base rounded-2xl border p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-[11px] font-bold text-white/85">{match.place.name}</p>
@@ -153,27 +175,42 @@ export function NearbyParkingPanel({
                     {availabilityAge && <p className="mt-1 text-[8px] text-white/30">{availabilityAge}</p>}
                     {match.walkingMinutes != null && <p className="mt-1 text-[9px] font-semibold text-cyan-100">{copy.walk} {match.walkingMinutes} {language === "en" ? "min" : "นาที"}</p>}
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    <span className={`rounded-lg border px-2 py-1 text-[8px] font-bold ${fitScore >= 80 ? "border-emerald-300/12 bg-emerald-300/[0.06] text-emerald-100" : fitScore >= 60 ? "border-cyan-300/10 bg-cyan-300/[0.05] text-cyan-100" : "border-amber-300/10 bg-amber-300/[0.05] text-amber-100"}`}>{language === "en" ? "Fit" : "เหมาะ"} {fitScore}</span>
+                  <div className="flex shrink-0 flex-col items-center gap-1.5">
+                    <ParkingScoreGauge score={fitScore} language={language} />
                     {details?.access24Hours === true && <span className="rounded-lg border border-cyan-300/10 bg-cyan-300/[0.05] px-2 py-1 text-[8px] font-bold text-cyan-100">24H</span>}
                   </div>
                 </div>
 
                 {expanded && (
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-[8px] text-white/48">
-                    {details?.coveredParking === true && <span>Covered</span>}
-                    {details?.cctv === true && <span>CCTV</span>}
-                    {details?.securityGuard === true && <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3" />Security</span>}
-                    {details?.overnightAllowed === true && <span>{language === "en" ? "Overnight" : "ค้างคืนได้"}</span>}
-                    {details?.evCharging === true && <span>EV</span>}
+                  <div className="mt-3 rounded-xl border border-white/[0.055] bg-white/[0.02] p-3">
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                      {[
+                        { label: language === "en" ? "Distance" : "ระยะทาง", value: fitBreakdown.distance },
+                        { label: language === "en" ? "Walking" : "เวลาเดิน", value: fitBreakdown.walking },
+                        { label: language === "en" ? "Availability" : "ที่ว่าง", value: fitBreakdown.availability },
+                        { label: language === "en" ? "Security" : "ความปลอดภัย", value: fitBreakdown.security },
+                      ].map((item) => (
+                        <div key={item.label}>
+                          <div className="flex items-center justify-between gap-2 text-[7px] font-semibold text-white/40"><span>{item.label}</span><span>{item.value}</span></div>
+                          <div className="amd-score-bar mt-1"><span style={{ width: `${item.value}%` }} /></div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5 text-[8px] text-white/48">
+                      {details?.coveredParking === true && <span>Covered</span>}
+                      {details?.cctv === true && <span>CCTV</span>}
+                      {details?.securityGuard === true && <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3" />Security</span>}
+                      {details?.overnightAllowed === true && <span>{language === "en" ? "Overnight" : "ค้างคืนได้"}</span>}
+                      {details?.evCharging === true && <span>EV</span>}
+                    </div>
                   </div>
                 )}
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setExpandedId((current) => current === match.place.id ? null : match.place.id)} className="min-h-10 rounded-xl border border-white/[0.07] bg-white/[0.035] px-2 text-[9px] font-bold text-white/65">
+                  <button type="button" onClick={() => setExpandedId((current) => current === match.place.id ? null : match.place.id)} className="amd-micro-action min-h-10 rounded-xl border border-white/[0.07] bg-white/[0.035] px-2 text-[9px] font-bold text-white/65">
                     {copy.details}
                   </button>
-                  <a href={googleMapsDirectionsFallbackUrl(match.place)} target="_blank" rel="noreferrer" className="flex min-h-10 items-center justify-center gap-1 rounded-xl border border-cyan-300/12 bg-cyan-300/[0.06] px-2 text-[9px] font-bold text-cyan-100">
+                  <a href={googleMapsDirectionsFallbackUrl(match.place)} target="_blank" rel="noreferrer" className="amd-micro-action flex min-h-10 items-center justify-center gap-1 rounded-xl border border-cyan-300/12 bg-cyan-300/[0.06] px-2 text-[9px] font-bold text-cyan-100">
                     <Navigation className="h-3.5 w-3.5" />{copy.directions}
                   </a>
                 </div>
