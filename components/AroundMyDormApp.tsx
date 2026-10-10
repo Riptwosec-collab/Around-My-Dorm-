@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   BadgeCheck,
   Bell,
@@ -47,19 +48,14 @@ import { CATEGORIES, CATEGORY_MAP } from "@/data/categories";
 import { PLACES } from "@/data/places";
 import { FilterSheet, EMPTY_FILTERS, type FilterState } from "@/components/FilterSheet";
 import { PlaceCard } from "@/components/PlaceCard";
-import { PlaceDetail } from "@/components/PlaceDetail";
 import { CollectionEditorSheet } from "@/components/CollectionEditorSheet";
 import { CollectionSelectorSheet } from "@/components/CollectionSelectorSheet";
 import { CategoryPreferenceSheet } from "@/components/CategoryPreferenceSheet";
-import { FoodNowSheet } from "@/components/FoodNowSheet";
 import { recommendFoodNow as rankFoodNowOptions, type FoodNowOptions, type FoodNowResult } from "@/lib/discovery/food-now";
 import { HomeLocationSheet } from "@/components/HomeLocationSheet";
 import { InfoSheet } from "@/components/InfoSheet";
 import { MapBottomSheet } from "@/components/MapBottomSheet";
-import { ManualGoogleMap } from "@/components/ManualGoogleMap";
 import { MapPlaceRail } from "@/components/MapPlaceRail";
-import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
-import { DataManagement } from "@/components/DataManagement";
 import { usePlaceDatabase } from "@/components/app-shell/usePlaceDatabase";
 import { deriveDiscoveryState } from "@/lib/discovery/derive-visible-places";
 import { parseDiscoveryQuery, type DiscoveryIntent } from "@/lib/discovery/query-intent";
@@ -86,7 +82,8 @@ import {
 } from "@/lib/place-utils";
 import type { CategoryId, Place, SortMode } from "@/types/place";
 import { PageHeader, Toggle, SettingRow, MiniMapArtwork, LoadingCards } from "@/components/AppShellPrimitives";
-import { SmartCapabilityHub } from "@/components/SmartCapabilityHub";
+import { SmartCollectionsBar, matchesSmartCollection, type SmartCollectionKey } from "@/components/SmartCollectionsBar";
+import { loadOfflineAppSnapshot, saveOfflineAppSnapshot } from "@/lib/offline-snapshot";
 import {
   DEFAULT_COLLECTIONS,
   DEFAULT_SETTINGS,
@@ -110,6 +107,15 @@ import {
   sortPlaces,
   type RecommendationContext,
 } from "@/lib/place-ranking";
+
+const SmartCapabilityHub = dynamic(() => import("@/components/SmartCapabilityHub").then((mod) => mod.SmartCapabilityHub), { ssr: false });
+const HomeIntelligence = dynamic(() => import("@/components/HomeIntelligence").then((mod) => mod.HomeIntelligence), { ssr: false });
+const PwaExperienceCenter = dynamic(() => import("@/components/PwaExperienceCenter").then((mod) => mod.PwaExperienceCenter), { ssr: false });
+const ManualGoogleMap = dynamic(() => import("@/components/ManualGoogleMap").then((mod) => mod.ManualGoogleMap), { ssr: false });
+const GoogleDiscoverySheet = dynamic(() => import("@/components/GoogleDiscoverySheet").then((mod) => mod.GoogleDiscoverySheet), { ssr: false });
+const DataManagement = dynamic(() => import("@/components/DataManagement").then((mod) => mod.DataManagement), { ssr: false });
+const PlaceDetail = dynamic(() => import("@/components/PlaceDetail").then((mod) => mod.PlaceDetail), { ssr: false });
+const FoodNowSheet = dynamic(() => import("@/components/FoodNowSheet").then((mod) => mod.FoodNowSheet), { ssr: false });
 
 function relativeViewedLabel(iso: string | undefined, language: Language) {
   if (!iso) return language === "en" ? "Recently viewed" : "ดูล่าสุด";
@@ -163,6 +169,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [collections, setCollections] = useState<SavedCollection[]>(DEFAULT_COLLECTIONS);
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
+  const [smartCollectionFilter, setSmartCollectionFilter] = useState<SmartCollectionKey>(null);
   const [collectionEditor, setCollectionEditor] = useState<{ mode: "create" | "rename" | "delete"; collection?: SavedCollection } | null>(null);
   const [collectionSelectorPlace, setCollectionSelectorPlace] = useState<Place | null>(null);
   const [categoryPreferenceOpen, setCategoryPreferenceOpen] = useState(false);
@@ -188,6 +195,20 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sharedText = [params.get("share-title"), params.get("share-text")].filter(Boolean).join(" ").trim();
+    if (!sharedText) return;
+    setQuery(sharedText);
+    setDebouncedQuery(sharedText);
+    setSearchFocused(true);
+    params.delete("share-title");
+    params.delete("share-text");
+    params.delete("share-url");
+    const next = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${next ? `?${next}` : ""}`);
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [query]);
@@ -205,6 +226,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
   const [cloudReady, setCloudReady] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
+  const [offlineFallbackActive, setOfflineFallbackActive] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -230,12 +252,25 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         setOrigin(customCenter); setOriginMode("custom"); setMapSearchCenter(customCenter);
       }
       setCollections(state.collections.length ? state.collections : DEFAULT_COLLECTIONS);
-      setCloudReady(true); setCloudError(null);
+      setCloudReady(true); setCloudError(null); setOfflineFallbackActive(false);
       void logRuntimeEventCloud("cloud_state_loaded", { favorites: state.favorites.length, recent: state.recentViews.length, collections: state.collections.length });
     }).catch((error) => {
       if (!active) return;
+      const snapshot = loadOfflineAppSnapshot();
       setCloudError(error instanceof Error ? error.message : "Cloud unavailable");
       setCloudReady(false);
+      if (snapshot) {
+        setFavorites(snapshot.favorites);
+        setRecentViews(snapshot.recentViews);
+        setCollections(snapshot.collections.length ? snapshot.collections : DEFAULT_COLLECTIONS);
+        setSettings({ ...DEFAULT_SETTINGS, ...snapshot.settings, placesUiVersion: DEFAULT_SETTINGS.placesUiVersion });
+        setRadiusMeters(snapshot.settings.defaultRadius || DEFAULT_SETTINGS.defaultRadius);
+        if (snapshot.settings.homeMode === "custom" && snapshot.settings.customHomeLocation) {
+          const customCenter = { lat: snapshot.settings.customHomeLocation.latitude, lng: snapshot.settings.customHomeLocation.longitude };
+          setOrigin(customCenter); setMapSearchCenter(customCenter); setOriginMode("custom");
+        }
+        setOfflineFallbackActive(true);
+      }
     });
     return () => { active = false; };
   }, []);
@@ -266,11 +301,30 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     return () => window.clearTimeout(timer);
   }, [settings, cloudReady]);
 
+  useEffect(() => {
+    if (!cloudReady && !offlineFallbackActive) return;
+    saveOfflineAppSnapshot({ favorites, recentViews, settings, collections });
+  }, [favorites, recentViews, settings, collections, cloudReady, offlineFallbackActive]);
+
+  const categoryAffinity = useMemo(() => {
+    const affinity = new Map<CategoryId, number>();
+    const bump = (place: Place | undefined, weight: number) => {
+      if (!place) return;
+      for (const categoryId of Array.from(new Set<CategoryId>([place.category, ...place.categories]))) {
+        affinity.set(categoryId, (affinity.get(categoryId) ?? 0) + weight);
+      }
+    };
+    favorites.forEach((place) => bump(place, 4));
+    recentViews.slice(0, 30).forEach((view, index) => bump(view.snapshot, Math.max(0.5, 2 - index * 0.04)));
+    return affinity;
+  }, [favorites, recentViews]);
+
   const recommendationContext = useMemo<RecommendationContext>(() => ({
     preferredCategories: new Set(settings.preferredCategories || []),
     favoriteIds: new Set(favorites.map((place) => place.id)),
     recentIds: new Set(recentViews.map((view) => view.placeId)),
-  }), [settings.preferredCategories, favorites, recentViews]);
+    categoryAffinity,
+  }), [settings.preferredCategories, favorites, recentViews, categoryAffinity]);
 
   const { allPlaces, visiblePlaces } = useMemo(
     () => deriveDiscoveryState({
@@ -334,10 +388,14 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }, [recentPlaces, recentQuickFilter]);
 
   const filteredFavoritePlaces = useMemo(() => {
-    if (!selectedCollection) return favoritePlaces;
-    const ids = new Set(collections.find((collection) => collection.id === selectedCollection)?.placeIds || []);
-    return favoritePlaces.filter((place) => ids.has(place.id));
-  }, [favoritePlaces, selectedCollection, collections]);
+    let result = favoritePlaces;
+    if (selectedCollection) {
+      const ids = new Set(collections.find((collection) => collection.id === selectedCollection)?.placeIds || []);
+      result = result.filter((place) => ids.has(place.id));
+    }
+    if (smartCollectionFilter) result = result.filter((place) => matchesSmartCollection(place, smartCollectionFilter));
+    return result;
+  }, [favoritePlaces, selectedCollection, collections, smartCollectionFilter]);
 
   const localPicks = useMemo(() => smartLocalPicks(visiblePlaces, recommendationContext, 4), [visiblePlaces, recommendationContext]);
   const localPickIds = useMemo(() => new Set(localPicks.map((place) => place.id)), [localPicks]);
@@ -617,6 +675,15 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 </div>
               </div>
 
+              <HomeIntelligence
+                places={visiblePlaces.length ? visiblePlaces : allPlaces}
+                language={settings.language}
+                recommendationContext={recommendationContext}
+                onQuery={onSearchSuggestion}
+                onOpenPlace={openDetail}
+                onMapPlace={openMap}
+              />
+
               <section className="amd-hero-map mt-5 p-5 sm:min-h-[210px] sm:p-6">
                 <MiniMapArtwork />
                 <div className="relative z-10 max-w-[60%]">
@@ -725,11 +792,18 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
             <div className="amd-page amd-page-enter">
               <PageHeader title={copy.saved} subtitle={copy.savedSubtitle} right={<button type="button" onClick={createCollection} className="amd-chip flex items-center gap-2 px-3 text-[11px] font-semibold"><Plus className="h-4 w-4" /> {copy.addItem}</button>} />
 
-              <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Grid2X2 className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[19px] font-semibold">{copy.myCollections}</h2></div><button type="button" onClick={() => setSelectedCollection(null)} className="text-[11px] font-semibold text-[#149CFF]">{copy.viewAll} <ChevronRight className="inline h-3.5 w-3.5" /></button></div>
+              <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Grid2X2 className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[19px] font-semibold">{copy.myCollections}</h2></div><button type="button" onClick={() => { setSelectedCollection(null); setSmartCollectionFilter(null); }} className="text-[11px] font-semibold text-[#149CFF]">{copy.viewAll} <ChevronRight className="inline h-3.5 w-3.5" /></button></div>
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {collections.slice(0, 8).map((collection) => <button key={collection.id} type="button" onClick={() => setSelectedCollection(selectedCollection === collection.id ? null : collection.id)} className={`amd-glass amd-card min-h-[132px] p-4 text-left transition ${selectedCollection === collection.id ? "amd-card-selected" : ""}`}><span className="text-[28px]">{collection.icon}</span><p className="mt-4 text-[15px] font-semibold">{collection.title}</p><p className="mt-1 text-[12px] text-[var(--amd-text-2)]">{collection.placeIds.length} รายการ</p></button>)}
+                {collections.slice(0, 8).map((collection) => <button key={collection.id} type="button" onClick={() => { setSmartCollectionFilter(null); setSelectedCollection(selectedCollection === collection.id ? null : collection.id); }} className={`amd-glass amd-card min-h-[132px] p-4 text-left transition ${selectedCollection === collection.id ? "amd-card-selected" : ""}`}><span className="text-[28px]">{collection.icon}</span><p className="mt-4 text-[15px] font-semibold">{collection.title}</p><p className="mt-1 text-[12px] text-[var(--amd-text-2)]">{collection.placeIds.length} รายการ</p></button>)}
               </div>
+
+              <SmartCollectionsBar
+                places={favoritePlaces}
+                selected={smartCollectionFilter}
+                language={settings.language}
+                onSelect={(key) => { setSelectedCollection(null); setSmartCollectionFilter(key); }}
+              />
 
               {selectedCollection && (() => { const collection = collections.find((item) => item.id === selectedCollection); return collection ? <div className="mt-3 flex items-center justify-end gap-2"><button type="button" onClick={() => renameCollection(collection)} className="amd-chip px-3 text-[10px]">{copy.rename}</button>{!["wishlist", "regular", "late", "work"].includes(collection.id) && <button type="button" onClick={() => deleteCollection(collection)} className="amd-chip flex items-center gap-1 px-3 text-[10px] text-rose-300"><Trash2 className="h-3.5 w-3.5" /> {copy.delete}</button>}</div> : null; })()}
 
@@ -769,7 +843,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
           {tab === "settings" && (
             <div className="amd-page amd-page-enter">
-              <div data-testid="cloud-only-status" className={`mb-3 rounded-2xl border px-3 py-2 text-[9px] ${cloudReady ? "border-emerald-300/15 bg-emerald-300/[0.05] text-emerald-100" : "border-amber-300/15 bg-amber-300/[0.05] text-amber-100"}`}>{cloudReady ? (settings.language === "en" ? "Cloud-only storage active • Supabase sync enabled" : "บันทึกบนคลาวด์เท่านั้น • Supabase Sync ทำงาน") : (settings.language === "en" ? `Cloud storage unavailable${cloudError ? `: ${cloudError}` : ""}` : `คลาวด์ยังไม่พร้อม${cloudError ? `: ${cloudError}` : ""}`)}</div>
+              <div data-testid="cloud-only-status" className={`mb-3 rounded-2xl border px-3 py-2 text-[9px] ${cloudReady ? "border-emerald-300/15 bg-emerald-300/[0.05] text-emerald-100" : "border-amber-300/15 bg-amber-300/[0.05] text-amber-100"}`}>{cloudReady ? (settings.language === "en" ? "Supabase sync active • offline snapshot ready" : "Supabase Sync ทำงาน • มี Offline Snapshot") : offlineFallbackActive ? (settings.language === "en" ? "Offline snapshot active • cloud will resync when available" : "กำลังใช้ Offline Snapshot • คลาวด์จะซิงก์เมื่อกลับมา") : (settings.language === "en" ? `Cloud storage unavailable${cloudError ? `: ${cloudError}` : ""}` : `คลาวด์ยังไม่พร้อม${cloudError ? `: ${cloudError}` : ""}`)}</div>
               <PageHeader title={copy.settings} subtitle={copy.settingsSubtitle} />
 
               <section className="amd-glass amd-card-selected amd-card flex items-center gap-4 p-4">
@@ -789,6 +863,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 <SettingRow icon={<Car className="h-5 w-5" />} title={copy.parkingAlerts} subtitle="การเปลี่ยนแปลงข้อมูลที่จอดรถใกล้หอ" action={<Toggle active={settings.parkingAlerts} onChange={() => setSettings((current) => ({ ...current, parkingAlerts: !current.parkingAlerts }))} />} />
               </section>
 
+              <PwaExperienceCenter language={settings.language} />
+
               <section className="amd-glass amd-card mt-4 px-4">
                 <div className="py-3"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center text-[#00D9FF]"><Palette className="h-5 w-5" /></div><div><p className="text-[14px] font-semibold">{copy.theme}</p><p className="mt-0.5 text-[11px] text-[var(--amd-text-3)]">{copy.themeSub}</p></div></div><div className="mt-3 grid grid-cols-3 gap-2">{(["light", "dark", "system"] as ThemeMode[]).map((theme) => <button key={theme} type="button" onClick={() => setSettings((current) => ({ ...current, theme }))} className={`amd-chip px-3 text-[10px] font-semibold ${settings.theme === theme ? "amd-chip-active" : ""}`}>{theme === "light" ? copy.light : theme === "dark" ? copy.dark : copy.system}</button>)}</div></div>
                 <SettingRow icon={<Grid2X2 className="h-5 w-5" />} title={copy.interestedCategories} subtitle={copy.interestedCategoriesSub} action={<button type="button" onClick={() => setCategoryPreferenceOpen(true)} className="flex items-center gap-1 text-[11px] font-semibold text-[#149CFF]">{copy.manageCategories} <ChevronRight className="h-4 w-4" /></button>} />
@@ -806,7 +882,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 <SettingRow icon={<Info className="h-5 w-5" />} title={copy.about} subtitle={copy.aboutSub} action={<button type="button" aria-label={copy.about} onClick={() => setInfoSheet("about")} className="grid h-11 w-11 place-items-center"><ChevronRight className="h-5 w-5 text-[var(--amd-text-2)]" /></button>} />
               </section>
 
-              <section className="amd-glass amd-card mt-4 overflow-hidden"><div className="grid grid-cols-[1.1fr_1fr_1fr] divide-x divide-[rgba(120,160,210,.11)]"><div className="p-4"><p className="text-[10px] text-[var(--amd-text-3)]">{copy.savedCount}</p><p className="mt-1 text-[24px] font-semibold">{favorites.length}</p></div><div className="p-4"><p className="text-[10px] text-[var(--amd-text-3)]">{copy.recentCount}</p><p className="mt-1 text-[24px] font-semibold">{recentPlaces.length}</p></div><div className="p-4"><p className="text-[10px] text-[var(--amd-text-3)]">{copy.placeData}</p><p className="mt-1 text-[24px] font-semibold">{allPlaces.length}</p></div></div><div className="border-t border-[rgba(120,160,210,.11)] px-4 py-3 text-right text-[10px] text-[var(--amd-text-3)]">Around My Dorm • v2.2.0</div></section>
+              <section className="amd-glass amd-card mt-4 overflow-hidden"><div className="grid grid-cols-[1.1fr_1fr_1fr] divide-x divide-[rgba(120,160,210,.11)]"><div className="p-4"><p className="text-[10px] text-[var(--amd-text-3)]">{copy.savedCount}</p><p className="mt-1 text-[24px] font-semibold">{favorites.length}</p></div><div className="p-4"><p className="text-[10px] text-[var(--amd-text-3)]">{copy.recentCount}</p><p className="mt-1 text-[24px] font-semibold">{recentPlaces.length}</p></div><div className="p-4"><p className="text-[10px] text-[var(--amd-text-3)]">{copy.placeData}</p><p className="mt-1 text-[24px] font-semibold">{allPlaces.length}</p></div></div><div className="border-t border-[rgba(120,160,210,.11)] px-4 py-3 text-right text-[10px] text-[var(--amd-text-3)]">Around My Dorm • v3.0.0 Local Life OS</div></section>
             </div>
           )}
         </div>
@@ -824,7 +900,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       {googleDiscoveryOpen && <GoogleDiscoverySheet initialQuery={query || (category !== "all" ? CATEGORY_MAP[category]?.name || "" : "")} center={mapSearchCenter} radiusMeters={radiusMeters} language={settings.language} onClose={() => setGoogleDiscoveryOpen(false)} onReviewCandidate={(candidate) => { try { sessionStorage.setItem("around-dorm-google-candidate-review-v1", JSON.stringify(candidate)); } catch {} setGoogleDiscoveryOpen(false); setDataManagementOpen(true); showToast(settings.language === "en" ? "Candidate opened for admin review" : "ส่ง Candidate ไปหน้า Data Management แล้ว"); }} />}
       {dataManagementOpen && <DataManagement places={allPlaces} databaseSource={databaseSource} language={settings.language} onClose={() => setDataManagementOpen(false)} onReload={() => { void reloadDatabase(); }} />}
       {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} resultCount={tab === "map" ? visiblePlaces.length : visiblePlaces.length} />}
-      {detailPlace && <PlaceDetail place={detailPlace} saved={isFavorite(detailPlace)} language={settings.language} onClose={() => setDetailPlace(null)} onSave={() => toggleFavorite(detailPlace)} onMap={() => { setDetailPlace(null); openMap(detailPlace); }} />}
+      {detailPlace && <PlaceDetail place={detailPlace} allPlaces={allPlaces} saved={isFavorite(detailPlace)} language={settings.language} onClose={() => setDetailPlace(null)} onSave={() => toggleFavorite(detailPlace)} onMap={() => { setDetailPlace(null); openMap(detailPlace); }} />}
       {collectionEditor && <CollectionEditorSheet mode={collectionEditor.mode} collection={collectionEditor.collection} language={settings.language} onClose={() => setCollectionEditor(null)} onSubmit={submitCollectionEditor} />}
       {collectionSelectorPlace && <CollectionSelectorSheet place={collectionSelectorPlace} collections={collections} language={settings.language} onToggle={(collectionId) => toggleFavoriteCollection(collectionSelectorPlace, collectionId)} onClose={() => setCollectionSelectorPlace(null)} />}
       {categoryPreferenceOpen && <CategoryPreferenceSheet value={settings.preferredCategories || []} language={settings.language} onChange={(preferredCategories) => setSettings((current) => ({ ...current, preferredCategories }))} onClose={() => setCategoryPreferenceOpen(false)} />}
