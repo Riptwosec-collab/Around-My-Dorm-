@@ -274,6 +274,80 @@
   letter-spacing: -.035em;
 }
 
+
+/* Search expands optically, not geometrically, so layout never jumps. */
+.amd-input:focus-within {
+  transform: translateY(-1px) scale(1.006);
+  box-shadow: 0 0 0 1px rgba(25,230,255,.10), 0 14px 34px rgba(0,0,0,.31), 0 0 24px rgba(0,153,255,.09);
+}
+
+/* Local radar artwork for Home / Recent map cards. */
+.amd-radar-home {
+  position: relative;
+  isolation: isolate;
+}
+.amd-radar-home::before,
+.amd-radar-home::after {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  z-index: -1;
+  border: 1px solid rgba(20,156,255,.25);
+  border-radius: 999px;
+  animation: amd-home-radar 3.8s ease-out infinite;
+}
+.amd-radar-home::after { inset: -28px; animation-delay: 1.25s; }
+.amd-radar-dot { animation: amd-radar-dot 3.2s ease-in-out infinite; }
+.amd-radar-dot:nth-of-type(2n) { animation-delay: .8s; }
+.amd-radar-dot:nth-of-type(3n) { animation-delay: 1.45s; }
+
+/* Saved collection covers use restrained hue shifts, not full-card gradients. */
+.amd-collection-card {
+  overflow: hidden;
+  position: relative;
+}
+.amd-collection-card::after {
+  content: "";
+  position: absolute;
+  width: 88px;
+  height: 88px;
+  right: -30px;
+  top: -34px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: hsl(var(--amd-collection-hue, 200) 90% 58% / .10);
+  box-shadow: 0 0 34px hsl(var(--amd-collection-hue, 200) 90% 58% / .07);
+}
+
+/* Crowd signal: four tiny waveform bars encode activity while copy stays readable. */
+.amd-crowd-wave {
+  display: inline-flex;
+  align-items: end;
+  gap: 2px;
+  width: 18px;
+  height: 12px;
+}
+.amd-crowd-wave > span {
+  width: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: .72;
+  animation: amd-crowd-wave 1.45s ease-in-out infinite alternate;
+}
+.amd-crowd-wave > span:nth-child(1) { height: 4px; }
+.amd-crowd-wave > span:nth-child(2) { height: 9px; animation-delay: .18s; }
+.amd-crowd-wave > span:nth-child(3) { height: 6px; animation-delay: .36s; }
+.amd-crowd-wave > span:nth-child(4) { height: 11px; animation-delay: .54s; }
+
+@keyframes amd-radar-dot {
+  0%,100% { opacity: .48; transform: scale(.9); }
+  50% { opacity: 1; transform: scale(1.16); }
+}
+@keyframes amd-crowd-wave {
+  from { transform: scaleY(.55); opacity: .45; }
+  to { transform: scaleY(1); opacity: .9; }
+}
+
 /* Keep animated surfaces local and lightweight on phones. */
 @media (max-width: 767px) {
   .amd-intelligence-hero::after {
@@ -321,6 +395,10 @@
 @media (prefers-reduced-motion: reduce) {
   .amd-intelligence-hero::after,
   .amd-live-dot::after,
+  .amd-radar-home::before,
+  .amd-radar-home::after,
+  .amd-radar-dot,
+  .amd-crowd-wave > span,
   .amd-google-marker-selected::after,
   .amd-google-home-marker::before,
   .amd-google-home-marker::after,
