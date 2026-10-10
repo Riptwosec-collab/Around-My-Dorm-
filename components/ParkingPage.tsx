@@ -33,7 +33,7 @@ export function ParkingPage() {
 
   return (
     <main className="min-h-[100dvh] bg-[#050812] text-white">
-      <div className="mx-auto min-h-[100dvh] w-full max-w-[900px] px-4 pb-[calc(32px+env(safe-area-inset-bottom))] pt-[max(18px,env(safe-area-inset-top))] sm:px-6">
+      <div className="mx-auto min-h-[100dvh] w-full max-w-[430px] px-4 pb-[calc(32px+env(safe-area-inset-bottom))] pt-[max(18px,env(safe-area-inset-top))] sm:px-6">
         <header className="flex items-center gap-3">
           <a aria-label="กลับหน้าแรก" href="/" className="grid h-11 w-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.05]"><ArrowLeft className="h-4 w-4" /></a>
           <div>
@@ -57,7 +57,7 @@ export function ParkingPage() {
           <span className="text-[10px] text-white/35">{places.length} รายการ</span>
         </div>
 
-        <section className="grid gap-3 md:grid-cols-2">
+        <section className="grid min-w-0 gap-3">
           {places.map((place) => {
             const status = getParkingStatus(place);
             const details = place.parkingDetails;

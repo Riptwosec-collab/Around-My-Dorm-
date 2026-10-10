@@ -157,3 +157,35 @@ body {
     animation-duration: 170ms;
   }
 }
+
+
+/* Compact header and settings controls must wrap instead of expanding the
+   installed PWA beyond the device width (including 320–375px screens). */
+.amd-page-header > .min-w-0,
+.amd-setting-row > .min-w-0 {
+  min-width: 0;
+}
+.amd-page-header h1 {
+  font-size: clamp(24px, 8vw, 34px);
+  overflow-wrap: anywhere;
+  line-height: 1.12;
+}
+.amd-page-header-action {
+  max-width: 48%;
+}
+.amd-page-header-action > *,
+.amd-setting-row-action > * {
+  max-width: 100%;
+}
+.amd-setting-row-action {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 359px) {
+  .amd-setting-row {
+    flex-wrap: wrap;
+  }
+  .amd-setting-row-action {
+    margin-left: 48px;
+    max-width: calc(100% - 48px);
+  }
+}

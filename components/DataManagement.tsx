@@ -2,19 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { AlertTriangle, CheckCircle2, Database, FileUp, History, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react";
 import { CATEGORIES } from "@/data/categories";
-import { GoogleMaintenancePanel } from "@/components/GoogleMaintenancePanel";
-import { GoogleMapsUsageDashboard } from "@/components/GoogleMapsUsageDashboard";
-import { GoogleCloudAutoEnrichment } from "@/components/GoogleCloudAutoEnrichment";
-import { GoogleRouteRefresh } from "@/components/GoogleRouteRefresh";
-import { AdminPlatformDiagnostics } from "@/components/AdminPlatformDiagnostics";
+const GoogleMaintenancePanel = dynamic(() => import("@/components/GoogleMaintenancePanel").then((module) => module.GoogleMaintenancePanel), { ssr: false });
+const GoogleMapsUsageDashboard = dynamic(() => import("@/components/GoogleMapsUsageDashboard").then((module) => module.GoogleMapsUsageDashboard), { ssr: false });
+const GoogleCloudAutoEnrichment = dynamic(() => import("@/components/GoogleCloudAutoEnrichment").then((module) => module.GoogleCloudAutoEnrichment), { ssr: false });
+const GoogleRouteRefresh = dynamic(() => import("@/components/GoogleRouteRefresh").then((module) => module.GoogleRouteRefresh), { ssr: false });
+const AdminPlatformDiagnostics = dynamic(() => import("@/components/AdminPlatformDiagnostics").then((module) => module.AdminPlatformDiagnostics), { ssr: false });
 import { AdminGoogleAccess } from "@/components/AdminGoogleAccess";
 import type { AdminAccessState } from "@/lib/admin-auth";
-import { GoogleDiscoverySheet } from "@/components/GoogleDiscoverySheet";
+const GoogleDiscoverySheet = dynamic(() => import("@/components/GoogleDiscoverySheet").then((module) => module.GoogleDiscoverySheet), { ssr: false });
 import { DORM_CENTER } from "@/lib/place-utils";
-import { GooglePlaceIdManager } from "@/components/GooglePlaceIdManager";
-import { DataQualityDashboard } from "@/components/DataQualityDashboard";
+const GooglePlaceIdManager = dynamic(() => import("@/components/GooglePlaceIdManager").then((module) => module.GooglePlaceIdManager), { ssr: false });
+const DataQualityDashboard = dynamic(() => import("@/components/DataQualityDashboard").then((module) => module.DataQualityDashboard), { ssr: false });
 import { auditPlaces, findDuplicatePairs, selectPlacesForUpdate, type UpdateMode } from "@/lib/place-update-engine";
 import { freshnessState } from "@/lib/data-governance";
 import { addReviewedLocalPlace, applyLocalPlacePatch, loadLocalPlaceHistory, rollbackLocalPlaceHistory, type LocalPlaceHistory } from "@/lib/database/places";
@@ -431,7 +432,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
               <GoogleMaintenancePanel places={places} language={language} />
             </>)}
             {activePanel === "diagnostics" && <AdminPlatformDiagnostics places={places} language={language} />}
-            {activePanel === "placeIds" && <GooglePlaceIdManager places={places} language={language} />}
+            {activePanel === "placeIds" && <GooglePlaceIdManager places={places} language={language} onReload={onReload} />}
 
             {activePanel === "review" && (<>
 

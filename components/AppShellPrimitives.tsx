@@ -5,12 +5,12 @@ import { Car, Coffee, Home, Utensils } from "lucide-react";
 
 export function PageHeader({ title, subtitle, right }: { title: string; subtitle: string; right?: ReactNode }) {
   return (
-    <header className="amd-safe-top flex items-start justify-between gap-4 pb-5">
-      <div className="min-w-0">
+    <header className="amd-page-header amd-safe-top flex min-w-0 items-start justify-between gap-3 pb-5">
+      <div className="min-w-0 flex-1">
         <h1 className="text-[34px] font-bold leading-none tracking-[-0.045em] text-[var(--amd-text)] sm:text-[38px]">{title}</h1>
         <p className="mt-2 text-[14px] text-[var(--amd-text-2)]">{subtitle}</p>
       </div>
-      {right}
+      {right && <div className="amd-page-header-action min-w-0 shrink-0">{right}</div>}
     </header>
   );
 }
@@ -31,13 +31,13 @@ export function Toggle({ active, onChange }: { active: boolean; onChange: () => 
 
 export function SettingRow({ icon, title, subtitle, action }: { icon: ReactNode; title: string; subtitle?: string; action: ReactNode }) {
   return (
-    <div className="flex min-h-[66px] items-center gap-3 border-b border-[rgba(120,160,210,.11)] py-3 last:border-b-0">
+    <div className="amd-setting-row flex min-h-[66px] min-w-0 items-center gap-3 border-b border-[rgba(120,160,210,.11)] py-3 last:border-b-0">
       <div className="grid h-9 w-9 shrink-0 place-items-center text-[#00D9FF]">{icon}</div>
       <div className="min-w-0 flex-1">
         <p className="text-[14px] font-semibold text-[var(--amd-text)]">{title}</p>
         {subtitle && <p className="mt-0.5 text-[11px] text-[var(--amd-text-3)]">{subtitle}</p>}
       </div>
-      {action}
+      <div className="amd-setting-row-action min-w-0 max-w-[55%] shrink-0">{action}</div>
     </div>
   );
 }
