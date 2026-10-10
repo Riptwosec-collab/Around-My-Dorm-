@@ -97,3 +97,63 @@ body {
     border-right: 0;
   }
 }
+
+
+/* PWA overflow guard v5: all sheets respect the 430px app frame and native
+   device safe areas. Constrain width at the actual overlay, not only the page. */
+.amd-sheet-backdrop {
+  width: 100%;
+  max-width: 100dvw;
+  min-width: 0;
+  padding-inline: max(0px, env(safe-area-inset-left)) max(0px, env(safe-area-inset-right));
+  overflow-x: clip;
+}
+.amd-sheet-backdrop > .amd-sheet {
+  box-sizing: border-box;
+  min-width: 0;
+  width: min(100%, var(--amd-app-max-w));
+  max-width: min(100%, var(--amd-app-max-w));
+  max-height: min(92dvh, calc(100dvh - env(safe-area-inset-top)));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  will-change: auto;
+}
+.amd-sheet .grid > *,
+.amd-sheet .flex > *,
+.amd-sheet article,
+.amd-sheet section {
+  min-width: 0;
+}
+.amd-sheet input,
+.amd-sheet select,
+.amd-sheet textarea,
+.amd-sheet button {
+  max-width: 100%;
+}
+.amd-sheet p,
+.amd-sheet h2,
+.amd-sheet h3 {
+  overflow-wrap: anywhere;
+}
+.amd-admin-sheet .amd-admin-tabs button {
+  min-width: 0;
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 767px) {
+  .amd-sheet-backdrop {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .amd-admin-sheet .amd-glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--amd-glass);
+  }
+  .amd-admin-sheet {
+    animation-duration: 170ms;
+  }
+}

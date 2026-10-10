@@ -161,6 +161,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     reload: reloadDatabase,
   } = usePlaceDatabase();
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
+  const [exploreDisplayLimit, setExploreDisplayLimit] = useState(16);
   const [googleDiscoveryOpen, setGoogleDiscoveryOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
@@ -417,6 +418,10 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const localPicks = useMemo(() => smartLocalPicks(visiblePlaces, recommendationContext, 4), [visiblePlaces, recommendationContext]);
   const localPickIds = useMemo(() => new Set(localPicks.map((place) => place.id)), [localPicks]);
   const explorePlaces = useMemo(() => visiblePlaces.filter((place) => !localPickIds.has(place.id)), [visiblePlaces, localPickIds]);
+
+  useEffect(() => {
+    setExploreDisplayLimit(16);
+  }, [category, debouncedQuery, radiusMeters, sortMode, filters, origin, settings.verifiedOnly]);
 
   useEffect(() => {
     if (tab !== "map" || typeof window === "undefined") return;
@@ -764,7 +769,8 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
               </div>
 
               <div className="mt-3 space-y-3">
-                {explorePlaces.map((place) => <PlaceCard key={`all-${place.id}`} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} />)}
+                {explorePlaces.slice(0, exploreDisplayLimit).map((place) => <PlaceCard key={`all-${place.id}`} place={place} saved={isFavorite(place)} onSave={() => toggleFavorite(place)} onDetail={() => openDetail(place)} onMap={() => openMap(place)} language={settings.language} />)}
+                {explorePlaces.length > exploreDisplayLimit && <button type="button" onClick={() => setExploreDisplayLimit((current) => current + 16)} className="amd-chip flex min-h-11 w-full items-center justify-center rounded-2xl text-[11px] font-semibold">{settings.language === "en" ? `Show more places (${Math.min(exploreDisplayLimit, explorePlaces.length)}/${explorePlaces.length})` : `แสดงร้านเพิ่มเติม (${Math.min(exploreDisplayLimit, explorePlaces.length)}/${explorePlaces.length})`} <ChevronDown className="ml-2 h-4 w-4" /></button>}
                 {!visiblePlaces.length && !loadingPlaces && <div className="amd-glass amd-card p-7 text-center"><Search className="mx-auto h-7 w-7 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.noMatches}</p><p className="mt-1 text-[10px] leading-5 text-[var(--amd-text-3)]">{settings.language === "en" ? "Try cafe, mookata or parking" : "ลองค้นหา: ร้านกาแฟ • หมูกระทะ • ที่จอดรถ"}</p><div className="mt-4 flex flex-wrap justify-center gap-2"><button type="button" onClick={() => { setQuery(""); setCategory("cafe"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ร้านกาแฟ</button><button type="button" onClick={() => { setQuery("หมูกระทะ"); setCategory("all"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">หมูกระทะ</button><button type="button" onClick={() => { setQuery(""); setCategory("parking"); setFilters(EMPTY_FILTERS); }} className="amd-chip px-3 text-[10px]">ที่จอดรถ</button></div><button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setCategory("all"); setQuery(""); setQuickFilter(null); }} className="mt-4 text-[11px] font-semibold text-[#149CFF]">{copy.clearFilters}</button><button type="button" onClick={() => setGoogleDiscoveryOpen(true)} className="ml-3 mt-4 text-[11px] font-semibold text-[#00D9FF]">{settings.language === "en" ? "Search more places" : "ค้นหาเพิ่มเติม"}</button></div>}
               </div>
 

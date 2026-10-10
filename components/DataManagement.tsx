@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, Database, FileUp, History, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react";
 import { CATEGORIES } from "@/data/categories";
 import { GoogleMaintenancePanel } from "@/components/GoogleMaintenancePanel";
@@ -127,6 +128,8 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   const [scopeCategory, setScopeCategory] = useState<CategoryId>("cafe");
   const [scopeArea, setScopeArea] = useState("");
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<string[]>([]);
+  const [selectionQuery, setSelectionQuery] = useState("");
+  const [activePanel, setActivePanel] = useState<"overview" | "review" | "usage" | "enrichment" | "placeIds" | "diagnostics">("overview");
 
   async function reloadStagedCandidates() {
     const next = await loadPlaceCandidates(["new", "needs_review"]);
@@ -153,8 +156,14 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   }, [adminAccess.admin]);
 
   const summary = useMemo(() => auditPlaces(places), [places]);
-  const duplicates = useMemo(() => findDuplicatePairs(places).slice(0, 20), [places]);
-  const selected = useMemo(() => selectPlacesForUpdate(places, mode, { selectedIds: selectedPlaceIds, category: scopeCategory, area: scopeArea }), [places, mode, selectedPlaceIds, scopeCategory, scopeArea]);
+  const duplicates = useMemo(() => activePanel === "review" ? findDuplicatePairs(places).slice(0, 20) : [], [places, activePanel]);
+  const selected = useMemo(() => activePanel === "review" ? selectPlacesForUpdate(places, mode, { selectedIds: selectedPlaceIds, category: scopeCategory, area: scopeArea }) : [], [places, mode, selectedPlaceIds, scopeCategory, scopeArea, activePanel]);
+  const selectedPlaceIdSet = useMemo(() => new Set(selectedPlaceIds), [selectedPlaceIds]);
+  const selectablePlaces = useMemo(() => {
+    if (activePanel !== "review" || mode !== "selected") return [];
+    const term = selectionQuery.trim().toLocaleLowerCase();
+    return places.filter((place) => !term || `${place.name} ${place.area ?? ""} ${place.soi ?? ""}`.toLocaleLowerCase().includes(term)).slice(0, 80);
+  }, [activePanel, mode, places, selectionQuery]);
   const lastUpdated = useMemo(() => {
     const dates = places.map((place) => place.lastUpdated || place.lastChecked || place.lastVerified).filter(Boolean).map((value) => new Date(value as string).getTime()).filter(Number.isFinite);
     if (!dates.length) return null;
@@ -334,12 +343,13 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
   }
 
   return (
-    <div className="amd-sheet-backdrop z-[100]">
+    <>
+    <div className="amd-sheet-backdrop amd-admin-backdrop z-[100]">
       <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0" />
-      <section className="amd-sheet amd-glass-strong relative max-h-[92dvh] w-full max-w-[620px] overflow-y-auto rounded-t-[34px] border-b-0 px-4 pb-[calc(28px+env(safe-area-inset-bottom))] pt-3">
+      <section className="amd-sheet amd-admin-sheet amd-glass-strong relative max-h-[92dvh] w-full max-w-[430px] overflow-x-hidden overflow-y-auto rounded-t-[28px] border-b-0 px-4 pb-[calc(28px+env(safe-area-inset-bottom))] pt-3">
         <div className="sticky top-0 z-20 -mx-4 flex items-center justify-between border-b border-white/[0.06] bg-[var(--amd-glass-strong)] px-4 pb-3 pt-2 backdrop-blur-2xl">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00D9FF]">DATA MANAGEMENT</p><h2 className="mt-1 text-[22px] font-bold">{language === "en" ? "Place Database" : "จัดการฐานข้อมูลร้าน"}</h2></div>
-          <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.06]"><X className="h-4 w-4" /></button>
+          <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00D9FF]">DATA MANAGEMENT</p><h2 className="mt-1 break-words text-[20px] font-bold">{language === "en" ? "Place Database" : "จัดการฐานข้อมูลร้าน"}</h2></div>
+          <button type="button" onClick={onClose} className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/[0.06]"><X className="h-4 w-4" /></button>
         </div>
 
         <AdminGoogleAccess language={language} onStateChange={setAdminAccess} />
@@ -357,6 +367,18 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
               <strong>{language === "en" ? "Supabase admin connected" : "เชื่อม Supabase Admin แล้ว"}</strong> • {places.length} {language === "en" ? "places" : "ร้าน"} • {databaseSource} • {stagedCandidates.length} staged
             </section>
 
+            <nav aria-label={language === "en" ? "Database tools" : "เมนูจัดการฐานข้อมูล"} className="amd-admin-tabs mt-4 grid grid-cols-3 gap-2" data-testid="data-management-panels">
+              {([
+                { id: "overview", th: "ภาพรวม", en: "Overview" },
+                { id: "review", th: "ตรวจข้อมูล", en: "Review" },
+                { id: "usage", th: "การใช้ API", en: "API Usage" },
+                { id: "enrichment", th: "ปรับปรุงข้อมูล", en: "Enrichment" },
+                { id: "placeIds", th: "Place ID", en: "Place ID" },
+                { id: "diagnostics", th: "ตรวจระบบ", en: "Diagnostics" },
+              ] as const).map((item) => <button key={item.id} type="button" aria-pressed={activePanel === item.id} onClick={() => setActivePanel(item.id)} className={`amd-chip min-w-0 rounded-xl px-2 py-2 text-[10px] font-semibold ${activePanel === item.id ? "amd-chip-active" : ""}`}>{language === "en" ? item.en : item.th}</button>)}
+            </nav>
+
+            {activePanel === "overview" && (<>
             <DataQualityDashboard
               places={places}
               language={language}
@@ -376,6 +398,8 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
               <div className="flex items-start gap-3"><Database className="mt-0.5 h-5 w-5 text-[#00D9FF]" /><div><p className="text-[13px] font-semibold">Database-first runtime</p><p className="mt-1 text-[10px] leading-5 text-[var(--amd-text-2)]">{language === "en" ? `Current source: ${databaseSource}. Normal browsing does not query an external POI provider.` : `แหล่งข้อมูลปัจจุบัน: ${databaseSource} • การเปิดแอปปกติจะไม่ยิง External POI API`}</p><p className="mt-1 text-[9px] text-[var(--amd-text-3)]">{language === "en" ? `Last data timestamp: ${lastUpdated || "Unknown"}` : `ข้อมูลล่าสุด: ${lastUpdated || "ยังไม่มีข้อมูล"}`} • External calls: {externalUsage}</p></div></div>
             </section>
 
+            </>)}
+            {activePanel === "review" && (<>
             <section className="amd-glass amd-card mt-4 p-4">
               <p className="text-[11px] font-bold">{language === "en" ? "Update mode" : "โหมดตรวจอัปเดต"}</p>
               <select value={mode} onChange={(event) => setMode(event.target.value as UpdateMode)} className="amd-input mt-3 h-12 w-full rounded-2xl bg-[#07111f] px-3 text-[11px] outline-none">
@@ -383,7 +407,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
               </select>
               {mode === "category" && <select value={scopeCategory} onChange={(event) => setScopeCategory(event.target.value as CategoryId)} className="amd-input mt-2 h-11 w-full rounded-xl bg-[#07111f] px-3 text-[10px]">{CATEGORIES.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
               {mode === "area" && <input value={scopeArea} onChange={(event) => setScopeArea(event.target.value)} placeholder={language === "en" ? "Area / soi / address" : "พื้นที่ / ซอย / ที่อยู่"} className="amd-input mt-2 h-11 w-full rounded-xl px-3 text-[10px]" />}
-              {mode === "selected" && <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-white/[0.07] bg-black/10 p-2">{places.map((place) => { const checked = selectedPlaceIds.includes(place.id); return <label key={place.id} className="flex min-h-10 cursor-pointer items-center gap-2 border-b border-white/[0.04] px-2 text-[9px] last:border-0"><input type="checkbox" checked={checked} onChange={() => setSelectedPlaceIds((current) => checked ? current.filter((id) => id !== place.id) : [...current, place.id])} /><span className="min-w-0 flex-1 truncate">{place.name}</span><span className="text-[var(--amd-text-3)]">{place.area}</span></label>; })}</div>}
+              {mode === "selected" && <div className="mt-2 min-w-0"><input value={selectionQuery} onChange={(event) => setSelectionQuery(event.target.value)} placeholder={language === "en" ? "Search places to select" : "ค้นหาชื่อร้านที่ต้องการเลือก"} aria-label={language === "en" ? "Find places" : "ค้นหาร้าน"} className="amd-input mb-2 h-11 w-full rounded-xl px-3 text-[11px]" /><div className="max-h-44 overflow-x-hidden overflow-y-auto rounded-xl border border-white/[0.07] bg-black/10 p-2">{selectablePlaces.map((place) => { const checked = selectedPlaceIdSet.has(place.id); return <label key={place.id} className="flex min-h-10 min-w-0 cursor-pointer items-center gap-2 border-b border-white/[0.04] px-2 text-[9px] last:border-0"><input type="checkbox" checked={checked} onChange={() => setSelectedPlaceIds((current) => checked ? current.filter((id) => id !== place.id) : [...current, place.id])} /><span className="min-w-0 flex-1 truncate">{place.name}</span><span className="max-w-[35%] shrink-0 truncate text-[var(--amd-text-3)]">{place.area}</span></label>; })}</div><p className="mt-1 text-[9px] text-[var(--amd-text-3)]">{language === "en" ? "Showing up to 80 matches. Search to find other places." : "แสดงสูงสุด 80 รายการ • ค้นหาเพื่อเลือกร้านอื่น"} • {selectedPlaceIds.length} {language === "en" ? "selected" : "เลือกแล้ว"}</p></div>}
               <div className="mt-3 flex flex-wrap gap-2">
                 <button type="button" onClick={runLocalAudit} disabled={Boolean(progress)} className="amd-btn amd-btn-primary flex min-h-11 items-center gap-2 rounded-xl px-4 text-[10px] font-bold"><RefreshCw className={`h-4 w-4 ${progress ? "animate-spin" : ""}`} />{language === "en" ? "Check Existing Places" : "ตรวจร้านเดิม"}</button>
                 <label className="amd-btn flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-white/10 px-4 text-[10px] font-bold"><FileUp className="h-4 w-4" />{language === "en" ? "Review Import File" : "ตรวจไฟล์ Import"}<input type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importProviderFile(file); event.currentTarget.value = ""; }} /></label>
@@ -399,14 +423,17 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
               {manualOpen && <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/10 p-3"><p className="text-[11px] font-semibold">{language === "en" ? "Manual place" : "เพิ่มสถานที่ด้วยตนเอง"}</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><input value={manual.name} onChange={(event) => setManual((current) => ({ ...current, name: event.target.value }))} placeholder={language === "en" ? "Name" : "ชื่อร้าน"} className="amd-input h-11 rounded-xl px-3 text-[10px]" /><select value={manual.category} onChange={(event) => setManual((current) => ({ ...current, category: event.target.value as CategoryId }))} className="amd-input h-11 rounded-xl bg-[#07111f] px-3 text-[10px]">{CATEGORIES.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input value={manual.latitude} onChange={(event) => setManual((current) => ({ ...current, latitude: event.target.value }))} placeholder="Latitude" inputMode="decimal" className="amd-input h-11 rounded-xl px-3 text-[10px]" /><input value={manual.longitude} onChange={(event) => setManual((current) => ({ ...current, longitude: event.target.value }))} placeholder="Longitude" inputMode="decimal" className="amd-input h-11 rounded-xl px-3 text-[10px]" /><input value={manual.address} onChange={(event) => setManual((current) => ({ ...current, address: event.target.value }))} placeholder={language === "en" ? "Address (optional)" : "ที่อยู่ (ถ้ามี)"} className="amd-input h-11 rounded-xl px-3 text-[10px] sm:col-span-2" /><input value={manual.area} onChange={(event) => setManual((current) => ({ ...current, area: event.target.value }))} placeholder={language === "en" ? "Area (optional)" : "พื้นที่ (ถ้ามี)"} className="amd-input h-11 rounded-xl px-3 text-[10px] sm:col-span-2" /></div><button type="button" onClick={addManualPlace} className="amd-btn amd-btn-primary mt-3 min-h-11 rounded-xl px-4 text-[10px] font-bold">{language === "en" ? "Add as unverified manual record" : "เพิ่มเป็นข้อมูล Manual ที่ยังไม่ Verified"}</button></div>}
             </section>
 
-            {googleSearchOpen && <GoogleDiscoverySheet initialQuery={CATEGORIES.find((item) => item.id === scopeCategory)?.name || ""} center={DORM_CENTER} radiusMeters={2000} language={language} onClose={() => setGoogleSearchOpen(false)} onStageCandidate={stageGoogleCandidate} />}
+            </>)}
+            {activePanel === "usage" && <GoogleMapsUsageDashboard language={language} />}
+            {activePanel === "enrichment" && (<>
+              <GoogleCloudAutoEnrichment places={places} language={language} onReload={onReload} adminAccess={adminAccess} />
+              <GoogleRouteRefresh places={places} language={language} onReload={onReload} adminAllowed={adminAccess.admin} />
+              <GoogleMaintenancePanel places={places} language={language} />
+            </>)}
+            {activePanel === "diagnostics" && <AdminPlatformDiagnostics places={places} language={language} />}
+            {activePanel === "placeIds" && <GooglePlaceIdManager places={places} language={language} />}
 
-            <GoogleMapsUsageDashboard language={language} />
-            <GoogleCloudAutoEnrichment places={places} language={language} onReload={onReload} adminAccess={adminAccess} />
-            <GoogleRouteRefresh places={places} language={language} onReload={onReload} adminAllowed={adminAccess.admin} />
-            <AdminPlatformDiagnostics places={places} language={language} />
-            <GooglePlaceIdManager places={places} language={language} onReload={onReload} />
-            <GoogleMaintenancePanel places={places} language={language} />
+            {activePanel === "review" && (<>
 
             {auditDone && <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-emerald-300" /><p className="text-[12px] font-semibold">{language === "en" ? "Local audit complete" : "ตรวจฐานข้อมูลเสร็จแล้ว"}</p></div><div className="mt-3 grid grid-cols-5 gap-1 text-center text-[8px] text-[var(--amd-text-3)]">{Object.entries(summary.freshness).map(([state, count]) => <div key={state} className="rounded-xl bg-white/[0.035] p-2"><p className="uppercase">{state}</p><p className="mt-1 text-[14px] font-semibold text-[var(--amd-text)]">{count}</p></div>)}</div></section>}
 
@@ -422,9 +449,15 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
             <section className="amd-glass amd-card mt-4 p-4"><div className="flex items-center gap-2"><History className="h-5 w-5 text-[#00D9FF]" /><p className="text-[12px] font-semibold">{language === "en" ? "Update History" : "ประวัติการอัปเดต"}</p></div>{!history.length ? <p className="mt-3 text-[10px] text-[var(--amd-text-3)]">{language === "en" ? "No approved updates applied yet." : "ยังไม่มีการ Apply ข้อมูลที่ผ่านการอนุมัติ"}</p> : history.slice(0, 12).map((entry) => <div key={entry.id} className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white/[0.035] p-3"><div className="min-w-0"><p className="truncate text-[10px] font-semibold">{entry.placeName}</p><p className="mt-1 text-[8px] text-[var(--amd-text-3)]">{new Date(entry.changedAt).toLocaleString()} • {entry.source}</p></div><button type="button" onClick={() => undo(entry)} className="amd-chip flex h-9 min-h-0 items-center gap-1 px-3 text-[9px]"><RotateCcw className="h-3.5 w-3.5" />{language === "en" ? "Undo" : "ย้อนกลับ"}</button></div>)}</section>
 
             <section className="mt-4 rounded-[20px] border border-white/[0.06] bg-black/10 p-4 text-[9px] leading-5 text-[var(--amd-text-3)]"><p>{language === "en" ? "Google Maps is used as the map engine only. Permanent business data stays in the Around My Dorm database. External discovery must be run intentionally through an approved maintenance importer." : "Google Maps ใช้เป็น Map Engine เท่านั้น ข้อมูลร้านถาวรอยู่ในฐานข้อมูล Around My Dorm และ External Discovery ต้องเรียกแบบตั้งใจผ่าน Approved Maintenance Importer เท่านั้น"}</p><p className="mt-2">{language === "en" ? `Refresh candidates in current mode: ${selected.length}` : `จำนวนรายการตามโหมดปัจจุบัน: ${selected.length}`}</p><p className="mt-1">{language === "en" ? `Sample freshness: ${places[0] ? freshnessState(places[0]) : "n/a"}` : `ตัวอย่าง Freshness: ${places[0] ? freshnessState(places[0]) : "ไม่มี"}`}</p></section>
+            </>)}
           </>
         )}
       </section>
     </div>
+    {googleSearchOpen && createPortal(
+      <GoogleDiscoverySheet initialQuery={CATEGORIES.find((item) => item.id === scopeCategory)?.name || ""} center={DORM_CENTER} radiusMeters={2000} language={language} onClose={() => setGoogleSearchOpen(false)} onStageCandidate={stageGoogleCandidate} />,
+      document.body,
+    )}
+    </>
   );
 }
