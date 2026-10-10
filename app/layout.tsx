@@ -4,6 +4,7 @@ import "./premium-liquid-glass.css";
 import "./premium-liquid-glass-geometry.css";
 import "./premium-interactions.css";
 import "./premium-map-sheets.css";
+import "./premium-motion-v4.css";
 import "./app-frame-sizing.css";
 import "./render-stability.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
