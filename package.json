@@ -1,11 +1,11 @@
 {
   "name": "around-my-dorm-premium",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "typecheck": "tsc --noEmit",
-    "build": "next build",
+    "build": "tsx scripts/stamp-service-worker.ts && next build",
     "check": "npm run typecheck && npm run build",
     "build:cloudflare": "npm run check && wrangler deploy --dry-run",
     "deploy": "npm run build && wrangler deploy",
