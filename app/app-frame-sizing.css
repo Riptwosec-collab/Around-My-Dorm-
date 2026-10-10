@@ -1,35 +1,99 @@
 :root {
-  --amd-app-max-w: 519px;
-  --amd-page-gutter: clamp(16px, 4.6vw, 24px);
+  /*
+   * PWA-first sizing.
+   * 430px is the upper bound for the phone UI; real phones below this width
+   * always use the full viewport instead of being squeezed into a fixed canvas.
+   */
+  --amd-app-max-w: 430px;
+  --amd-page-gutter: clamp(14px, 4vw, 18px);
+  --amd-nav-bottom-gap: 8px;
 }
 
-/* Keep the whole app in the approved phone-like frame on wider screens.
-   Height remains content-driven so long pages continue to scroll normally. */
-.amd-shell {
-  width: min(100%, var(--amd-app-max-w));
+html,
+body {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+/* The application behaves like an installed phone app on mobile and becomes a
+   centered phone frame only when the browser viewport is wider than 430px. */
+.amd-app {
+  width: 100%;
   min-height: 100dvh;
+  overflow-x: clip;
+}
+
+.amd-shell {
+  width: 100%;
+  max-width: var(--amd-app-max-w);
+  min-height: 100dvh;
+  margin-inline: auto;
+  overflow-x: clip;
+}
+
+.amd-content {
+  min-height: 100dvh;
+  padding-bottom: calc(
+    var(--amd-nav-h) + 24px + max(env(safe-area-inset-bottom), 0px)
+  );
 }
 
 .amd-page {
-  max-width: var(--amd-app-max-w);
+  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
   padding-left: max(var(--amd-page-gutter), env(safe-area-inset-left));
   padding-right: max(var(--amd-page-gutter), env(safe-area-inset-right));
 }
 
+/* On actual phone widths, pin the nav to the device safe area. */
 .amd-nav {
   left: max(var(--amd-page-gutter), env(safe-area-inset-left));
   right: max(var(--amd-page-gutter), env(safe-area-inset-right));
-  max-width: calc(var(--amd-app-max-w) - (var(--amd-page-gutter) * 2));
+  bottom: max(var(--amd-nav-bottom-gap), env(safe-area-inset-bottom));
+  width: auto;
+  max-width: none;
+  margin-inline: 0;
+  transform: none;
 }
 
-/* A fixed element is positioned against the viewport, not the centered shell.
-   On viewports wider than the 519px app frame, explicitly center the nav on
-   the same axis as the shell. Mobile keeps the original safe-area insets. */
-@media (min-width: 520px) {
+/* On tablets/desktop keep the PWA at phone size instead of stretching the
+   interface. The fixed nav must be centered independently from the shell. */
+@media (min-width: 431px) {
   .amd-nav {
     left: 50%;
     right: auto;
     width: calc(var(--amd-app-max-w) - (var(--amd-page-gutter) * 2));
+    max-width: calc(100vw - 32px);
     transform: translateX(-50%);
+  }
+}
+
+/* Very narrow devices still retain usable touch targets and breathing room. */
+@media (max-width: 359px) {
+  :root {
+    --amd-page-gutter: 12px;
+  }
+}
+
+/* Installed PWA / Add to Home Screen mode: use the whole display, including
+   notched-device safe areas, without browser-sized outer spacing. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  html,
+  body,
+  .amd-app,
+  .amd-shell,
+  .amd-content {
+    min-height: 100dvh;
+  }
+
+  .amd-shell {
+    border-left: 0;
+    border-right: 0;
   }
 }
