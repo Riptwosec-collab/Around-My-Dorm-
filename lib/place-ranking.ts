@@ -7,6 +7,8 @@ export type RecommendationContext = {
   preferredCategories?: ReadonlySet<CategoryId>;
   favoriteIds?: ReadonlySet<string>;
   recentIds?: ReadonlySet<string>;
+  /** Weighted affinity learned locally from Saved + Recent activity. */
+  categoryAffinity?: ReadonlyMap<CategoryId, number>;
   now?: Date;
 };
 
@@ -96,6 +98,7 @@ export function recommendationScore(place: Place, context: RecommendationContext
   const preferred = context.preferredCategories ?? new Set<CategoryId>();
   const favorites = context.favoriteIds ?? new Set<string>();
   const recents = context.recentIds ?? new Set<string>();
+  const affinity = context.categoryAffinity;
   const now = context.now ?? new Date();
   const status = getPlaceOpenStatus(place, now);
   const hour = bangkokHour(now);
@@ -108,6 +111,14 @@ export function recommendationScore(place: Place, context: RecommendationContext
   score += distanceNowScore(place.distanceKm);
 
   if (preferred.has(place.category) || place.categories.some((category) => preferred.has(category))) score += 10;
+
+  if (affinity?.size) {
+    const categories = Array.from(new Set<CategoryId>([place.category, ...place.categories]));
+    const strongest = categories.reduce((best, category) => Math.max(best, affinity.get(category) ?? 0), 0);
+    // Personalization remains bounded so "open now" and distance still dominate.
+    score += Math.min(12, strongest);
+  }
+
   if (place.placeType === "local" || place.placeType === "independent" || place.localFavorite) score += 8;
   if (place.hiddenGem) score += 5;
   score += qualityNowScore(place);
@@ -165,6 +176,11 @@ export function recommendationReasons(place: Place, context: RecommendationConte
   if (status.isOpen === true) reasons.push(language === "en" ? "Open now" : "เปิดอยู่ตอนนี้");
   if (place.distanceKm != null && place.distanceKm <= 0.5) reasons.push(language === "en" ? "Very close" : "ใกล้มาก");
   if (preferred.has(place.category) || place.categories.some((category) => preferred.has(category))) reasons.push(language === "en" ? "Matches your interests" : "ตรงกับหมวดที่ชอบ");
+  if (context.categoryAffinity?.size) {
+    const affinityScore = Array.from(new Set<CategoryId>([place.category, ...place.categories]))
+      .reduce((best, category) => Math.max(best, context.categoryAffinity?.get(category) ?? 0), 0);
+    if (affinityScore >= 3) reasons.push(language === "en" ? "Matches your recent activity" : "ตรงกับพฤติกรรมการใช้งานล่าสุด");
+  }
   if (place.hiddenGem) reasons.push(language === "en" ? "Hidden gem" : "Hidden Gem");
   else if (place.localFavorite || place.placeType === "local" || place.placeType === "independent") reasons.push(language === "en" ? "Local pick" : "ร้าน Local น่าแวะ");
   if ((hour >= 20 || hour < 5) && (place.openLate === true || place.is24Hours)) reasons.push(language === "en" ? "Good late-night option" : "เหมาะช่วงดึก");
