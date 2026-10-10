@@ -156,6 +156,19 @@ function parseBudget(source: string) {
   return { working, maxPrice };
 }
 
+function parseWalkingMinutes(source: string) {
+  const pattern = /(?:เดิน\s*(?:ไม่เกิน|ภายใน|≤|<=)\s*(\d{1,3})\s*นาที|walk\s*(?:within|under|<=|≤)\s*(\d{1,3})\s*(?:min|mins|minutes))/giu;
+  const matches = [...source.matchAll(pattern)];
+  let maxWalkingMinutes: number | null = null;
+  for (const match of matches) {
+    const parsed = Number(match[1] || match[2]);
+    if (Number.isFinite(parsed) && parsed > 0 && parsed <= 180) {
+      maxWalkingMinutes = maxWalkingMinutes == null ? parsed : Math.min(maxWalkingMinutes, parsed);
+    }
+  }
+  return { working: source.replace(pattern, " "), maxWalkingMinutes };
+}
+
 export function parseDiscoveryQuery(query: string): DiscoveryIntent {
   let working = normalizeThaiDigits(query).normalize("NFKC");
   const categoryIds: CategoryId[] = [];
@@ -168,6 +181,13 @@ export function parseDiscoveryQuery(query: string): DiscoveryIntent {
   if (budget.maxPrice != null) {
     filterPatch.maxPrice = budget.maxPrice;
     recognizedLabels.push(`≤ ฿${budget.maxPrice}`);
+  }
+
+  const walking = parseWalkingMinutes(working);
+  working = walking.working;
+  if (walking.maxWalkingMinutes != null) {
+    filterPatch.maxWalkingMinutes = walking.maxWalkingMinutes;
+    recognizedLabels.push(`เดิน ≤${walking.maxWalkingMinutes} นาที`);
   }
 
   for (const rule of CATEGORY_RULES) {
