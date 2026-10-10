@@ -6,7 +6,8 @@ describe("PWA update safety", () => {
   const runtime = fs.readFileSync("components/PwaRuntime.tsx", "utf8");
 
   it("versions caches and removes old cache generations", () => {
-    expect(sw).toContain('VERSION = "amd-v2.3.0-pwa1"');
+    expect(sw).toMatch(/const VERSION = "amd-[^"]+";/);
+    expect(fs.readFileSync("scripts/stamp-service-worker.ts", "utf8")).toContain("createHash");
     expect(sw).toContain("caches.delete");
   });
 
@@ -19,6 +20,13 @@ describe("PWA update safety", () => {
     expect(sw).toContain("SKIP_WAITING");
     expect(runtime).toContain("pwa-update-ready");
     expect(runtime).toContain("controllerchange");
+  });
+
+  it("supports push delivery and notification deep links", () => {
+    expect(sw).toContain('addEventListener("push"');
+    expect(sw).toContain('showNotification');
+    expect(sw).toContain('addEventListener("notificationclick"');
+    expect(sw).toContain('openWindow');
   });
 
   it("keeps Google provider requests outside service-worker caches", () => {
