@@ -80,13 +80,14 @@ export function SearchAssistPanel({
                   : (language === "en" ? "Recent and suggested searches" : "ค้นหาล่าสุดและคำค้นแนะนำ")}
               </div>
               <div className="grid gap-1.5">
-                {suggestions.map((suggestion) => (
+                {suggestions.map((suggestion, index) => (
                   <button
                     key={suggestion}
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => onSearchSuggestion(suggestion)}
-                    className="amd-btn flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-[10px] text-[var(--amd-text-2)]"
+                    className="amd-search-suggestion amd-btn flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-[10px] text-[var(--amd-text-2)]"
+                    style={{ animationDelay: `${index * 35}ms` }}
                   >
                     <Search className="h-3.5 w-3.5 shrink-0 text-[#00D9FF]" />
                     <span className="min-w-0 flex-1 truncate">{suggestion}</span>
