@@ -639,6 +639,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     { id: "settings" as Tab, label: copy.settings, icon: Settings },
   ];
   const filtersCount = activeFilterCount(filters) + (settings.verifiedOnly ? 1 : 0);
+  const activeNavIndex = Math.max(0, navItems.findIndex((item) => item.id === tab));
 
   return (
     <main className="amd-app">
@@ -830,7 +831,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
               <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Grid2X2 className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[19px] font-semibold">{copy.myCollections}</h2></div><button type="button" onClick={() => { setSelectedCollection(null); setSmartCollectionFilter(null); }} className="text-[11px] font-semibold text-[#149CFF]">{copy.viewAll} <ChevronRight className="inline h-3.5 w-3.5" /></button></div>
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {collections.slice(0, 8).map((collection) => <button key={collection.id} type="button" onClick={() => { setSmartCollectionFilter(null); setSelectedCollection(selectedCollection === collection.id ? null : collection.id); }} className={`amd-glass amd-card min-h-[132px] p-4 text-left transition ${selectedCollection === collection.id ? "amd-card-selected" : ""}`}><span className="text-[28px]">{collection.icon}</span><p className="mt-4 text-[15px] font-semibold">{collection.title}</p><p className="mt-1 text-[12px] text-[var(--amd-text-2)]">{collection.placeIds.length} รายการ</p></button>)}
+                {collections.slice(0, 8).map((collection) => <button key={collection.id} type="button" onClick={() => { setSmartCollectionFilter(null); setSelectedCollection(selectedCollection === collection.id ? null : collection.id); }} className={`amd-glass amd-card amd-micro-action min-h-[132px] p-4 text-left transition ${selectedCollection === collection.id ? "amd-card-selected amd-depth-active" : "amd-depth-base"}`}><span className="text-[28px]">{collection.icon}</span><p className="mt-4 text-[15px] font-semibold">{collection.title}</p><p className="mt-1 text-[12px] text-[var(--amd-text-2)]">{collection.placeIds.length} รายการ</p></button>)}
               </div>
 
               <SmartCollectionsBar
@@ -872,7 +873,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 {!recentPlaces.length && <div className="amd-glass amd-card p-9 text-center"><History className="mx-auto h-8 w-8 text-[var(--amd-text-3)]" /><p className="mt-3 text-[14px] font-semibold">{copy.emptyRecent}</p></div>}
               </div>
 
-              <button type="button" onClick={() => changeTab("map")} className="amd-glass amd-card mt-4 flex w-full items-center gap-3 p-3 text-left"><div className="grid h-14 w-24 shrink-0 place-items-center overflow-hidden rounded-xl bg-[radial-gradient(circle_at_center,rgba(0,140,255,.28),transparent_35%),linear-gradient(145deg,#0a1b31,#030812)]"><LocateFixed className="h-5 w-5 text-[#00D9FF]" /></div><div className="min-w-0 flex-1"><p className="text-[12px] font-semibold">{copy.yourLocation}</p><p className="mt-1 truncate text-[10px] text-[var(--amd-text-3)]">{originMode === "dorm" ? DORM_NAME : "ตำแหน่งปัจจุบัน"} • รัศมี {RADII.find((radius) => radius.value === radiusMeters)?.label || `${radiusMeters} ม.`}</p></div><span className="flex items-center gap-1 text-[10px] font-semibold text-[#149CFF]"><MapIcon className="h-4 w-4" /> {copy.viewOnMap}</span></button>
+              <button type="button" onClick={() => changeTab("map")} className="amd-glass amd-card amd-depth-raised amd-micro-action mt-4 flex w-full items-center gap-3 p-3 text-left"><div className="grid h-14 w-24 shrink-0 place-items-center overflow-hidden rounded-xl bg-[radial-gradient(circle_at_center,rgba(0,140,255,.28),transparent_35%),linear-gradient(145deg,#0a1b31,#030812)]"><LocateFixed className="h-5 w-5 text-[#00D9FF]" /></div><div className="min-w-0 flex-1"><p className="text-[12px] font-semibold">{copy.yourLocation}</p><p className="mt-1 truncate text-[10px] text-[var(--amd-text-3)]">{originMode === "dorm" ? DORM_NAME : "ตำแหน่งปัจจุบัน"} • รัศมี {RADII.find((radius) => radius.value === radiusMeters)?.label || `${radiusMeters} ม.`}</p></div><span className="flex items-center gap-1 text-[10px] font-semibold text-[#149CFF]"><MapIcon className="h-4 w-4" /> {copy.viewOnMap}</span></button>
             </div>
           )}
 
@@ -923,10 +924,15 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         </div>
 
         <nav className="amd-nav">
+          <span
+            className="amd-nav-slider"
+            aria-hidden="true"
+            style={{ left: `${activeNavIndex * 20 + 10}%` }}
+          />
           <div className="grid h-full grid-cols-5 px-1">
             {navItems.map((item) => {
               const active = tab === item.id;
-              return <button key={item.id} type="button" aria-current={active ? "page" : undefined} onClick={() => changeTab(item.id)} className={`amd-nav-item relative flex min-w-0 flex-col items-center justify-center gap-1 text-[9px] font-semibold ${active ? "amd-nav-item-active amd-nav-active" : "text-[var(--amd-text-3)]"}`}>{active && <span className="amd-nav-indicator absolute top-0 h-[2px] w-8 rounded-full bg-[#19E6FF] shadow-[0_0_14px_rgba(25,230,255,.72)]" />}<item.icon className={`h-[22px] w-[22px] ${active ? "drop-shadow-[0_0_9px_rgba(0,217,255,.65)]" : ""}`} /><span className="truncate">{item.label}</span></button>;
+              return <button key={item.id} type="button" aria-current={active ? "page" : undefined} onClick={() => changeTab(item.id)} className={`amd-nav-item relative flex min-w-0 flex-col items-center justify-center gap-1 text-[9px] font-semibold ${active ? "amd-nav-item-active amd-nav-active" : "text-[var(--amd-text-3)]"}`}><item.icon className="h-[22px] w-[22px]" /><span className="truncate">{item.label}</span></button>;
             })}
           </div>
         </nav>
