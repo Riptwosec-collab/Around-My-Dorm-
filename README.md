@@ -113,6 +113,14 @@ npx wrangler deploy --dry-run
 
 This repo uses **Next.js Static Export → Cloudflare Workers Static Assets**.
 
+**Single automated production deployment path:** Cloudflare Workers Git Integration is linked to this GitHub repository and builds/deploys the `main` branch directly to the `around-my-dorm` Worker. GitHub Actions is **CI only**; do not reintroduce a production `wrangler deploy` step in an Actions workflow. This avoids duplicate deployments and does not require `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` in GitHub Actions.
+
+- **Push to `main`:** Cloudflare Git Integration builds and deploys production; GitHub `Build Check` runs unit tests, TypeScript checks, production build, and a Wrangler **dry run only**.
+- **Pull request into `main`:** GitHub `Build Check` validates the changes without publishing production. Cloudflare may also run its own preview build if configured.
+- **Manual operations:** `npm run deploy` remains available for intentional local maintenance, but is not called by GitHub Actions.
+- **Production Worker:** `around-my-dorm` — https://around-my-dorm.aidsaras.workers.dev/
+- **Production validation:** Check the GitHub commit's `Workers Builds: around-my-dorm` check for success, then verify `/` and `/api/health` on the production Worker. A successful build check alone does not prove the public endpoint is reachable.
+
 ```bash
 npm run build
 npm run deploy
