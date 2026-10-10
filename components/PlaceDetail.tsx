@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type UIEvent } from "react";
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -74,7 +74,7 @@ export function PlaceDetail({
   const decisionPlaces = allPlaces?.length ? allPlaces : [place];
   const heroRef = useRef<HTMLDivElement | null>(null);
 
-  function handleDetailScroll(event: React.UIEvent<HTMLElement>) {
+  function handleDetailScroll(event: UIEvent<HTMLElement>) {
     const top = event.currentTarget.scrollTop;
     heroRef.current?.style.setProperty("--amd-parallax-y", `${Math.min(18, top * 0.055)}px`);
   }
