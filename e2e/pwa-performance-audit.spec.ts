@@ -36,4 +36,7 @@ test("user-facing navigation stays interactive and expensive Admin loads on dema
   await expect(page.getByTestId("smart-capability-hub")).toBeVisible();
   await advanced.click();
   await expect(page.getByTestId("smart-capability-hub")).toHaveCount(0);
+  await expect(page.locator("[data-google-map-state]")).toHaveCount(0);
+  await page.getByRole("button", { name: /แผนที่|Map/ }).last().click();
+  await expect(page.locator("[data-google-map-state]")).toHaveCount(1);
 });

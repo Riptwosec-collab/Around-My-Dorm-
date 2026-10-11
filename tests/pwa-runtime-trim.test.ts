@@ -32,6 +32,8 @@ describe("PWA clean-and-fast runtime", () => {
     expect(app).toContain("syncedNotifications.current");
     expect(app).not.toContain('logRuntimeEventCloud("cloud_state_loaded"');
     expect(app).toContain("advancedToolsOpen && <SmartCapabilityHub");
+    expect(app).toContain("mapVisited && <div");
+    expect(app).toContain("setMapVisited(true)");
   });
 
   it("never stores arbitrary API or query responses in SW runtime caches", () => {

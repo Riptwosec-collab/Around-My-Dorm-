@@ -141,6 +141,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const googleMapId = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID ?? "";
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [mapVisited, setMapVisited] = useState(initialTab === "map");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -194,6 +195,10 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
   // Keep bottom-tab navigation inside the mounted app. router.push here used to
   // remount the full shell, reload the database, and replay page entry animation.
+  useEffect(() => {
+    if (tab === "map" && !mapVisited) setMapVisited(true);
+  }, [tab, mapVisited]);
+
   useEffect(() => {
     const syncTabFromUrl = () => {
       setSelectedPlace(null);
@@ -799,7 +804,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
             </div>
           )}
 
-          <div className={`amd-page amd-page-enter ${tab === "map" ? "" : "hidden"}`} aria-hidden={tab !== "map"}>
+          {mapVisited && <div className={`amd-page amd-page-enter ${tab === "map" ? "" : "hidden"}`} aria-hidden={tab !== "map"}>
               <PageHeader
                 title={copy.map}
                 subtitle={copy.mapSubtitle}
@@ -848,7 +853,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 language={settings.language}
                 onSelectPlace={(place) => { addRecent(place); setSelectedPlace(place); }}
               />
-            </div>
+            </div>}
 
 
           {tab === "favorites" && (
