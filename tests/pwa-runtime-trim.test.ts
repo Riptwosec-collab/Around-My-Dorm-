@@ -37,6 +37,8 @@ describe("PWA clean-and-fast runtime", () => {
   it("never stores arbitrary API or query responses in SW runtime caches", () => {
     expect(sw).toContain('url.pathname.startsWith("/_next/static/")');
     expect(sw).toContain("APP_SHELL.includes(url.pathname)");
+    expect(sw).toContain("cache.addAll(CORE_SHELL)");
+    expect(sw).toContain("event.preloadResponse");
     expect(sw).toContain("!url.search");
     expect(sw).not.toContain("staleWhileRevalidate(request)");
     expect(sw).toContain("SKIP_WAITING");

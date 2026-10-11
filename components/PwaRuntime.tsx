@@ -25,6 +25,14 @@ export function PwaRuntime() {
 
     let registration: ServiceWorkerRegistration | null = null;
     let installingWorker: ServiceWorker | null = null;
+    let lastUpdateAt = 0;
+    const checkUpdateIfDue = (force = false) => {
+      if (!registration || !navigator.onLine) return;
+      const now = Date.now();
+      if (!force && now - lastUpdateAt < 5 * 60_000) return;
+      lastUpdateAt = now;
+      void registration.update().catch(() => undefined);
+    };
 
     const onControllerChange = () => {
       if (!reloadOnControllerChange.current) return;
@@ -52,13 +60,13 @@ export function PwaRuntime() {
       navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
       navigator.serviceWorker.register("/sw.js").then((next) => {
         inspectRegistration(next);
-        // One lightweight same-origin update check per app start. This never calls Google Places.
-        void next.update().catch(() => undefined);
+        // One update check on app launch; background resumes are throttled.
+        checkUpdateIfDue(true);
       }).catch(() => undefined);
     }
 
     const onVisibility = () => {
-      if (document.visibilityState === "visible" && navigator.onLine && registration) void registration.update().catch(() => undefined);
+      if (document.visibilityState === "visible") checkUpdateIfDue();
     };
     document.addEventListener("visibilitychange", onVisibility);
 

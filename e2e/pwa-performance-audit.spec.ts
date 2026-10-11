@@ -13,6 +13,15 @@ test("PWA routes fit narrow devices without horizontal document overflow", async
         document: document.documentElement.scrollWidth,
       }));
       expect(dimensions.document, `${width}px ${route}`).toBeLessThanOrEqual(dimensions.viewport + 1);
+      // Capture per-route baseline metrics for a later before/after comparison.
+      const metrics = await page.evaluate(() => {
+        const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+        return {
+          domContentLoadedMs: nav ? Math.round(nav.domContentLoadedEventEnd - nav.startTime) : null,
+          nextStaticResources: performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/_next/static/")).length,
+        };
+      });
+      console.info("PWA_AUDIT", JSON.stringify({ route, width, ...metrics }));
     }
   }
 });

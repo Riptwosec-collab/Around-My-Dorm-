@@ -2,9 +2,11 @@ const VERSION = "amd-v3.0.0-local-life-os";
 const APP_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const APP_SHELL = ["/", "/map/", "/saved/", "/recent/", "/settings/", "/parking/", "/manifest.webmanifest", "/offline.html"];
+// Install only the critical shell, not six route documents at once on first load.
+const CORE_SHELL = ["/", "/manifest.webmanifest", "/offline.html"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(APP_CACHE).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(caches.open(APP_CACHE).then((cache) => cache.addAll(CORE_SHELL)));
 });
 
 self.addEventListener("activate", (event) => {
@@ -20,12 +22,14 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
-async function networkFirst(request) {
+async function networkFirst(request, event) {
   try {
-    const response = await fetch(request);
+    // Reuse the navigation preload response rather than starting a second
+    // navigation fetch after the browser has already issued one.
+    const response = (await event.preloadResponse) || (await fetch(request));
     if (response.ok && !request.url.includes("?") && !response.headers.has("set-cookie")) {
-      const cache = await caches.open(RUNTIME_CACHE);
-      void cache.put(request, response.clone());
+      const copy = response.clone();
+      event.waitUntil(caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy)));
     }
     return response;
   } catch {
@@ -35,13 +39,13 @@ async function networkFirst(request) {
 
 // Versioned immutable JS/CSS/fonts/images: don't issue a new request on every
 // card render or tab change. No authenticated API responses enter this cache.
-async function cacheFirst(request) {
+async function cacheFirst(request, event) {
   const cached = await caches.match(request);
   if (cached) return cached;
   const response = await fetch(request);
   if (response.ok) {
-    const cache = await caches.open(RUNTIME_CACHE);
-    void cache.put(request, response.clone());
+    const copy = response.clone();
+    event.waitUntil(caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy)));
   }
   return response;
 }
@@ -60,15 +64,18 @@ self.addEventListener("fetch", (event) => {
     // Only known static app-shell pages may be stored for offline navigation.
     // Queries and personal/deep-link responses bypass navigation caching.
     event.respondWith(APP_SHELL.includes(url.pathname) && !url.search
-      ? networkFirst(request)
-      : fetch(request).catch(() => caches.match("/offline.html")));
+      ? networkFirst(request, event)
+      : (async () => {
+          try { return (await event.preloadResponse) || (await fetch(request)); }
+          catch { return (await caches.match("/offline.html")) || Response.error(); }
+        })());
     return;
   }
 
   // Leave API/auth, Supabase, private pages, requests with query parameters
   // and all other GET responses to the network without service-worker caching.
   if (url.pathname.startsWith("/_next/static/") && !url.search) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(cacheFirst(request, event));
   }
 });
 
