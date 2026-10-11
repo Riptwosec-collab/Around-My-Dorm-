@@ -13,7 +13,19 @@ describe("premium icon system",()=>{
    expect(css).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
    expect(css).toContain("transform: none !important;");
    expect(layout.indexOf('import "./icon-system.css"')).toBeGreaterThan(layout.indexOf('import "./typography-clarity.css"'));
+  it("renders category symbols rather than platform-dependent emoji in the UI",()=>{
+  const card=read("components/PlaceCard.tsx");
+  const category=read("components/CategoryPreferenceSheet.tsx");
+  const photo=read("components/PlacePhoto.tsx");
+  const glyph=read("components/CategoryGlyph.tsx");
+  expect(card).toContain("<CategoryGlyph category=");
+  expect(category).toContain("<CategoryGlyph category=");
+  expect(photo).toContain("CategoryGlyph as CategoryIcon");
+  expect(glyph).toContain("Partial<Record<CategoryId, LucideIcon>>");
+  expect(card).not.toContain("{item.icon}");
+  expect(category).not.toContain("{item.icon}");
  });
+});
  it("gives admin panel icons and shared setting icons their own visual roles",()=>{
   for(const s of ["LayoutDashboard","ClipboardCheck","Activity","Sparkles","MapPinned","ScanSearch"])expect(admin).toContain("icon: "+s);
   expect(read("components/AppShellPrimitives.tsx")).toContain("amd-setting-icon");

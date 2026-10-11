@@ -1,25 +1,8 @@
 "use client";
 
-import {
-  BriefcaseBusiness,
-  Car,
-  Clock3,
-  Coffee,
-  Diamond,
-  Dumbbell,
-  Heart,
-  MapPin,
-  Navigation,
-  Pill,
-  Scissors,
-  ShieldCheck,
-  ShoppingBag,
-  Star,
-  Store,
-  Utensils,
-  WashingMachine,
-} from "lucide-react";
+import { Clock3, Diamond, Heart, MapPin, Navigation, ShieldCheck, Star } from "lucide-react";
 import { CATEGORY_MAP } from "@/data/categories";
+import { CategoryGlyph } from "@/components/CategoryGlyph";
 import { PlacePhoto } from "@/components/PlacePhoto";
 import { getCopy } from "@/locales";
 import { buildOpeningIntelligence } from "@/lib/opening-intelligence";
@@ -32,20 +15,6 @@ import {
   googleMapsDirectionsUrl,
 } from "@/lib/place-utils";
 import type { CategoryId, Place } from "@/types/place";
-
-function CategoryFallback({ category }: { category: CategoryId }) {
-  const common = "h-8 w-8 stroke-[1.7]";
-  if (["food", "local_food", "noodle", "thai_food", "isan_food", "mookata", "japanese", "korean_food", "vietnamese_food", "hotpot", "bbq", "chinese_food", "night_food"].includes(category)) return <Utensils className={common} />;
-  if (category === "cafe" || category === "bar") return <Coffee className={common} />;
-  if (category === "parking" || category === "monthly_parking") return <Car className={common} />;
-  if (category === "pharmacy" || category === "clinic") return <Pill className={common} />;
-  if (category === "fitness") return <Dumbbell className={common} />;
-  if (category === "laundry") return <WashingMachine className={common} />;
-  if (category === "shopping" || category === "supermarket" || category === "convenience") return <ShoppingBag className={common} />;
-  if (category === "salon" || category === "barber") return <Scissors className={common} />;
-  if (category === "service") return <BriefcaseBusiness className={common} />;
-  return <Store className={common} />;
-}
 
 export function PlaceCard({
   place,
@@ -133,7 +102,7 @@ export function PlaceCard({
           <div data-testid="place-category-badges" className="mt-2 flex flex-wrap gap-1.5">
             {categoryBadges.map((item) => (
               <span key={item.id} className="inline-flex max-w-full items-center gap-1 rounded-md border border-[rgba(57,221,255,.18)] bg-[rgba(57,221,255,.055)] px-2 py-1 text-[10px] font-bold leading-none text-[#aeeeff]">
-                <span aria-hidden="true" className="text-[11px]">{item.icon}</span>
+                <CategoryGlyph category={item.id as CategoryId} className="h-[14px] w-[14px] shrink-0" />
                 <span className="truncate">{item.name}</span>
               </span>
             ))}

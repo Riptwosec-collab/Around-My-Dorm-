@@ -1,27 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BriefcaseBusiness, Car, Coffee, Dumbbell, Pill, Scissors, ShoppingBag, Store, Utensils, WashingMachine } from "lucide-react";
+import { CategoryGlyph as CategoryIcon } from "@/components/CategoryGlyph";
 import { getPlaceImageCandidates } from "@/lib/place-images";
 import {
   GOOGLE_PHOTO_RUNTIME_CHANGED_EVENT,
   getGoogleRuntimePhoto,
   setGooglePhotoCardVisible,
 } from "@/lib/google-photo-runtime";
-import type { CategoryId, Place, PlaceImage } from "@/types/place";
-
-function CategoryIcon({ category, className = "h-8 w-8 stroke-[1.7]" }: { category: CategoryId; className?: string }) {
-  if (["food", "local_food", "noodle", "thai_food", "isan_food", "mookata", "japanese", "korean_food", "vietnamese_food", "hotpot", "bbq", "chinese_food", "night_food"].includes(category)) return <Utensils className={className} />;
-  if (category === "cafe" || category === "bar") return <Coffee className={className} />;
-  if (category === "parking" || category === "monthly_parking") return <Car className={className} />;
-  if (category === "pharmacy" || category === "clinic" || category === "hospital") return <Pill className={className} />;
-  if (category === "fitness") return <Dumbbell className={className} />;
-  if (category === "laundry") return <WashingMachine className={className} />;
-  if (category === "shopping" || category === "supermarket" || category === "convenience" || category === "market") return <ShoppingBag className={className} />;
-  if (category === "salon" || category === "barber") return <Scissors className={className} />;
-  if (["service", "hardware", "mobile_repair", "computer_repair", "auto_repair", "tire_shop", "parcel", "post_office", "copy_print"].includes(category)) return <BriefcaseBusiness className={className} />;
-  return <Store className={className} />;
-}
+import type { Place, PlaceImage } from "@/types/place";
 
 function useGoogleRuntimePhoto(placeId: string) {
   const [version, setVersion] = useState(0);
