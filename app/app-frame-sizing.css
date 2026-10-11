@@ -189,3 +189,29 @@ body {
     max-width: calc(100% - 48px);
   }
 }
+
+/* PWA performance budget: card surfaces should not each allocate their own
+   backdrop-compositing layer on touch screens. Preserve blur for the nav and
+   active overlay, not for dozens of scrolling place cards. */
+@media (max-width: 767px) and (hover: none) {
+  .amd-place-card,
+  .amd-collection-card,
+  .amd-page .amd-glass.amd-card {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: rgba(8, 18, 33, .94);
+    will-change: auto;
+  }
+  :root[data-theme="light"] .amd-page .amd-glass.amd-card {
+    background-color: rgba(247, 251, 255, .98);
+  }
+  .amd-nav {
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .amd-app *, .amd-app *::before, .amd-app *::after {
+    will-change: auto !important;
+  }
+}

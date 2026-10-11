@@ -89,7 +89,7 @@ function formatCloudTime(value: string | null) {
   }
 }
 
-export function GoogleBulkPhotoRuntimeControl() {
+export function GoogleBulkPhotoRuntimeControl({ inline = false }: { inline?: boolean } = {}) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
   const [admin, setAdmin] = useState(false);
   const [open, setOpen] = useState(false);
@@ -299,7 +299,7 @@ export function GoogleBulkPhotoRuntimeControl() {
   const percent = progress.total ? Math.round((progress.current / progress.total) * 100) : 0;
 
   return (
-    <div className="fixed bottom-[calc(84px+env(safe-area-inset-bottom))] right-3 z-[98] sm:bottom-5 sm:right-5">
+    <div className={inline ? "relative z-[1] mt-4 min-w-0" : "fixed bottom-[calc(84px+env(safe-area-inset-bottom))] right-3 z-[98] sm:bottom-5 sm:right-5"}>
       {!open ? (
         <button
           data-testid="google-bulk-photo-runtime-open"
@@ -310,7 +310,7 @@ export function GoogleBulkPhotoRuntimeControl() {
           <Camera className="h-4 w-4" /> Google Photos
         </button>
       ) : (
-        <section data-testid="google-bulk-photo-runtime-control" className="amd-glass-strong max-h-[78vh] w-[min(92vw,410px)] overflow-y-auto rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl">
+        <section data-testid="google-bulk-photo-runtime-control" className={inline ? "amd-glass-strong max-h-[70dvh] w-full min-w-0 overflow-x-hidden overflow-y-auto rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl" : "amd-glass-strong max-h-[78vh] w-[min(92vw,410px)] overflow-y-auto rounded-[24px] border border-cyan-300/15 p-4 shadow-2xl"}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /><p className="text-[11px] font-bold">GOOGLE PHOTOS • HYBRID RESTORE</p></div>

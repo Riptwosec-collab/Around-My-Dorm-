@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, WifiOff, X } from "lucide-react";
-import { ensureCloudUser, supabase } from "@/lib/cloud/supabase";
 import { getCopy } from "@/locales";
 
 export function PwaRuntime() {
@@ -14,14 +13,11 @@ export function PwaRuntime() {
 
   useEffect(() => {
     setOnline(navigator.onLine);
-    void (async () => {
-      try {
-        const user = await ensureCloudUser();
-        const { data } = await supabase.from("amd_user_settings").select("settings").eq("user_id", user.id).maybeSingle();
-        const next = data?.settings as { language?: "th" | "en" } | null;
-        if (next?.language) setLanguage(next.language);
-      } catch {}
-    })();
+    // Language comes from the hydrated application shell; avoid a second
+    // Supabase authentication/settings round-trip at PWA startup.
+    const syncLanguage = () => setLanguage(document.documentElement.lang === "en" ? "en" : "th");
+    syncLanguage();
+    window.addEventListener("amd-language-changed", syncLanguage);
     const onOnline = () => setOnline(true);
     const onOffline = () => setOnline(false);
     window.addEventListener("online", onOnline);
@@ -67,6 +63,7 @@ export function PwaRuntime() {
     document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
+      window.removeEventListener("amd-language-changed", syncLanguage);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);

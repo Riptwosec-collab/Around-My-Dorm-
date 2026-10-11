@@ -38,11 +38,13 @@ describe("manual visible Google photo loading", () => {
 
   it("mounts a central explicit button that loads only currently visible cards", () => {
     const layout = read("app/layout.tsx");
+    const app = read("components/AroundMyDormApp.tsx");
     const componentPath = path.join(process.cwd(), "components/VisibleGooglePhotoLoadControl.tsx");
     expect(fs.existsSync(componentPath)).toBe(true);
     const control = fs.existsSync(componentPath) ? fs.readFileSync(componentPath, "utf8") : "";
 
-    expect(layout).toContain("VisibleGooglePhotoLoadControl");
+    expect(layout).not.toContain("VisibleGooglePhotoLoadControl");
+    expect(app).toContain("<VisibleGooglePhotoLoadControl />");
     expect(control).toContain("โหลดรูปที่เห็น");
     expect(control).toContain("loadVisibleGooglePhotos");
     expect(control).toContain("onClick={() => void loadVisible()}");

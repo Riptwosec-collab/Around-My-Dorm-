@@ -71,7 +71,7 @@ import { SearchAssistPanel } from "@/components/SearchAssistPanel";
 import { Toast, type ToastTone } from "@/components/Toast";
 import { getCopy } from "@/locales";
 import { addRecentView, getTodayRecentStats, resolveRecentPlaces } from "@/lib/storage/recent";
-import { loadCloudAppState, recordRecentViewCloud, saveCollectionsCloud, saveSettingsCloud, saveNotificationRulesCloud, setFavoriteCloud, logRuntimeEventCloud } from "@/lib/cloud/store";
+import { loadCloudAppState, recordRecentViewCloud, saveCollectionsCloud, saveSettingsCloud, saveNotificationRulesCloud, setFavoriteCloud } from "@/lib/cloud/store";
 import type { RecentView } from "@/types/app";
 import {
   DORM_CENTER,
@@ -83,6 +83,7 @@ import {
 } from "@/lib/place-utils";
 import type { CategoryId, Place, SortMode } from "@/types/place";
 import { PageHeader, Toggle, SettingRow, MiniMapArtwork, LoadingCards } from "@/components/AppShellPrimitives";
+import { requestPreciseLocation } from "@/lib/request-precise-location";
 import { SmartCollectionsBar, matchesSmartCollection, type SmartCollectionKey } from "@/components/SmartCollectionsBar";
 import { loadOfflineAppSnapshot, saveOfflineAppSnapshot } from "@/lib/offline-snapshot";
 import {
@@ -117,6 +118,9 @@ const GoogleDiscoverySheet = dynamic(() => import("@/components/GoogleDiscoveryS
 const DataManagement = dynamic(() => import("@/components/DataManagement").then((mod) => mod.DataManagement), { ssr: false });
 const PlaceDetail = dynamic(() => import("@/components/PlaceDetail").then((mod) => mod.PlaceDetail), { ssr: false });
 const FoodNowSheet = dynamic(() => import("@/components/FoodNowSheet").then((mod) => mod.FoodNowSheet), { ssr: false });
+const VisibleGooglePhotoLoadControl = dynamic(() => import("@/components/VisibleGooglePhotoLoadControl").then((mod) => mod.VisibleGooglePhotoLoadControl), { ssr: false });
+
+function notificationFingerprint(s: AppSettings) { return [s.notifications, s.newPlaceAlerts, s.promoAlerts, s.parkingAlerts].join(":"); }
 
 function relativeViewedLabel(iso: string | undefined, language: Language) {
   if (!iso) return language === "en" ? "Recently viewed" : "ดูล่าสุด";
@@ -161,6 +165,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
     reload: reloadDatabase,
   } = usePlaceDatabase();
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
+  const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
   const [exploreDisplayLimit, setExploreDisplayLimit] = useState(16);
   const [savedDisplayLimit, setSavedDisplayLimit] = useState(16);
   const [recentDisplayLimit, setRecentDisplayLimit] = useState(16);
@@ -231,6 +236,9 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const [cloudReady, setCloudReady] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [offlineFallbackActive, setOfflineFallbackActive] = useState(false);
+  const syncedCollections = useRef<string | null>(null);
+  const syncedSettings = useRef<string | null>(null);
+  const syncedNotifications = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -255,9 +263,12 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         const customCenter = { lat: hydratedSettings.customHomeLocation.latitude, lng: hydratedSettings.customHomeLocation.longitude };
         setOrigin(customCenter); setOriginMode("custom"); setMapSearchCenter(customCenter);
       }
-      setCollections(state.collections.length ? state.collections : DEFAULT_COLLECTIONS);
+      const loadedCollections = state.collections.length ? state.collections : DEFAULT_COLLECTIONS;
+      syncedCollections.current = JSON.stringify(loadedCollections);
+      syncedSettings.current = JSON.stringify(hydratedSettings);
+      syncedNotifications.current = notificationFingerprint(hydratedSettings);
+      setCollections(loadedCollections);
       setCloudReady(true); setCloudError(null); setOfflineFallbackActive(false);
-      void logRuntimeEventCloud("cloud_state_loaded", { favorites: state.favorites.length, recent: state.recentViews.length, collections: state.collections.length });
     }).catch((error) => {
       if (!active) return;
       const snapshot = loadOfflineAppSnapshot();
@@ -295,15 +306,24 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
   useEffect(() => {
     if (!cloudReady) return;
-    const timer = window.setTimeout(() => { void saveCollectionsCloud(collections).catch((error) => setCloudError(error instanceof Error ? error.message : "Cloud save failed")); }, 250);
+    const key = JSON.stringify(collections);
+    if (key === syncedCollections.current) return;
+    const timer = window.setTimeout(() => { void saveCollectionsCloud(collections).then(() => { syncedCollections.current = key; }).catch((error) => setCloudError(error instanceof Error ? error.message : "Cloud save failed")); }, 450);
     return () => window.clearTimeout(timer);
   }, [collections, cloudReady]);
 
   useEffect(() => {
     if (!cloudReady) return;
-    const timer = window.setTimeout(() => { void saveSettingsCloud(settings).catch((error) => setCloudError(error instanceof Error ? error.message : "Cloud save failed")); }, 250);
+    const key = JSON.stringify(settings);
+    if (key === syncedSettings.current) return;
+    const timer = window.setTimeout(() => { void saveSettingsCloud(settings).then(() => { syncedSettings.current = key; }).catch((error) => setCloudError(error instanceof Error ? error.message : "Cloud save failed")); }, 450);
     return () => window.clearTimeout(timer);
   }, [settings, cloudReady]);
+
+  useEffect(() => {
+    document.documentElement.lang = settings.language;
+    window.dispatchEvent(new Event("amd-language-changed"));
+  }, [settings.language]);
 
   useEffect(() => {
     if (!cloudReady && !offlineFallbackActive) return;
@@ -312,17 +332,16 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
 
   useEffect(() => {
     if (!cloudReady) return;
+    const key = notificationFingerprint(settings);
+    if (key === syncedNotifications.current) return;
     const timer = window.setTimeout(() => {
       void saveNotificationRulesCloud({
-        enabled: settings.notifications,
-        newPlaces: settings.newPlaceAlerts,
-        promotions: settings.promoAlerts,
-        parking: settings.parkingAlerts,
-        nearby: settings.notifications,
-        closingSoon: settings.notifications,
+        enabled: settings.notifications, newPlaces: settings.newPlaceAlerts,
+        promotions: settings.promoAlerts, parking: settings.parkingAlerts,
+        nearby: settings.notifications, closingSoon: settings.notifications,
         favoritesOpening: settings.notifications,
-      }).catch(() => undefined);
-    }, 350);
+      }).then(() => { syncedNotifications.current = key; }).catch(() => undefined);
+    }, 450);
     return () => window.clearTimeout(timer);
   }, [cloudReady, settings.notifications, settings.newPlaceAlerts, settings.promoAlerts, settings.parkingAlerts]);
 
@@ -513,14 +532,12 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
       return;
     }
     setLocationError(null);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const center = { lat: position.coords.latitude, lng: position.coords.longitude };
-        setOrigin(center); setMapSearchCenter(center); setOriginMode("me"); setSettings((current) => ({ ...current, homeMode: "me" }));
-      },
-      () => setLocationError(settings.language === "en" ? "Location permission was not granted" : "ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาอนุญาต Location ใน Safari/Browser"),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
-    );
+    void requestPreciseLocation().then((position) => {
+      const center = { lat: position.coords.latitude, lng: position.coords.longitude };
+      setOrigin(center); setMapSearchCenter(center); setOriginMode("me"); setSettings((current) => ({ ...current, homeMode: "me" }));
+    }).catch((error: unknown) => {
+      setLocationError(error instanceof Error ? error.message : settings.language === "en" ? "Location unavailable" : "ไม่สามารถเข้าถึงตำแหน่งได้");
+    });
   }
 
   function useDormLocation() {
@@ -745,16 +762,15 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
                 <button type="button" onClick={() => setFilterOpen(true)} className="amd-chip shrink-0 px-4 text-[10px] font-semibold">{copy.moreFilters}</button>
               </div>
 
-              <SmartCapabilityHub
-                places={allPlaces}
-                origin={origin}
-                language={settings.language}
-                recommendationContext={recommendationContext}
-                query={query}
-                onQuery={setQuery}
-                onOpenPlace={openDetail}
-                onMapPlace={openMap}
-              />
+              <button type="button" aria-expanded={advancedToolsOpen} onClick={() => setAdvancedToolsOpen((open) => !open)} className="amd-chip mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-[11px] font-semibold">
+                <Sparkles className="h-4 w-4 text-[#00D9FF]" />{settings.language === "en" ? "Advanced: Compare places, trips & alerts" : "เครื่องมือเพิ่มเติม: เปรียบเทียบร้าน วางแผนเที่ยว แจ้งเตือน"}
+                <ChevronDown className={`h-4 w-4 transition-transform ${advancedToolsOpen ? "rotate-180" : ""}`} />
+              </button>
+              {advancedToolsOpen && <SmartCapabilityHub
+                places={allPlaces} origin={origin} language={settings.language}
+                recommendationContext={recommendationContext} query={query}
+                onQuery={setQuery} onOpenPlace={openDetail} onMapPlace={openMap}
+              />}
 
               <div className="mt-7 flex items-center justify-between">
                 <div className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-[#149CFF]" /><h2 className="text-[20px] font-semibold">{copy.localPick}</h2></div>
@@ -951,6 +967,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
         </nav>
       </div>
 
+      {(tab === "explore" || tab === "favorites" || tab === "recent") && <VisibleGooglePhotoLoadControl />}
       {googleDiscoveryOpen && <GoogleDiscoverySheet initialQuery={query || (category !== "all" ? CATEGORY_MAP[category]?.name || "" : "")} center={mapSearchCenter} radiusMeters={radiusMeters} language={settings.language} onClose={() => setGoogleDiscoveryOpen(false)} onReviewCandidate={(candidate) => { try { sessionStorage.setItem("around-dorm-google-candidate-review-v1", JSON.stringify(candidate)); } catch {} setGoogleDiscoveryOpen(false); setDataManagementOpen(true); showToast(settings.language === "en" ? "Candidate opened for admin review" : "ส่ง Candidate ไปหน้า Data Management แล้ว"); }} />}
       {dataManagementOpen && <DataManagement places={allPlaces} databaseSource={databaseSource} language={settings.language} onClose={() => setDataManagementOpen(false)} onReload={() => { void reloadDatabase(); }} />}
       {filterOpen && <FilterSheet value={filters} onChange={setFilters} onClose={() => setFilterOpen(false)} resultCount={tab === "map" ? visiblePlaces.length : visiblePlaces.length} />}

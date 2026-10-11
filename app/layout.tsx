@@ -8,9 +8,6 @@ import "./premium-motion-v4.css";
 import "./app-frame-sizing.css";
 import "./render-stability.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
-import { GoogleBulkPhotoRuntimeControl } from "@/components/GoogleBulkPhotoRuntimeControl";
-import { PreciseGeolocationRuntime } from "@/components/PreciseGeolocationRuntime";
-import { VisibleGooglePhotoLoadControl } from "@/components/VisibleGooglePhotoLoadControl";
 
 export const metadata: Metadata = {
   title: "Around My Dorm",
@@ -35,11 +32,8 @@ export default function RootLayout({
   return (
     <html lang="th" suppressHydrationWarning>
       <body>
-        <PreciseGeolocationRuntime />
         {children}
         <PwaRuntime />
-        <VisibleGooglePhotoLoadControl />
-        <GoogleBulkPhotoRuntimeControl />
       </body>
     </html>
   );

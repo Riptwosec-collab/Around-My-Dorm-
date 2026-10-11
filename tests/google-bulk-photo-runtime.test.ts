@@ -13,9 +13,11 @@ describe("bulk transient Google place photos", () => {
   const transientPhoto = read("lib/google-transient-photo.ts");
   const permanentRepository = read("lib/cloud/place-images.ts");
 
-  it("mounts a session-wide admin photo control so one explicit action can fill cards across routes", () => {
-    expect(layout).toContain("GoogleBulkPhotoRuntimeControl");
-    expect(layout).toContain("<GoogleBulkPhotoRuntimeControl");
+  it("mounts bulk photos only inside Admin Enrichment instead of every page", () => {
+    const admin = read("components/DataManagement.tsx");
+    expect(layout).not.toContain("GoogleBulkPhotoRuntimeControl");
+    expect(admin).toContain('activePanel === "enrichment"');
+    expect(admin).toContain("<GoogleBulkPhotoRuntimeControl inline />");
   });
 
   it("lets normal PlacePhoto cards consume the transient runtime photo store", () => {

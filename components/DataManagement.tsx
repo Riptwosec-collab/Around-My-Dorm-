@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { AlertTriangle, CheckCircle2, Database, FileUp, History, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react";
 import { CATEGORIES } from "@/data/categories";
 const GoogleMaintenancePanel = dynamic(() => import("@/components/GoogleMaintenancePanel").then((module) => module.GoogleMaintenancePanel), { ssr: false });
+const GoogleBulkPhotoRuntimeControl = dynamic(() => import("@/components/GoogleBulkPhotoRuntimeControl").then((module) => module.GoogleBulkPhotoRuntimeControl), { ssr: false });
 const GoogleMapsUsageDashboard = dynamic(() => import("@/components/GoogleMapsUsageDashboard").then((module) => module.GoogleMapsUsageDashboard), { ssr: false });
 const GoogleCloudAutoEnrichment = dynamic(() => import("@/components/GoogleCloudAutoEnrichment").then((module) => module.GoogleCloudAutoEnrichment), { ssr: false });
 const GoogleRouteRefresh = dynamic(() => import("@/components/GoogleRouteRefresh").then((module) => module.GoogleRouteRefresh), { ssr: false });
@@ -430,6 +431,7 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
               <GoogleCloudAutoEnrichment places={places} language={language} onReload={onReload} adminAccess={adminAccess} />
               <GoogleRouteRefresh places={places} language={language} onReload={onReload} adminAllowed={adminAccess.admin} />
               <GoogleMaintenancePanel places={places} language={language} />
+              <GoogleBulkPhotoRuntimeControl inline />
             </>)}
             {activePanel === "diagnostics" && <AdminPlatformDiagnostics places={places} language={language} />}
             {activePanel === "placeIds" && <GooglePlaceIdManager places={places} language={language} onReload={onReload} />}
