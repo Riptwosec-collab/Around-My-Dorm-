@@ -14,6 +14,13 @@ import { PwaRuntime } from "@/components/PwaRuntime";
 export const metadata: Metadata = {
   title: "Around My Dorm",
   description: "ค้นหาร้านและบริการรอบบ้านสุภาอพาร์ทเม้นต์",
+  icons: {
+    icon: [
+      { url: "/icon-192.png?v=amd-nova-20261011", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png?v=amd-nova-20261011", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png?v=amd-nova-20261011", sizes: "180x180", type: "image/png" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
