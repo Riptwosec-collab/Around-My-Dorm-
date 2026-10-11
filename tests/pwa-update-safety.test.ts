@@ -13,7 +13,8 @@ describe("PWA update safety", () => {
 
   it("uses network-first navigation so stale pages are not preferred online", () => {
     expect(sw).toContain("request.mode === \"navigate\"");
-    expect(sw).toContain("networkFirst(request)");
+    expect(sw).toContain("networkFirst(request, event)");
+    expect(sw).toContain("event.preloadResponse");
   });
 
   it("supports an explicit update handshake instead of silently reloading", () => {
