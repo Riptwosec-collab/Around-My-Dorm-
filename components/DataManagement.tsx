@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
-import { AlertTriangle, CheckCircle2, Database, FileUp, History, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, ClipboardCheck, Database, FileUp, History, LayoutDashboard, MapPinned, Plus, RefreshCw, RotateCcw, ScanSearch, Search, ShieldCheck, Sparkles, X } from "lucide-react";
 import { CATEGORIES } from "@/data/categories";
 const GoogleMaintenancePanel = dynamic(() => import("@/components/GoogleMaintenancePanel").then((module) => module.GoogleMaintenancePanel), { ssr: false });
 const GoogleBulkPhotoRuntimeControl = dynamic(() => import("@/components/GoogleBulkPhotoRuntimeControl").then((module) => module.GoogleBulkPhotoRuntimeControl), { ssr: false });
@@ -371,13 +371,13 @@ export function DataManagement({ places, databaseSource, language, onClose, onRe
 
             <nav aria-label={language === "en" ? "Database tools" : "เมนูจัดการฐานข้อมูล"} className="amd-admin-tabs mt-4 grid grid-cols-3 gap-2" data-testid="data-management-panels">
               {([
-                { id: "overview", th: "ภาพรวม", en: "Overview" },
-                { id: "review", th: "ตรวจข้อมูล", en: "Review" },
-                { id: "usage", th: "การใช้ API", en: "API Usage" },
-                { id: "enrichment", th: "ปรับปรุงข้อมูล", en: "Enrichment" },
-                { id: "placeIds", th: "Place ID", en: "Place ID" },
-                { id: "diagnostics", th: "ตรวจระบบ", en: "Diagnostics" },
-              ] as const).map((item) => <button key={item.id} type="button" aria-pressed={activePanel === item.id} onClick={() => setActivePanel(item.id)} className={`amd-chip min-w-0 rounded-xl px-2 py-2 text-[10px] font-semibold ${activePanel === item.id ? "amd-chip-active" : ""}`}>{language === "en" ? item.en : item.th}</button>)}
+                { id: "overview", th: "ภาพรวม", en: "Overview", icon: LayoutDashboard },
+                { id: "review", th: "ตรวจข้อมูล", en: "Review", icon: ClipboardCheck },
+                { id: "usage", th: "การใช้ API", en: "API Usage", icon: Activity },
+                { id: "enrichment", th: "ปรับปรุงข้อมูล", en: "Enrichment", icon: Sparkles },
+                { id: "placeIds", th: "Place ID", en: "Place ID", icon: MapPinned },
+                { id: "diagnostics", th: "ตรวจระบบ", en: "Diagnostics", icon: ScanSearch },
+              ] as const).map((item) => <button key={item.id} type="button" aria-pressed={activePanel === item.id} onClick={() => setActivePanel(item.id)} className={`amd-chip amd-admin-tab min-w-0 flex flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[10px] font-semibold ${activePanel === item.id ? "amd-chip-active" : ""}`}><item.icon aria-hidden="true" className="h-5 w-5" strokeWidth={1.9} /><span className="min-w-0 break-words text-center leading-4">{language === "en" ? item.en : item.th}</span></button>)}
             </nav>
 
             {activePanel === "overview" && (<>

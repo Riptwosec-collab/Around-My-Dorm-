@@ -8,6 +8,7 @@ import "./premium-motion-v4.css";
 import "./app-frame-sizing.css";
 import "./render-stability.css";
 import "./typography-clarity.css";
+import "./icon-system.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
 
 export const metadata: Metadata = {

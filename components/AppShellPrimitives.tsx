@@ -32,7 +32,7 @@ export function Toggle({ active, onChange }: { active: boolean; onChange: () => 
 export function SettingRow({ icon, title, subtitle, action }: { icon: ReactNode; title: string; subtitle?: string; action: ReactNode }) {
   return (
     <div className="amd-setting-row flex min-h-[66px] min-w-0 items-center gap-3 border-b border-[rgba(120,160,210,.11)] py-3 last:border-b-0">
-      <div className="grid h-9 w-9 shrink-0 place-items-center text-[#00D9FF]">{icon}</div>
+      <div className="amd-setting-icon grid h-10 w-10 shrink-0 place-items-center text-[#00D9FF]">{icon}</div>
       <div className="min-w-0 flex-1">
         <p className="text-[14px] font-semibold text-[var(--amd-text)]">{title}</p>
         {subtitle && <p className="mt-0.5 text-[11px] text-[var(--amd-text-3)]">{subtitle}</p>}

@@ -15,7 +15,7 @@ import {
   ChevronRight,
   Clock3,
   Coffee,
-  Compass,
+  Radar,
   Database,
   Filter,
   Grid2X2,
@@ -27,6 +27,7 @@ import {
   LocateFixed,
   LoaderCircle,
   Map as MapIcon,
+  MapPinned, BookmarkCheck, Settings2,
   MapPin,
   Moon,
   Navigation,
@@ -668,11 +669,11 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   }
 
   const navItems = [
-    { id: "explore" as Tab, label: copy.explore, icon: Compass },
-    { id: "map" as Tab, label: copy.map, icon: MapIcon },
-    { id: "favorites" as Tab, label: copy.saved, icon: Bookmark },
+    { id: "explore" as Tab, label: copy.explore, icon: Radar },
+    { id: "map" as Tab, label: copy.map, icon: MapPinned },
+    { id: "favorites" as Tab, label: copy.saved, icon: BookmarkCheck },
     { id: "recent" as Tab, label: copy.recent, icon: History },
-    { id: "settings" as Tab, label: copy.settings, icon: Settings },
+    { id: "settings" as Tab, label: copy.settings, icon: Settings2 },
   ];
   const filtersCount = activeFilterCount(filters) + (settings.verifiedOnly ? 1 : 0);
   const activeNavIndex = Math.max(0, navItems.findIndex((item) => item.id === tab));
@@ -969,7 +970,7 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           <div className="amd-nav-items grid grid-cols-5 px-1">
             {navItems.map((item) => {
               const active = tab === item.id;
-              return <button key={item.id} type="button" aria-current={active ? "page" : undefined} onClick={() => changeTab(item.id)} className={`amd-nav-item relative flex min-w-0 flex-col items-center justify-center gap-1 text-[9px] font-semibold ${active ? "amd-nav-item-active amd-nav-active" : "text-[var(--amd-text-3)]"}`}><item.icon className="h-[22px] w-[22px]" /><span className="truncate">{item.label}</span></button>;
+              return <button key={item.id} type="button" aria-current={active ? "page" : undefined} onClick={() => changeTab(item.id)} className={`amd-nav-item relative flex min-w-0 flex-col items-center justify-center gap-1 text-[9px] font-semibold ${active ? "amd-nav-item-active amd-nav-active" : "text-[var(--amd-text-3)]"}`}><span className="amd-nav-icon" aria-hidden="true"><item.icon className="h-[23px] w-[23px]" strokeWidth={active ? 2.15 : 1.9} /></span><span className="amd-nav-label">{item.label}</span></button>;
             })}
           </div>
         </nav>,
