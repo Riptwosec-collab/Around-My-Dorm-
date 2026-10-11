@@ -28,7 +28,8 @@ describe("PWA-first mobile app shell sizing", () => {
     expect(rule(".amd-page")).toContain("max-width: 100%;");
     expect(rule(".amd-page")).toContain("padding-left: max(var(--amd-page-gutter), env(safe-area-inset-left));");
     expect(rule(".amd-page")).toContain("padding-right: max(var(--amd-page-gutter), env(safe-area-inset-right));");
-    expect(rule(".amd-nav")).toContain("bottom: max(var(--amd-nav-bottom-gap), env(safe-area-inset-bottom));");
+    expect(rule(".amd-nav")).toContain("bottom: var(--amd-nav-bottom-gap);");
+    expect(css).toContain("--amd-nav-bottom-gap: 0px;");
   });
 
   it("centers the fixed bottom navigation only above the 430px phone frame", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -141,6 +142,9 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
   const googleMapId = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID ?? "";
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab);
+  // Keep the fixed navigation outside the scrolling app shell on iOS PWA.
+  const [navigationHost, setNavigationHost] = useState<HTMLElement | null>(null);
+  useEffect(() => { setNavigationHost(document.body); }, []);
   const [mapVisited, setMapVisited] = useState(initialTab === "map");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -957,20 +961,20 @@ export function AroundMyDormApp({ initialTab = "explore" }: { initialTab?: Tab }
           )}
         </div>
 
-        <nav className="amd-nav">
-          <span
-            className="amd-nav-slider"
-            aria-hidden="true"
-            style={{ left: `${activeNavIndex * 20 + 10}%` }}
-          />
-          <div className="grid h-full grid-cols-5 px-1">
+      </div>
+
+      {navigationHost && createPortal(
+        <nav className="amd-nav" data-testid="mobile-bottom-nav" aria-label={settings.language === "en" ? "Main navigation" : "เมนูหลัก"}>
+          <span className="amd-nav-slider" aria-hidden="true" style={{ left: `${activeNavIndex * 20 + 10}%` }} />
+          <div className="amd-nav-items grid grid-cols-5 px-1">
             {navItems.map((item) => {
               const active = tab === item.id;
               return <button key={item.id} type="button" aria-current={active ? "page" : undefined} onClick={() => changeTab(item.id)} className={`amd-nav-item relative flex min-w-0 flex-col items-center justify-center gap-1 text-[9px] font-semibold ${active ? "amd-nav-item-active amd-nav-active" : "text-[var(--amd-text-3)]"}`}><item.icon className="h-[22px] w-[22px]" /><span className="truncate">{item.label}</span></button>;
             })}
           </div>
-        </nav>
-      </div>
+        </nav>,
+        navigationHost,
+      )}
 
       {(tab === "explore" || tab === "favorites" || tab === "recent") && <VisibleGooglePhotoLoadControl />}
       {googleDiscoveryOpen && <GoogleDiscoverySheet initialQuery={query || (category !== "all" ? CATEGORY_MAP[category]?.name || "" : "")} center={mapSearchCenter} radiusMeters={radiusMeters} language={settings.language} onClose={() => setGoogleDiscoveryOpen(false)} onReviewCandidate={(candidate) => { try { sessionStorage.setItem("around-dorm-google-candidate-review-v1", JSON.stringify(candidate)); } catch {} setGoogleDiscoveryOpen(false); setDataManagementOpen(true); showToast(settings.language === "en" ? "Candidate opened for admin review" : "ส่ง Candidate ไปหน้า Data Management แล้ว"); }} />}

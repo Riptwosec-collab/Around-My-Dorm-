@@ -6,7 +6,7 @@
    */
   --amd-app-max-w: 430px;
   --amd-page-gutter: clamp(14px, 4vw, 18px);
-  --amd-nav-bottom-gap: 8px;
+  --amd-nav-bottom-gap: 0px;
 }
 
 html,
@@ -55,7 +55,7 @@ body {
 .amd-nav {
   left: max(var(--amd-page-gutter), env(safe-area-inset-left));
   right: max(var(--amd-page-gutter), env(safe-area-inset-right));
-  bottom: max(var(--amd-nav-bottom-gap), env(safe-area-inset-bottom));
+  bottom: var(--amd-nav-bottom-gap);
   width: auto;
   max-width: none;
   margin-inline: 0;

@@ -47,3 +47,21 @@ test("light theme and reduced motion keep the same usable layout", async ({ page
   });
   expect(durationMs).toBeLessThanOrEqual(1);
 });
+
+
+test("bottom dock respects the mobile safe area and never floats while scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/settings/");
+  const nav = page.getByTestId("mobile-bottom-nav");
+  await expect(nav).toBeVisible();
+  const position = await nav.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { fixed: style.position === "fixed", bottom: el.getBoundingClientRect().bottom, viewport: innerHeight };
+  });
+  expect(position.fixed).toBe(true);
+  expect(position.bottom).toBeCloseTo(position.viewport, 0);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(nav).toBeVisible();
+  const lastBottom = await nav.evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(lastBottom).toBeCloseTo(position.viewport, 0);
+});

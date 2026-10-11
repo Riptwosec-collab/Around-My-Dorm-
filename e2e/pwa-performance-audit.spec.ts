@@ -40,3 +40,29 @@ test("user-facing navigation stays interactive and expensive Admin loads on dema
   await page.getByRole("button", { name: /แผนที่|Map/ }).last().click();
   await expect(page.locator("[data-google-map-state]")).toHaveCount(1);
 });
+
+
+test("installed-style bottom dock stays attached to the screen while scrolling", async ({ page }) => {
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto("/settings/", { waitUntil: "domcontentloaded" });
+    const nav = page.getByTestId("mobile-bottom-nav");
+    await expect(nav).toBeVisible();
+    const initial = await nav.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const css = getComputedStyle(element);
+      return { top: rect.top, bottom: rect.bottom, width: rect.width, position: css.position, viewport: window.innerHeight };
+    });
+    expect(initial.position).toBe("fixed");
+    expect(initial.bottom, `dock bottom at ${width}px`).toBeCloseTo(initial.viewport, 0);
+    expect(initial.width, `dock width at ${width}px`).toBeCloseTo(width, 0);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(150);
+    const after = await nav.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, viewport: window.innerHeight };
+    });
+    expect(Math.abs(after.bottom - after.viewport)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.top - initial.top)).toBeLessThanOrEqual(1);
+  }
+});
