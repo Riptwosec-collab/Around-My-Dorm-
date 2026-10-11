@@ -1,0 +1,138 @@
+/* Global typography clarity v1
+   Strengthens the existing design hierarchy without external font downloads.
+   Tailwind arbitrary font utilities across cards, dialogs, Admin, parking,
+   settings and map controls were historically as small as 7-11px. */
+
+body {
+  font-size: 15px;
+  font-weight: 450;
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
+}
+
+body :is(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+body :is(input, textarea, select) {
+  font-size: max(14px, 1em);
+}
+
+body :is(input, textarea)::placeholder {
+  color: var(--amd-text-3);
+  opacity: 1;
+}
+
+body :is(h1, h2, h3, h4) {
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+body h1 { font-weight: 800; }
+body h2 { font-weight: 750; }
+body h3 { font-weight: 700; }
+
+/* Exact literal class-token selectors keep the patch compatible with Tailwind
+   arbitrary-value utilities without touching hundreds of feature components.
+   Compact metadata remains smaller than actions and paragraph copy. */
+body [class~="text-[7px]"],
+body [class~="text-[8px]"] { font-size: 11.5px; }
+body [class~="text-[9px]"] { font-size: 12px; }
+body [class~="text-[10px]"] { font-size: 12.5px; }
+body [class~="text-[11px]"] { font-size: 13px; }
+body [class~="text-[12px]"] { font-size: 14px; }
+body [class~="text-[13px]"] { font-size: 15px; }
+body [class~="text-[14px]"] { font-size: 16px; }
+body [class~="text-[15px]"] { font-size: 16.5px; }
+body [class~="text-[16px]"] { font-size: 17px; }
+body [class~="text-[17px]"] { font-size: 18px; }
+body [class~="text-[18px]"] { font-size: 19px; }
+body [class~="text-[19px]"] { font-size: 20px; }
+body [class~="text-[20px]"] { font-size: 22px; }
+body [class~="text-[21px]"] { font-size: 23px; }
+body [class~="text-[22px]"] { font-size: 24px; }
+body [class~="text-[24px]"] { font-size: 26px; }
+body [class~="text-[25px]"] { font-size: 27px; }
+body [class~="text-[26px]"] { font-size: 28px; }
+
+/* Very low-opacity labels are hard to read on black backgrounds. Do not
+   override semantic green/red/amber statuses or primary accent colors. */
+:root:not([data-theme="light"]) body :is(
+  [class~="text-white/30"],
+  [class~="text-white/32"],
+  [class~="text-white/35"],
+  [class~="text-white/40"],
+  [class~="text-white/45"],
+  [class~="text-white/48"],
+  [class~="text-white/50"],
+  [class~="text-white/55"]
+) { color: #abbacf; }
+
+:root[data-theme="light"] body :is(
+  [class~="text-white/30"],
+  [class~="text-white/32"],
+  [class~="text-white/35"],
+  [class~="text-white/40"],
+  [class~="text-white/45"],
+  [class~="text-white/48"],
+  [class~="text-white/50"],
+  [class~="text-white/55"]
+) { color: #52647b; }
+
+/* Visual emphasis: explicit first/second/third levels for cards and tools. */
+.amd-page-header h1 { font-weight: 800; }
+.amd-page-header p { font-weight: 500; }
+.amd-place-card h3 {
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.32;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.amd-place-card .amd-status { font-weight: 750; }
+.amd-place-card .amd-btn,
+.amd-place-card .amd-chip,
+.amd-admin-tabs button { font-weight: 700; }
+.amd-setting-row > div:nth-child(2) > p:first-child { font-weight: 700; }
+.amd-nav .amd-nav-item {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .005em;
+}
+.amd-nav .amd-nav-item-active { font-weight: 800; }
+
+/* Allow longer Thai words and more readable badges to grow vertically rather
+   than forcing a horizontal scroll on 320–390px installed PWAs. */
+.amd-page,
+.amd-glass,
+.amd-card,
+.amd-place-card,
+.amd-sheet,
+.amd-setting-row { min-width: 0; }
+.amd-admin-sheet .grid > *,
+.amd-place-card .flex > * { min-width: 0; }
+.amd-admin-sheet .grid.grid-cols-5 > * { overflow-wrap: anywhere; }
+.amd-nav-item span { max-width: 100%; }
+
+/* At 320–374px a side-by-side photo reduces the text area so much that
+   13px action labels truncate. Stack only the compact place cards. */
+@media (max-width: 374px) {
+  .amd-place-card > .flex { flex-direction: column; }
+  .amd-place-card .amd-place-card-media {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 152px;
+    min-height: 152px;
+  }
+  .amd-place-card .amd-place-card-photo { min-height: 152px; }
+  .amd-place-card > .flex > .min-w-0 { width: 100%; }
+  .amd-nav .amd-nav-item { font-size: 11.5px; }
+  .amd-admin-tabs button { padding-inline: 6px; }
+}
+
+/* Honor increased system text-size preferences; no text-size-adjust lock. */

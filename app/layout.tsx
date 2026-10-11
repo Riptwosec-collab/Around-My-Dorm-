@@ -7,6 +7,7 @@ import "./premium-map-sheets.css";
 import "./premium-motion-v4.css";
 import "./app-frame-sizing.css";
 import "./render-stability.css";
+import "./typography-clarity.css";
 import { PwaRuntime } from "@/components/PwaRuntime";
 
 export const metadata: Metadata = {
